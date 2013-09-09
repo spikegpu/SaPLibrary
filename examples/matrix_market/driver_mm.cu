@@ -491,15 +491,6 @@ void ShowUsage()
 	cout << " --drop-off-k=K" << endl;
 	cout << "        Drop K pairs of off-diagonals. Ignored if --drop-off-fraction" << endl;
 	cout << "        is specified. (default 0 -- i.e. no drop-off)." << endl;
-	cout << " -b SIZE BW DD" << endl;
-	cout << " --banded-synthetic SIZE BW DD" << endl;
-	cout << "        Use a synthetic banded matrix of size SIZE, half-bandwidth BW," << endl;
-	cout << "        and degree of diagonal dominance DD." << endl;
-	cout << " -s SIZE BW DD" << endl;
-	cout << " --sparse-synthetic SIZE BW DD" << endl;
-	cout << "        Use a synthetic sparse matrix of size SIZE, half-bandwidth BW," << endl;
-	cout << "        and degree of diagonal dominance DD." << endl;
-	cout << "        This matrix is obtained through a random row and column reordering." << endl;
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
