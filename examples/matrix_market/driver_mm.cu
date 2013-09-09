@@ -50,11 +50,11 @@ using std::vector;
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
 	  OPT_NO_REORDERING, OPT_NO_SCALING,
 	  OPT_TOL, OPT_MAXIT,
-	  OPT_DROPOFF_FRAC, OPT_DROPOFF_K,
+	  OPT_DROPOFF_FRAC, 
 	  OPT_MATFILE, OPT_RHSFILE, 
 	  OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
 	  OPT_KRYLOV, OPT_SAFE_FACT,
-	  OPT_VAR_BAND, OPT_SECOND_REORDER, OPT_TRACK_REORDER,
+	  OPT_VAR_BAND, OPT_TRACK_REORDER,
 	  OPT_SINGLE_COMP};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
@@ -71,7 +71,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_MAXIT,         "--max-num-iterations", SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "-d",                   SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
-	{ OPT_DROPOFF_K,     "--drop-off-k",         SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
 	{ OPT_RHSFILE,       "-r",                   SO_REQ_CMB },
@@ -79,14 +78,11 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
 	{ OPT_SINGLE_COMP,	 "--single-component",	 SO_NONE	},
-	{ OPT_NO_REORDERING, "-x",                   SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
-	{ OPT_NO_SCALING,    "-y",                   SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
 	{ OPT_PRECOND,		 "--precond-method",	 SO_REQ_CMB },
-	{ OPT_SECOND_REORDER,"--second-reorder",	 SO_NONE	},
 	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
@@ -115,7 +111,6 @@ struct Problem {
 	int           maxIt;
 	REAL          tol;
 	REAL          fraction;
-	int           dropped;
 
 	bool          reorder;
 	bool          scale;
@@ -131,7 +126,6 @@ struct Problem {
 	bool		  singleComponent;
 	bool          safeFactorization;
 	bool		  variousBandwidth;
-	bool		  secondLevelReordering;
 	bool		  trackReordering;
 
 	bool          verbose;
@@ -172,7 +166,6 @@ int main(int argc, char** argv)
 	pb.maxIt = 100;
 	pb.tol = 1e-6;
 	pb.fraction = 0.0;
-	pb.dropped = 0;
 	pb.reorder = true;
 	pb.scale = true;
 	pb.numPart = 1;
@@ -182,7 +175,6 @@ int main(int argc, char** argv)
 	pb.singleComponent = false;
 	pb.safeFactorization = false;
 	pb.variousBandwidth = false;
-	pb.secondLevelReordering = false;
 	pb.krylov = spike::BiCGStab2;
 
 	pb.verbose = false;
@@ -192,18 +184,11 @@ int main(int argc, char** argv)
 	if (!GetProblemSpecs(argc, argv, pb))
 		return 1;
 
-	if (!pb.reorder) {
-		pb.secondLevelReordering  = false;
+	if (!pb.reorder)
 		pb.variousBandwidth = false;
-	}
 
-	if (pb.variousBandwidth) {
-		pb.secondLevelReordering  = true;
+	if (pb.variousBandwidth)
 		pb.factorization = spike::LU_only;
-	} else if (pb.secondLevelReordering) {
-		pb.variousBandwidth = true;
-		pb.factorization = spike::LU_only;
-	}
 
 	// Print information on the problem that will be solved.
 	PrintProblem(pb, pb.verbose);
@@ -230,7 +215,7 @@ int main(int argc, char** argv)
 
 	// Create the SPIKE Solver object and the SPMV functor.
 	// Set the initial guess to the zero vector.
-	SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.dropped, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.secondLevelReordering, pb.trackReordering);
+	SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.trackReordering);
 	for (int i=0; i<1; i++) {
 		if (i > 0) {
 			cusp::blas::axpy(A.values, A.values, 0.05);
@@ -356,16 +341,8 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 			pb.fraction = atof(args.OptionArg());
 			break;
 
-		case OPT_DROPOFF_K:
-			pb.dropped = atoi(args.OptionArg());
-			break;
-
 		case OPT_NO_REORDERING:
 			pb.reorder = false;
-			break;
-
-		case OPT_SECOND_REORDER:
-			pb.secondLevelReordering = true;
 			break;
 
 		case OPT_NO_SCALING:
@@ -450,7 +427,7 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 	}
 
 	// If no problem was defined, show usage and exit.
-	if (pb.fileRhs.length() == 0) {
+	if (pb.fileMat.length() == 0) {
 		cout << "No matrix file was defined!" << endl << endl;
 		ShowUsage();
 		return false;
@@ -472,10 +449,8 @@ void ShowUsage()
 	cout << " -p=NUM_PARTITIONS" << endl;
 	cout << " --num-partitions=NUM_PARTITIONS" << endl;
 	cout << "        Specify the number of partitions (default 1)." << endl;
-	cout << " -x" << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering." << endl;
-	cout << " -y" << endl;
 	cout << " --no-scaling" << endl;
 	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;
@@ -488,9 +463,6 @@ void ShowUsage()
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
 	cout << "        Frobenius norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
-	cout << " --drop-off-k=K" << endl;
-	cout << "        Drop K pairs of off-diagonals. Ignored if --drop-off-fraction" << endl;
-	cout << "        is specified. (default 0 -- i.e. no drop-off)." << endl;
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
@@ -510,8 +482,6 @@ void ShowUsage()
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --var-band" << endl;
 	cout << "        Use various-bandwidth-method to solve the problem." << endl; 
-	cout << " --second-reorder" << endl;
-	cout << "        Use second-level reordering." << endl;
 	cout << " -f=METHOD" << endl;
 	cout << " --factorization-method=METHOD" << endl;
 	cout << "        Specify the factorization type used to assemble the reduced matrix" << endl;
@@ -635,8 +605,6 @@ void PrintProblem(const Problem& pb, bool verbose)
 		cout << "Max. iterations: " << pb.maxIt << endl;
 		if (pb.fraction > 0)
 			cout << "Drop-off fraction: " << pb.fraction << endl;
-		else if (pb.dropped > 0)
-			cout << "Drop off-diagonals: " << pb.dropped << endl;
 		else
 			cout << "No drop-off." << endl;
 		cout << (pb.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
@@ -657,7 +625,6 @@ void PrintProblem(const Problem& pb, bool verbose)
 		cout << "     " << pb.fraction;
 		cout << "     " << factTypeStr << "  " << precondStr << "   "<<(pb.safeFactorization ? "T" : "F");
 		cout << "	  " << (pb.variousBandwidth ? "T" : "F");
-		cout << "	  " << (pb.secondLevelReordering? "T" : "F");
 		cout << endl;
 	}
 }
@@ -691,13 +658,17 @@ void PrintStats(bool               success,
 		double timeSetupGPU = stats.time_toBanded + stats.time_offDiags
 			+ stats.time_bandLU + stats.time_bandUL
 			+ stats.time_assembly + stats.time_fullLU;
-		cout << "Setup time GPU    = " << timeSetupGPU << endl;
-		cout << "  form banded matrix       = " << stats.time_toBanded << endl;
-		cout << "  extract off-diags blocks = " << stats.time_offDiags << endl;
-		cout << "  banded LU factorization  = " << stats.time_bandLU << endl;
-		cout << "  banded UL factorization  = " << stats.time_bandUL << endl;
-		cout << "  assemble reduced matrix  = " << stats.time_assembly << endl;
-		cout << "  reduced matrix LU        = " << stats.time_fullLU << endl;
+		cout << "  Setup time GPU  = " << timeSetupGPU << endl;
+		cout << "    form banded matrix       = " << stats.time_toBanded << endl;
+		cout << "    extract off-diags blocks = " << stats.time_offDiags << endl;
+		cout << "    banded LU factorization  = " << stats.time_bandLU << endl;
+		cout << "    banded UL factorization  = " << stats.time_bandUL << endl;
+		cout << "    assemble reduced matrix  = " << stats.time_assembly << endl;
+		cout << "    reduced matrix LU        = " << stats.time_fullLU << endl;
+		cout << "  Setup time CPU  = " << stats.timeSetup - timeSetupGPU << endl;
+		cout << "    reorder                  = " << stats.time_reorder << endl;
+		cout << "    CPU assemble             = " << stats.time_cpu_assemble << endl;
+		cout << "    data transfer            = " << stats.time_transfer << endl;
 		cout << "Solve time        = " << stats.timeSolve << endl;
 		cout << "  shuffle time    = " << stats.time_shuffle << endl;
 		cout << endl;
@@ -736,7 +707,11 @@ void ClearStats(const SpikeSolver& mySolver)
 	stats.bandwidthReorder = 0;
 	stats.bandwidth = 0;
 	stats.actualDropOff = 0;
+
 	stats.timeSetup = 0;
+	stats.time_reorder = 0;
+	stats.time_cpu_assemble = 0;
+	stats.time_transfer = 0;
 	stats.time_toBanded = 0;
 	stats.time_offDiags = 0;
 	stats.time_bandLU = 0;

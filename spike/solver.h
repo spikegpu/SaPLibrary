@@ -146,13 +146,11 @@ struct SolverOptions
 	bool          performReorder;
 	bool          applyScaling;
 	double        dropOffFraction;
-	int           dropOffK;
 
 	SolverMethod  method;
 	PrecondMethod precondMethod;
 	bool          safeFactorization;
 	bool          variousBandwidth;
-	bool          secondLevelReordering;
 	bool		  singleComponent;
 };
 
@@ -170,6 +168,9 @@ struct SolverStats
 	double      timeSetup;
 	double      timeSolve;
 
+	double		time_reorder;
+	double		time_cpu_assemble;
+	double		time_transfer;
 	double      time_toBanded;
 	double      time_offDiags;
 	double      time_bandLU;
@@ -210,14 +211,12 @@ public:
 	       bool          reorder = true,
 	       bool          scale = true,
 	       ValueType     dropOff_frac = 0,
-	       int           dropOff_k = 0,
 	       SolverType    solver = BiCGStab2,
 	       SolverMethod  method = LU_UL,
 	       PrecondMethod precontMethod = Spike,
 		   bool			 singleComponent = false,
 	       bool          safeFactorization = false,
 	       bool          variousBandwidth = false,
-	       bool          secondLevelReordering = false,
 		   bool			 trackReordering = false);
 
 	~Solver() {
@@ -266,12 +265,10 @@ SolverOptions::SolverOptions()
 	performReorder(true),
 	applyScaling(true),
 	dropOffFraction(0),
-	dropOffK(0),
 	method(LU_UL),
 	precondMethod(Spike),
 	safeFactorization(false),
 	variousBandwidth(false),
-	secondLevelReordering(false),
     singleComponent(false)
 {
 }
@@ -286,6 +283,9 @@ SolverOptions::SolverOptions()
 SolverStats::SolverStats()
 :	timeSetup(0),
 	timeSolve(0),
+	time_reorder(0),
+	time_cpu_assemble(0),
+	time_transfer(0),
 	time_toBanded(0),
 	time_offDiags(0),
 	time_bandLU(0),
@@ -315,17 +315,15 @@ Solver<Matrix, Vector>::Solver(int           numPartitions,
                                bool          reorder,
                                bool          scale,
                                ValueType     dropOff_frac,
-                               int           dropOff_k,
                                SolverType    solver,
                                SolverMethod  method,
                                PrecondMethod precondMethod,
 							   bool			 singleComponent,
                                bool          safeFactorization,
                                bool          variousBandwidth,
-                               bool          secondLevelReordering,
 							   bool			 trackReordering)
 :	m_monitor(maxIterations, tolerance),
-	m_precond(numPartitions, reorder, scale, dropOff_frac, dropOff_k, method, precondMethod, safeFactorization, variousBandwidth, secondLevelReordering, trackReordering),
+	m_precond(numPartitions, reorder, scale, dropOff_frac, method, precondMethod, safeFactorization, variousBandwidth, trackReordering),
 	m_solver(solver),
 	m_singleComponent(singleComponent)
 {
@@ -434,6 +432,9 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
 	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
 	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
+	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
+	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
+	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
 	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
 	m_stats.time_offDiags = m_precond_pointers[0]->getTimeCopyOffDiags();
 	m_stats.time_bandLU = m_precond_pointers[0]->getTimeBandLU();
@@ -446,6 +447,9 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 			m_stats.bandwidthReorder = m_precond_pointers[i]->getBandwidthReordering();
 		if (m_stats.bandwidth < m_precond_pointers[i]->getBandwidth())
 			m_stats.bandwidth = m_precond_pointers[i]->getBandwidth();
+		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
+		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
+		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
 		m_stats.actualDropOff += m_precond_pointers[i]->getActualDropOff();
 		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
 		m_stats.time_offDiags += m_precond_pointers[i]->getTimeCopyOffDiags();

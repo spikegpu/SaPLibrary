@@ -150,8 +150,6 @@ public:
 	int		   dropOff(T   frac,
                        T&  frac_actual,
 					   T   dropMin);
-	int        dropOff(int k_dropped,
-		               T&  frac_actual);
 	void	   dropOffPost(T   frac,
                        T&  frac_actual,
 					   T   dropMin,
@@ -602,57 +600,6 @@ SpikeGraph<T>::dropOffPost(T   frac,
 	m_first = m_edges.begin();
 	frac_actual = 1 - sqrt(norm_out2/norm_in2);
 }
-
-template <typename T>
-int
-SpikeGraph<T>::dropOff(int k_dropped,
-                       T&  frac_actual)
-{
-	CPUTimer timer;
-	timer.Start();
-
-	// Sort the edges in *decreasing* order of their length (the difference
-	// between the indices of their adjacent nodes).
-	std::sort(m_edges.begin(), m_edges.end(), EdgeComparator<T>());
-
-	// Calculate the Frobenius norm of the current matrix.
-	T norm_in2 = std::accumulate(m_edges.begin(), m_edges.end(), 0.0, EdgeAccumulator<T>());
-
-	// Walk all edges and remove the requested number of off-diagonals.
-	// Accumulate the weight of the dropped off-diagonals.
-	m_first = m_edges.begin();
-	EdgeIterator  last = m_first;
-	int           num_dropped;
-	T             weight_dropped = 0;
-
-	for (num_dropped = 0; num_dropped < k_dropped; num_dropped++) {
-		// Current bandwidth
-		int bandwidth = abs(m_first->m_from - m_first->m_to);
-
-		// Stop now if we reached the main diagonal.
-		if (bandwidth == 0)
-			break;
-
-		// Find all edges in the current band and calculate the norm of the band.
-		do {last++;} while(abs(last->m_from - last->m_to) == bandwidth);
-
-		T band_norm2 = std::accumulate(m_first, last, 0.0, EdgeAccumulator<T>());
-
-		// Remove this band and move to the next one.
-		weight_dropped += band_norm2;
-		m_first = last;
-	}
-
-	timer.Stop();
-	m_timeDropoff = timer.getElapsed();
-
-	// Calculate the norm reduction fraction and return the actual number
-	// of dropped off-diagonals.
-	frac_actual = 1 - sqrt(1 - weight_dropped/norm_in2);
-	return num_dropped;
-}
-
-
 
 // ----------------------------------------------------------------------------
 // SpikeGraph::assembleOffDiagMatrices()

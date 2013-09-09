@@ -48,12 +48,10 @@ public:
 	        bool           reorder,
 	        bool           scale,
 	        ValueType      dropOff_frac,
-	        int            dropOff_k,
 	        SolverMethod   method,
 	        PrecondMethod  precondMethod,
 	        bool           safeFactorization,
 	        bool           variousBandwidth,
-	        bool           secondLevelReordering,
 			bool		   trackReordering);
 
 	Precond(const		   Precond &prec);
@@ -62,6 +60,9 @@ public:
 
 	Precond & operator = (const Precond &prec);
 
+	double getTimeReorder() const		  {return m_time_reorder;}
+	double getTimeCPUAssemble() const	  {return m_time_cpu_assemble;}
+	double getTimeTransfer() const		  {return m_time_transfer;}
 	double getTimeToBanded() const        {return m_time_toBanded;}
 	double getTimeCopyOffDiags() const    {return m_time_offDiags;}
 	double getTimeBandLU() const          {return m_time_bandLU;}
@@ -89,12 +90,10 @@ private:
 	bool           m_reorder;
 	bool           m_scale;
 	ValueType      m_dropOff_frac;
-	int            m_dropOff_k;
 	SolverMethod   m_method;
 	PrecondMethod  m_precondMethod;
 	bool           m_safeFactorization;
 	bool           m_variousBandwidth;
-	bool           m_secondLevelReordering;
 	bool		   m_trackReordering;
 
 	bool		   m_isSetup;
@@ -154,6 +153,9 @@ private:
 	ValueType      m_dropOff_actual;     // actual dropOff fraction achieved
 
 	GPUTimer       m_timer;
+	double		   m_time_reorder;		 // CPU time for matrix reordering
+	double		   m_time_cpu_assemble;	 // Time for acquiring the banded matrix and off-diagonal matrics on CPU
+	double		   m_time_transfer;		 // Time for data transferring from CPU to GPU
 	double         m_time_toBanded;      // GPU time for transformation or conversion to banded double       
 	double         m_time_offDiags;      // GPU time to copy off-diagonal blocks
 	double         m_time_bandLU;        // GPU time for LU factorization of banded blocks
@@ -230,27 +232,26 @@ Precond<Vector>::Precond(int            numPart,
                          bool           reorder,
                          bool           scale,
                          ValueType      dropOff_frac,
-                         int            dropOff_k,
                          SolverMethod   method,
                          PrecondMethod  precondMethod,
                          bool           safeFactorization,
                          bool           variousBandwidth,
-                         bool           secondLevelReordering,
 						 bool			trackReordering)
 :	m_numPartitions(numPart),
 	m_reorder(reorder),
 	m_scale(scale),
 	m_dropOff_frac(dropOff_frac),
-	m_dropOff_k(dropOff_k),
 	m_method(method),
 	m_precondMethod(precondMethod),
 	m_safeFactorization(safeFactorization),
 	m_variousBandwidth(variousBandwidth),
-	m_secondLevelReordering(reorder ? secondLevelReordering : false),
 	m_trackReordering(trackReordering),
 	m_isSetup(0),
 	m_k_reorder(0),
 	m_dropOff_actual(0),
+	m_time_reorder(0),
+	m_time_cpu_assemble(0),
+	m_time_transfer(0),
 	m_time_toBanded(0),
 	m_time_offDiags(0),
 	m_time_bandLU(0),
@@ -266,6 +267,9 @@ Precond<Vector>::Precond(const Precond<Vector> &prec):
 	m_isSetup(0),
 	m_k_reorder(0),
 	m_dropOff_actual(0),
+	m_time_reorder(0),
+	m_time_cpu_assemble(0),
+	m_time_transfer(0),
 	m_time_toBanded(0),
 	m_time_offDiags(0),
 	m_time_bandLU(0),
@@ -279,12 +283,10 @@ Precond<Vector>::Precond(const Precond<Vector> &prec):
 	m_reorder		=   prec.m_reorder;;
 	m_scale			=	prec.m_scale;
 	m_dropOff_frac	=	prec.m_dropOff_frac;
-	m_dropOff_k		=	prec.m_dropOff_k;
 	m_method		=	prec.m_method;
 	m_precondMethod =	prec.m_precondMethod;
 	m_safeFactorization = prec.m_safeFactorization;
 	m_variousBandwidth = prec.m_variousBandwidth;
-	m_secondLevelReordering = prec.m_secondLevelReordering;
 	m_trackReordering = prec.m_trackReordering;
 }
 
@@ -296,12 +298,10 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 	m_reorder		=   prec.m_reorder;;
 	m_scale			=	prec.m_scale;
 	m_dropOff_frac	=	prec.m_dropOff_frac;
-	m_dropOff_k		=	prec.m_dropOff_k;
 	m_method		=	prec.m_method;
 	m_precondMethod =	prec.m_precondMethod;
 	m_safeFactorization = prec.m_safeFactorization;
 	m_variousBandwidth = prec.m_variousBandwidth;
-	m_secondLevelReordering = prec.m_secondLevelReordering;
 	m_trackReordering = prec.m_trackReordering;
 
 	m_isSetup		=	0;
@@ -530,7 +530,7 @@ Precond<Vector>::getSRev(Vector&  rhs,
 	}
 
 	if (m_numPartitions > 1 && m_precondMethod == Spike) {
-		if (!m_secondLevelReordering) {
+		if (!m_variousBandwidth) {
 			sol = rhs;
 			// Calculate modified RHS
 			partBandedFwdSweep(rhs);
@@ -737,25 +737,22 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 
 	const ValueType dropMin = 1.0/100;
 
-	double time_reorder = 0, time_assemble = 0, time_transfer = 0;
 	CPUTimer reorder_timer, assemble_timer, transfer_timer;
 
 	reorder_timer.Start();
 	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, m_idxMap, m_scaleMap);
 	reorder_timer.Stop();
 
-	time_reorder += reorder_timer.getElapsed();
+	m_time_reorder += reorder_timer.getElapsed();
 	
 	int dropped = 0;
 
 	if (m_dropOff_frac > 0) {
-		if (!m_secondLevelReordering)
+		if (!m_variousBandwidth)
 			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual);
 		else
 			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual, dropMin);
 	}
-	else if (m_dropOff_k > 0)
-		dropped = graph.dropOff(m_dropOff_k, m_dropOff_actual);
 	else
 		m_dropOff_actual = 0;
 
@@ -783,7 +780,6 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		if (m_variousBandwidth)
 			std::cerr << "A single partition is used or the half-bandwidth is zero. Variable-band option was disabled." << std::endl;
 		m_variousBandwidth = false;
-		m_secondLevelReordering = false;
 	}
 
 	if (m_dropOff_frac > 0) {
@@ -796,24 +792,24 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		assemble_timer.Start();
 		graph.assembleOffDiagMatrices(m_k, m_numPartitions, m_WV_host, m_offDiags_host, m_offDiagWidths_left_host, m_offDiagWidths_right_host, offDiagPerms_left, offDiagPerms_right, m_typeMap, m_offDiagMap, m_WVMap);
 		assemble_timer.Stop();
-		time_assemble += assemble_timer.getElapsed();
+		m_time_cpu_assemble += assemble_timer.getElapsed();
 
 		reorder_timer.Start();
 		graph.secondLevelReordering(m_k, m_numPartitions, secondReorder, secondPerm, m_first_rows_host);
 		reorder_timer.Stop();
+		m_time_reorder += reorder_timer.getElapsed();
 
 		assemble_timer.Start();
-		time_reorder += reorder_timer.getElapsed();
 		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, B,
 		                           m_ks_host, m_BOffsets_host, 
 								   m_typeMap, m_bandedMatMap);
 		assemble_timer.Stop();
-		time_assemble += assemble_timer.getElapsed();
+		m_time_cpu_assemble += assemble_timer.getElapsed();
 	} else {
 		assemble_timer.Start();
 		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, B, m_typeMap, m_bandedMatMap);
 		assemble_timer.Stop();
-		time_assemble += assemble_timer.getElapsed();
+		m_time_cpu_assemble += assemble_timer.getElapsed();
 	}
 
 	transfer_timer.Start();
@@ -849,7 +845,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		thrust::sequence(m_compB2Offsets.begin(), m_compB2Offsets.end(), 0, 2 * m_k * (2 * m_k + 1));
 	}
 
-	if (m_secondLevelReordering) {
+	if (m_variousBandwidth) {
 		VectorI buffer2(m_n);
 		m_secondReordering = secondReorder;
 		combinePermutation(m_secondReordering, m_optReordering, buffer2);
@@ -869,9 +865,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	}
 
 	transfer_timer.Stop();
-	time_transfer += transfer_timer.getElapsed();
-
-	fprintf(stderr, "Reorder time: %g, CPU assemble time: %g, data transfer time: %g\n", time_reorder, time_assemble, time_transfer);
+	m_time_transfer += transfer_timer.getElapsed();
 }
 
 
@@ -964,7 +958,7 @@ void
 Precond<Vector>::extractOffDiagonal(Vector&  mat_WV)
 {
 	// If second-level reordering is enabled, the off-diagonal matrices are already in the host.
-	if (m_secondLevelReordering) {
+	if (m_variousBandwidth) {
 		mat_WV = m_WV_host;
 		m_offDiags = m_offDiags_host;
 		return;
