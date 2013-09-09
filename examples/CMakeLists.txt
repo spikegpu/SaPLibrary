@@ -23,8 +23,9 @@ include(SBELUtils.cmake)
 #enable_openmp_support()
 enable_cuda_support()
 
-cuda_include_directories(.)
-cuda_include_directories(..)
+include_directories(.)
+include_directories(..)
+
 cuda_include_directories(/usr/local/cuda/cusp)
 
 ADD_SUBDIRECTORY(matrix_market)
