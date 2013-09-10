@@ -1045,6 +1045,7 @@ SpikeGraph<T>::RCM(EdgeVector&  edges,
 
 	const int MAX_NUM_TRIAL = 10;
 	const int BANDWIDTH_THRESHOLD = 256;
+	const int BANDWIDTH_MIN_REQUIRED = 10000;
 
 	CPUTimer timer;
 	timer.Start();
@@ -1052,7 +1053,9 @@ SpikeGraph<T>::RCM(EdgeVector&  edges,
 	VectorB tried(m_n, 0);
 	tried[0] = true;
 
-	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL; trial_num++)
+	int last_tried = 0;
+
+	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL || bandwidth >= BANDWIDTH_MIN_REQUIRED; trial_num++)
 	{
 		std::queue<int> q;
 		std::priority_queue<NodeType> pq;
@@ -1064,10 +1067,23 @@ SpikeGraph<T>::RCM(EdgeVector&  edges,
 		int j = 0, last = 0;
 
 		if (trial_num > 0) {
-			tmp_node = rand() % m_n;
 
-			while(tried[tmp_node])
+			if (trial_num < MAX_NUM_TRIAL) {
 				tmp_node = rand() % m_n;
+
+				while(tried[tmp_node])
+					tmp_node = rand() % m_n;
+			} else {
+				if (last_tried >= m_n - 1) {
+					fprintf(stderr, "All possible starting points have been tried in RCM\n");
+					break;
+				}
+				for (tmp_node = last_tried+1; tmp_node < m_n; tmp_node++)
+					if (!tried[tmp_node]) {
+						last_tried = tmp_node;
+						break;
+					}
+			}
 
 			pushed[tmp_node] = true;
 			tried[tmp_node] = true;
