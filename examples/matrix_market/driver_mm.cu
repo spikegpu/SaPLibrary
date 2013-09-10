@@ -103,6 +103,7 @@ CSimpleOptA::SOption g_options[] = {
 // -------------------------------------------------------------------
 struct Problem {
 	int           N;
+	int			  nnz;
 	int           k;
 	REAL          d;
 
@@ -145,7 +146,9 @@ bool GetProblemSpecs(int argc, char** argv, Problem& pb);
 void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
 
 void PrintProblem(const Problem& pb, bool verbose);
-void PrintStats(bool               success,
+
+void PrintStats(const Problem&	   pb,
+				bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv,
                 bool               verbose);
@@ -161,6 +164,7 @@ int main(int argc, char** argv)
 	Problem pb;
 
 	pb.N = 0;
+	pb.nnz = 0;
 	pb.k = 0;
 	pb.d = 1.0;
 	pb.maxIt = 100;
@@ -191,7 +195,8 @@ int main(int argc, char** argv)
 		pb.factorization = spike::LU_only;
 
 	// Print information on the problem that will be solved.
-	PrintProblem(pb, pb.verbose);
+	if (pb.verbose)
+		PrintProblem(pb, pb.verbose);
 
 
 	// Get the device with most available memory.
@@ -207,6 +212,7 @@ int main(int argc, char** argv)
 
 	cusp::io::read_matrix_market_file(A, pb.fileMat);
 	pb.N = A.num_rows;
+	pb.nnz = A.num_entries;
 	if (pb.fileRhs.length() > 0)
 		cusp::io::read_matrix_market_file(b, pb.fileRhs);
 	else
@@ -234,23 +240,25 @@ int main(int argc, char** argv)
 			cusp::io::write_matrix_market_file(x, pb.fileSol);
 
 		// Print solution statistics.
-		PrintStats(success, mySolver, mySpmv, pb.verbose);
+		PrintStats(pb, success, mySolver, mySpmv, pb.verbose);
 
 		// Calculate the actual residual and its norm.
-		Vector r(pb.N);
-		mySpmv(x, r);
-		cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
-		cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
-		cout << "|b|            = " << cusp::blas::nrm2(b) << endl;	
+		if (pb.verbose) {
+			Vector r(pb.N);
+			mySpmv(x, r);
+			cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
+			cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
+			cout << "|b|            = " << cusp::blas::nrm2(b) << endl;	
 
-		// If we have used a generated RHS, print the difference
-		// between the target solution and the obtained solution.
-		//    x_target <- x_target - x
-		if (pb.fileRhs.length() == 0) {
-			cout << "|x_target|     = " << cusp::blas::nrm2(x_target) << endl;
-			delta_x_target.resize(pb.N);
-			cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
-			cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
+			// If we have used a generated RHS, print the difference
+			// between the target solution and the obtained solution.
+			//    x_target <- x_target - x
+			if (pb.fileRhs.length() == 0) {
+				cout << "|x_target|     = " << cusp::blas::nrm2(x_target) << endl;
+				delta_x_target.resize(pb.N);
+				cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
+				cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
+			}
 		}
 
 		ClearStats(mySolver);
@@ -289,7 +297,7 @@ void spikeSetDevice() {
 			}
 	}
 
-	fprintf(stderr, "Use Device: %d\n", max_idx);
+	// fprintf(stderr, "Use Device: %d\n", max_idx);
 	cudaSetDevice(max_idx);
 }
 
@@ -635,7 +643,8 @@ void PrintProblem(const Problem& pb, bool verbose)
 //
 // This function prints solver statistics.
 // -------------------------------------------------------------------
-void PrintStats(bool               success,
+void PrintStats(const Problem&	   pb,
+				bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv,
                 bool               verbose)
@@ -678,17 +687,36 @@ void PrintStats(bool               success,
 			 << endl;
 		cout << endl;
 	} else {
-		cout << (success ? "T  " : "F  ");
-		cout << stats.numIterations    << "  ";
-		cout << stats.residualNorm     << "  ";
-		cout << stats.relResidualNorm  << "    ";
-		cout << stats.timeSetup        << "  ";
-		cout << stats.timeSolve        << "  ";
-		cout << stats.time_bandLU      << "  ";
-		cout << stats.time_bandUL      << "  ";
-		cout << stats.time_fullLU      << "    ";
-		cout << mySpmv.getCount()      << "  ";
-		cout << mySpmv.getTime()       << "  ";
+		string matName = pb.fileMat;
+		unsigned end_pos = matName.rfind(".mtx");
+		if (end_pos == string::npos)
+			end_pos = matName.size();
+		unsigned start_pos;
+		for (start_pos = end_pos - 1; start_pos > 0; start_pos --)
+			if (matName[start_pos] == '/' || matName[start_pos] == '\\') {
+				start_pos++;
+				break;
+			}
+		matName = matName.substr(start_pos, end_pos - start_pos);
+		cout << matName				   << ",";
+		cout << pb.N				   << ",";
+		cout << pb.nnz				   << ",";
+		cout << stats.bandwidth		   << ",";
+		cout << (success ? "T" : "F")  << ",";
+		cout << pb.numPart			   << ",";
+		cout << stats.numIterations    << ",";
+		cout << stats.time_reorder	   << ",";
+		cout << stats.time_cpu_assemble<< ",";
+		cout << stats.time_transfer	   << ",";
+		cout << stats.time_offDiags	   << ",";
+		cout << stats.time_bandLU	   << ",";
+		cout << stats.time_bandUL      << ",";
+		cout << stats.time_assembly	   << ",";
+		cout << stats.time_fullLU	   << ",";
+		cout << stats.timeSetup        << ",";
+		cout << stats.timeSolve        << ",";
+		cout << stats.timeSetup
+				+ stats.timeSolve;
 		cout << endl;
 	}
 }

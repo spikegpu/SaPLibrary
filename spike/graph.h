@@ -822,7 +822,6 @@ SpikeGraph<T>::assembleBandedMatrix(int       bandwidth,
 {
 	// Drop all edges from begin() to 'first'; i.e., keep all edges from
 	// 'first' to end().
-	fprintf(stderr, "m_k = %d, m_nnz = %d\n", bandwidth, m_nnz);
 	B.resize((2 * bandwidth + 1) * m_n);
 	ks_col.resize(m_n);
 	ks_row.resize(m_n);
@@ -885,8 +884,6 @@ SpikeGraph<T>::assembleBandedMatrix(int       bandwidth,
 									MatrixMap& typeMap,
 									MatrixMap& bandedMatMap)
 {
-	fprintf(stderr, "m_k = %d, m_nnz = %d\n", bandwidth, m_nnz);
-
 	ks.resize(numPartitions);
 	BOffsets.resize(numPartitions);
 
