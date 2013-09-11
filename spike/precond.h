@@ -40,7 +40,6 @@ public:
 	typedef typename cusp::array1d<ValueType, cusp::host_memory> VectorH;
 	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMap;
 	typedef typename cusp::array1d<ValueType, cusp::host_memory> MatrixMapF;
-	typedef typename std::map<int64_t, int>						 IndexMap;
 
 	Precond():m_isSetup(0) {};
 
@@ -80,6 +79,7 @@ public:
 	void setup(const Matrix&  A);
 	bool   isSetup() const				  {return m_isSetup;}
 
+	void update(const cusp::array1d<ValueType, cusp::host_memory>& entries);
 	void solve(Vector& v, Vector& z);
 
 private:
@@ -102,7 +102,6 @@ private:
 	MatrixMap	   m_typeMap;
 	MatrixMap	   m_bandedMatMap;
 	MatrixMapF	   m_scaleMap;
-	IndexMap	   m_idxMap;
 
 	// Used in various-bandwidth method only, host versions
 	cusp::array1d<int, cusp::host_memory>  m_ks_host;
@@ -336,15 +335,155 @@ Precond<Vector>::updateMatrix(const Matrix& A) {
 	int nnz = Acoo.num_entries;
 
 	for (int i=0; i < nnz; i++) {
-		int idx = m_idxMap[(int64_t)(Acoo.row_indices[i])*m_n + Acoo.column_indices[i]];
-
-		if (m_typeMap[idx] == 2)
-			m_offDiags_host[m_offDiagMap[idx]] = m_WV_host[m_WVMap[idx]] = Acoo.values[i] * m_scaleMap[idx];
+		if (m_typeMap[i] == 2)
+			m_offDiags_host[m_offDiagMap[i]] = m_WV_host[m_WVMap[i]] = Acoo.values[i] * m_scaleMap[i];
 		else
-			B[m_bandedMatMap[idx]] = Acoo.values[i] * m_scaleMap[idx];
+			B[m_bandedMatMap[i]] = Acoo.values[i] * m_scaleMap[i];
 	}
 
 	m_B = B;
+}
+
+template <typename Vector>
+void
+Precond<Vector>::update(const cusp::array1d<ValueType, cusp::host_memory>& entries) {
+	if (!m_isSetup) {
+		fprintf(stderr, "Warning: the update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
+		return;
+	}
+
+	m_time_reorder = 0.0;
+
+	m_timer.Start();
+
+	cusp::array1d<ValueType, cusp::host_memory> B(m_B.size(), 0);
+	cusp::blas::fill(m_WV_host, 0);
+	cusp::blas::fill(m_offDiags_host, 0);
+
+	int nnz = entries.size();
+
+	for (int i=0; i < nnz; i++) {
+		if (m_typeMap[i] == 2)
+			m_offDiags_host[m_offDiagMap[i]] = m_WV_host[m_WVMap[i]] = entries[i] * m_scaleMap[i];
+		else
+			B[m_bandedMatMap[i]] = entries[i] * m_scaleMap[i];
+	}
+
+	m_timer.Stop();
+	m_time_cpu_assemble = m_timer.getElapsed();
+
+	m_timer.Start();
+	m_B = B;
+	m_timer.Stop();
+	m_time_transfer = m_timer.getElapsed();
+
+	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
+	if (m_k == 0)
+		return;
+
+
+	// If we are using a single partition, perform the LU factorization
+	// of the banded matrix and return.
+	if (m_precondMethod == Block || m_numPartitions == 1) {
+
+		m_timer.Start();
+		partBandedLU();
+		m_timer.Stop();
+		m_time_bandLU = m_timer.getElapsed();
+
+		////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
+
+		return;
+	}
+	
+	// We are using more than one partition, so we must assemble the
+	// truncated Spike reduced matrix R.
+	m_R.resize((2 * m_k) * (2 * m_k) * (m_numPartitions - 1));
+
+	// Extract off-diagonal blocks from the banded matrix and store them
+	// in the array m_offDiags.
+	Vector mat_WV;
+	mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
+
+	m_timer.Start();
+	extractOffDiagonal(mat_WV);
+	m_timer.Stop();
+	m_time_offDiags = m_timer.getElapsed();
+
+
+	switch (m_method) {
+	case LU_only:
+		// In this case, we perform the partitioned LU factorization of D
+		// and use the L and U factors to compute both the bottom of the 
+		// right spikes (using short sweeps) and the top of the left spikes
+		// (using full sweeps). Finally, we assemble the reduced matrix R.
+		{
+			m_timer.Start();
+			partBandedLU();
+			m_timer.Stop();
+			m_time_bandLU = m_timer.getElapsed();
+
+			////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
+
+			m_timer.Start();
+			calculateSpikes(mat_WV);
+			assembleReducedMat(mat_WV);
+			m_timer.Stop();
+			m_time_assembly = m_timer.getElapsed();
+		}
+
+		break;
+
+	case LU_UL:
+		// In this case, we perform the partitioned LU factorization of D
+		// and use the L and U factors to compute the bottom of the right
+		// spikes (using short sweeps).  We then perform a partitioned UL
+		// factorization, using a copy of the banded matrix, and use the 
+		// resulting U and L factors to compute the top of the left spikes
+		// (using short sweeps). Finally, we assemble the reduced matrix R.
+		{
+			Vector B2 = m_B;
+
+			cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
+
+			m_timer.Start();
+			partBandedLU();
+			m_timer.Stop();
+			m_time_bandLU = m_timer.getElapsed();
+
+			////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
+
+			m_timer.Start();
+			partBandedUL(B2);
+			m_timer.Stop();
+			m_time_bandUL = m_timer.getElapsed();
+
+			////cusp::io::write_matrix_market_file(B2, "B_ul.mtx");
+
+			cudaDeviceSetCacheConfig(cudaFuncCachePreferNone);
+
+			m_timer.Start();
+			calculateSpikes(B2, mat_WV);
+			assembleReducedMat(mat_WV);
+			copyLastPartition(B2);
+			m_timer.Stop();
+			m_time_assembly = m_timer.getElapsed();
+		}
+
+		break;
+	}
+
+	////cusp::io::write_matrix_market_file(m_B, "B_factorized.mtx");
+	////cusp::io::write_matrix_market_file(mat_WV, "WV.mtx");
+	////cusp::io::write_matrix_market_file(m_R, "R.mtx");
+
+	// Perform (in-place) LU factorization of the reduced matrix.
+	m_timer.Start();
+	partFullLU();
+	m_timer.Stop();
+	m_time_fullLU = m_timer.getElapsed();
+
+	////cusp::io::write_matrix_market_file(m_R, "R_lu.mtx");
 }
 
 // ----------------------------------------------------------------------------
@@ -740,7 +879,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	CPUTimer reorder_timer, assemble_timer, transfer_timer;
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, m_idxMap, m_scaleMap);
+	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, m_scaleMap);
 	reorder_timer.Stop();
 
 	m_time_reorder += reorder_timer.getElapsed();

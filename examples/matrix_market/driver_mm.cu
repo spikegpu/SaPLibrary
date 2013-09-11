@@ -222,7 +222,8 @@ int main(int argc, char** argv)
 	// Create the SPIKE Solver object and the SPMV functor.
 	// Set the initial guess to the zero vector.
 	SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.trackReordering);
-	for (int i=0; i<1; i++) {
+
+	for (int i=0; i<5; i++) {
 		if (i > 0) {
 			cusp::blas::axpy(A.values, A.values, 0.05);
 			cusp::blas::axpy(b, b, 0.05);
@@ -231,7 +232,11 @@ int main(int argc, char** argv)
 		SpmvFunctor  mySpmv(A);
 		Vector       x(pb.N, 0);
 
-		mySolver.setup(A);
+		if (i == 0)
+			mySolver.setup(A);
+		else
+			mySolver.update(A.values);
+
 		bool success = mySolver.solve(mySpmv, b, x);
 
 		// If an output file was specified, write the solution vector

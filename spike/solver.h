@@ -228,6 +228,8 @@ public:
 
 	bool setup(const Matrix& A);
 
+	bool update(const Vector& entries);
+
 	template <typename SpmvOperator>
 	bool solve(SpmvOperator&  spmv,
 	           const Vector&  b,
@@ -243,9 +245,12 @@ private:
 	std::vector<VectorI>			m_comp_reorderings;
 	VectorI							m_comp_perms;
 	VectorI							m_compIndices;
+	VectorI							m_compMap;
 
 	int                      m_n;
 	bool					 m_singleComponent;
+	bool					 m_trackReordering;
+	bool					 m_isSetup;
 
 	SolverStats              m_stats;
 };
@@ -325,7 +330,9 @@ Solver<Matrix, Vector>::Solver(int           numPartitions,
 :	m_monitor(maxIterations, tolerance),
 	m_precond(numPartitions, reorder, scale, dropOff_frac, method, precondMethod, safeFactorization, variousBandwidth, trackReordering),
 	m_solver(solver),
-	m_singleComponent(singleComponent)
+	m_singleComponent(singleComponent),
+	m_trackReordering(trackReordering),
+	m_isSetup(0)
 {
 }
 
@@ -361,6 +368,9 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 		numComponents = sc.m_numComponents;
 	} else
 		numComponents = 1;
+
+	if (m_trackReordering)
+		m_compMap.resize(nnz);
 
 	if (numComponents > 1) {
 		m_compIndices = sc.m_compIndices;
@@ -398,6 +408,9 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 			cur_matrix.row_indices.push_back(m_comp_perms[from]);
 			cur_matrix.column_indices.push_back(m_comp_perms[to]);
 			cur_matrix.values.push_back(Acoo.values[i]);
+
+			if (m_trackReordering)
+				m_compMap[i] = compIndex;
 		}
 
 		for (int i=0; i < numComponents; i++) {
@@ -415,6 +428,9 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 		m_comp_reorderings.resize(1);
 		m_comp_reorderings[0].resize(m_n);
 		m_comp_perms.resize(m_n);
+
+		if (m_trackReordering)
+			cusp::blas::fill(m_compMap, 0);
 
 		thrust::sequence(m_comp_perms.begin(), m_comp_perms.end());
 		thrust::sequence(m_comp_reorderings[0].begin(), m_comp_reorderings[0].end());
@@ -459,9 +475,73 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
 	}
 
+	if (m_trackReordering)
+		m_isSetup = true;
+
 	return true;
 }
 
+// ----------------------------------------------------------------------------
+// Solver::update()
+//
+// ----------------------------------------------------------------------------
+template <typename Matrix, typename Vector>
+bool
+Solver<Matrix, Vector>::update(const Vector& entries)
+{
+	if (!m_isSetup) {
+		fprintf(stderr, "Warning: the update function is NOT called due to the fact that the preconditioners have not been set up yet.\n");
+		return false;
+	}
+	CPUTimer timer;
+	timer.Start();
+
+	cusp::array1d<ValueType, cusp::host_memory> h_entries = entries;
+
+	int numComponents = m_precond_pointers.size(), nnz = h_entries.size();
+	std::vector<cusp::array1d<ValueType, cusp::host_memory> > new_entries(numComponents);
+
+	for (int i=0; i < nnz; i++)
+		new_entries[m_compMap[i]].push_back(h_entries[i]);
+
+	for (int i=0; i < numComponents; i++)
+		m_precond_pointers[i] -> update(new_entries[i]);
+
+	timer.Stop();
+
+	m_stats.timeSetup = timer.getElapsed();
+
+	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
+	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
+	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
+	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
+	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
+	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
+	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
+	m_stats.time_offDiags = m_precond_pointers[0]->getTimeCopyOffDiags();
+	m_stats.time_bandLU = m_precond_pointers[0]->getTimeBandLU();
+	m_stats.time_bandUL = m_precond_pointers[0]->getTimeBandUL();
+	m_stats.time_assembly = m_precond_pointers[0]->gettimeAssembly();
+	m_stats.time_fullLU = m_precond_pointers[0]->getTimeFullLU();
+
+	for (int i=1; i < numComponents; i++) {
+		if (m_stats.bandwidthReorder < m_precond_pointers[i]->getBandwidthReordering())
+			m_stats.bandwidthReorder = m_precond_pointers[i]->getBandwidthReordering();
+		if (m_stats.bandwidth < m_precond_pointers[i]->getBandwidth())
+			m_stats.bandwidth = m_precond_pointers[i]->getBandwidth();
+		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
+		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
+		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
+		m_stats.actualDropOff += m_precond_pointers[i]->getActualDropOff();
+		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
+		m_stats.time_offDiags += m_precond_pointers[i]->getTimeCopyOffDiags();
+		m_stats.time_bandLU += m_precond_pointers[i]->getTimeBandLU();
+		m_stats.time_bandUL += m_precond_pointers[i]->getTimeBandUL();
+		m_stats.time_assembly += m_precond_pointers[i]->gettimeAssembly();
+		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
+	}
+	return true;
+}
 
 // ----------------------------------------------------------------------------
 // Solver::solve()

@@ -127,7 +127,6 @@ public:
 
 	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMap;
 	typedef typename cusp::array1d<T, cusp::host_memory>		 MatrixMapF;
-	typedef typename std::map<int64_t, int>						 IndexMap;
 
 	SpikeGraph(bool		trackReordering = false);
 
@@ -142,7 +141,6 @@ public:
 	                   VectorI&         mc64RowPerm,
 	                   Vector&          mc64RowScale,
 	                   Vector&          mc64ColScale,
-					   IndexMap&	    idxMap,
 					   MatrixMapF&		scaleMap);
 
 	int        dropOff(T   frac,
@@ -285,7 +283,6 @@ SpikeGraph<T>::reorder(const MatrixCOO&  Acoo,
                        VectorI&          mc64RowPerm,
                        Vector&           mc64RowScale,
                        Vector&           mc64ColScale,
-					   IndexMap&	     idxMap,
 					   MatrixMapF&		 scaleMap)
 {
 	m_n = Acoo.num_rows;
@@ -295,7 +292,6 @@ SpikeGraph<T>::reorder(const MatrixCOO&  Acoo,
 	if (m_trackReordering) {
 		for (int i = 0; i < m_nnz; i++) {
 			m_edges.push_back(EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], Acoo.values[i]));
-			idxMap[(int64_t)m_edges[i].m_from * m_n + m_edges[i].m_to] = i;
 		}
 	} else {
 		for (int i = 0; i < m_nnz; i++)
