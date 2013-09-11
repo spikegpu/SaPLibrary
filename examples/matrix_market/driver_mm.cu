@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <fstream>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -52,11 +53,10 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
 	  OPT_NO_REORDERING, OPT_NO_SCALING,
 	  OPT_TOL, OPT_MAXIT,
 	  OPT_DROPOFF_FRAC, 
-	  OPT_MATFILE, OPT_RHSFILE, 
+	  OPT_MATFILE, OPT_MATLIST, OPT_RHSFILE, 
 	  OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
 	  OPT_KRYLOV, OPT_SAFE_FACT,
-	  OPT_CONST_BAND, OPT_NO_TRACK_REORDER,
-	  OPT_SINGLE_COMP};
+	  OPT_CONST_BAND, OPT_SINGLE_COMP};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -74,6 +74,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
+	{ OPT_MATLIST,		 "--matrix-list",		 SO_REQ_CMB },
 	{ OPT_RHSFILE,       "-r",                   SO_REQ_CMB },
 	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
@@ -88,7 +89,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
-	{ OPT_NO_TRACK_REORDER, "--no-track-reorder", SO_NONE	},
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
     { OPT_HELP,          "-?",                   SO_NONE    },
@@ -120,6 +120,7 @@ struct Problem {
 	string        fileMat;
 	string        fileRhs;
 	string        fileSol;
+	string		  fileMatList;
 
 	spike::SolverType    krylov;
 	spike::SolverMethod  factorization;
@@ -155,6 +156,8 @@ void PrintStats(const Problem&	   pb,
                 bool               verbose);
 
 void ClearStats(const SpikeSolver& mySolver);
+
+bool getNextNonEmptyLine(std::ifstream &fin, string &str);
 
 
 // -------------------------------------------------------------------
@@ -196,6 +199,11 @@ int main(int argc, char** argv)
 	if (pb.variousBandwidth)
 		pb.factorization = spike::LU_only;
 
+	if (pb.fileMat.length() > 0)
+		pb.trackReordering = false;
+	else
+		pb.trackReordering = true;
+
 	// Print information on the problem that will be solved.
 	if (pb.verbose)
 		PrintProblem(pb, pb.verbose);
@@ -212,7 +220,19 @@ int main(int argc, char** argv)
 	Vector x_target;
 	Vector delta_x_target;
 
-	cusp::io::read_matrix_market_file(A, pb.fileMat);
+	std::ifstream fin;
+
+	if (pb.fileMat.length() > 0)
+		cusp::io::read_matrix_market_file(A, pb.fileMat);
+	else {
+		fin.open(pb.fileMatList.data(), std::ios::in);
+		if (!getNextNonEmptyLine(fin, pb.fileMat)) {
+			fprintf(stderr, "The matrix list file %s cannot be opened or there is no matrix file specified at all.\n", pb.fileMatList.data());
+			exit(-1);
+		}
+		cusp::io::read_matrix_market_file(A, pb.fileMat);
+	}
+
 	pb.N = A.num_rows;
 	pb.nnz = A.num_entries;
 	if (pb.fileRhs.length() > 0)
@@ -242,10 +262,12 @@ int main(int argc, char** argv)
 	// SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.trackReordering);
 	SpikeSolver mySolver(solverOptions);
 
-	for (int i=0; i<5; i++) {
+	for (int i=0; ; i++) {
+
 		if (i > 0) {
-			cusp::blas::axpy(A.values, A.values, 0.05);
-			cusp::blas::axpy(b, b, 0.05);
+			if (!getNextNonEmptyLine(fin, pb.fileMat))
+				break;
+			cusp::io::read_matrix_market_file(A, pb.fileMat);
 		}
 
 		SpmvFunctor  mySpmv(A);
@@ -286,7 +308,13 @@ int main(int argc, char** argv)
 		}
 
 		ClearStats(mySolver);
+
+		if (pb.fileMat.length() == 0)
+			break;
 	}
+
+	if (fin.is_open())
+		fin.close();
 
 	// That's all folks!
 	return 0;
@@ -322,6 +350,7 @@ void spikeSetDevice() {
 	}
 
 	// fprintf(stderr, "Use Device: %d\n", max_idx);
+	std::cerr << "Use device: " << max_idx << std::endl;
 	cudaSetDevice(max_idx);
 }
 
@@ -387,7 +416,10 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 
 		case OPT_MATFILE:
 			pb.fileMat = args.OptionArg();
+			break;
 
+		case OPT_MATLIST:
+			pb.fileMatList = args.OptionArg();
 			break;
 
 		case OPT_RHSFILE:
@@ -451,15 +483,12 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 		case OPT_CONST_BAND:
 			pb.variousBandwidth = false;
 			break;
-		case OPT_NO_TRACK_REORDER:
-			pb.trackReordering = false;
-			break;
 		}
 
 	}
 
 	// If no problem was defined, show usage and exit.
-	if (pb.fileMat.length() == 0) {
+	if (pb.fileMat.length() == 0 && pb.fileMatList.length() == 0) {
 		cout << "No matrix file was defined!" << endl << endl;
 		ShowUsage();
 		return false;
@@ -476,7 +505,7 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 // -------------------------------------------------------------------
 void ShowUsage()
 {
-	cout << "Usage:  tSpike [OPTIONS]" << endl;
+	cout << "Usage:  driver_mm [OPTIONS]" << endl;
 	cout << endl;
 	cout << " -p=NUM_PARTITIONS" << endl;
 	cout << " --num-partitions=NUM_PARTITIONS" << endl;
@@ -498,6 +527,8 @@ void ShowUsage()
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
+	cout << " --matrix-list=MATLISTFILE" << endl;
+	cout << "        Specify a list of matrices (MatrixMarket format) in the file MATLISTFILE." << endl;
 	cout << " -r=RHSFILE" << endl;
 	cout << " --rhs-file=RHSFILE" << endl;
 	cout << "        Read the right-handside vector from the file RHSFILE (MatrixMarket format)." << endl;
@@ -774,3 +805,20 @@ void ClearStats(const SpikeSolver& mySolver)
 	stats.time_shuffle = 0;
 }
 
+bool getNextNonEmptyLine(std::ifstream &fin, string &str)
+{
+	if (!fin.is_open())
+		return false;
+
+	while (getline(fin, str)) {
+		int length = str.length();
+
+		if (length == 0)
+			continue;
+		
+		for (int i=0; i < length; i++)
+			if (str[i] > ' ')
+				return true;
+	}
+	return false;
+}
