@@ -218,7 +218,7 @@ public:
 		   bool			 singleComponent = false,
 	       bool          safeFactorization = false,
 	       bool          variousBandwidth = true,
-		   bool			 trackReordering = false);
+		   bool			 trackReordering = true);
 
 	Solver(const SolverOptions&	solverOptions);
 
@@ -278,7 +278,7 @@ SolverOptions::SolverOptions()
 	safeFactorization(false),
 	variousBandwidth(true),
     singleComponent(false),
-	trackReordering(false)
+	trackReordering(true)
 {
 }
 
@@ -348,7 +348,7 @@ Solver<Matrix, Vector>::Solver(int           numPartitions,
 // ----------------------------------------------------------------------------
 template <typename Matrix, typename Vector>
 Solver<Matrix, Vector>::Solver(const SolverOptions &solverOptions)
-:	m_monitor(solverOptions.maxIterations, solverOptions.tolerance),
+:	m_monitor(solverOptions.maxNumIterations, solverOptions.tolerance),
 	m_precond(solverOptions.numPartitions, solverOptions.performReorder, solverOptions.applyScaling, solverOptions.dropOffFraction, solverOptions.method, solverOptions.precondMethod, 
 			  solverOptions.safeFactorization, solverOptions.variousBandwidth, solverOptions.trackReordering),
 	m_solver(solverOptions.solverType),

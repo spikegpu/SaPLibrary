@@ -29,6 +29,7 @@ typedef typename cusp::array1d<REAL, cusp::host_memory>          VectorHost;
 
 typedef typename spike::Solver<Matrix, Vector>       SpikeSolver;
 typedef typename spike::SpmvCusp<Matrix, Vector>     SpmvFunctor;
+typedef typename spike::SolverOptions				 SolverOptions;
 
 
 // -------------------------------------------------------------------
@@ -54,7 +55,7 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
 	  OPT_MATFILE, OPT_RHSFILE, 
 	  OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
 	  OPT_KRYLOV, OPT_SAFE_FACT,
-	  OPT_VAR_BAND, OPT_TRACK_REORDER,
+	  OPT_CONST_BAND, OPT_NO_TRACK_REORDER,
 	  OPT_SINGLE_COMP};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
@@ -86,8 +87,8 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
-	{ OPT_VAR_BAND,      "--var-band",           SO_NONE    },
-	{ OPT_TRACK_REORDER, "--track-reorder",		 SO_NONE	},
+	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
+	{ OPT_NO_TRACK_REORDER, "--no-track-reorder", SO_NONE	},
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
     { OPT_HELP,          "-?",                   SO_NONE    },
@@ -174,12 +175,13 @@ int main(int argc, char** argv)
 	pb.scale = true;
 	pb.numPart = 1;
 
-	pb.factorization = spike::LU_UL;
+	pb.factorization = spike::LU_only;
 	pb.precondMethod = spike::Spike;
 	pb.singleComponent = false;
 	pb.safeFactorization = false;
-	pb.variousBandwidth = false;
+	pb.variousBandwidth = true;
 	pb.krylov = spike::BiCGStab2;
+	pb.trackReordering = true;
 
 	pb.verbose = false;
 
@@ -218,10 +220,27 @@ int main(int argc, char** argv)
 	else
 		GetRhsVector(A, b, x_target);
 
+	SolverOptions solverOptions;
+	solverOptions.numPartitions = pb.numPart;
+
+	solverOptions.solverType = pb.krylov;
+	solverOptions.maxNumIterations = pb.maxIt;
+	solverOptions.tolerance = pb.tol;
+
+	solverOptions.performReorder = pb.reorder;
+	solverOptions.applyScaling = pb.scale;
+	solverOptions.dropOffFraction = pb.fraction;
+
+	solverOptions.method = pb.factorization;
+	solverOptions.precondMethod = pb.precondMethod;
+	solverOptions.safeFactorization = pb.safeFactorization;
+	solverOptions.variousBandwidth = pb.variousBandwidth;
+	solverOptions.trackReordering = pb.trackReordering;
 
 	// Create the SPIKE Solver object and the SPMV functor.
 	// Set the initial guess to the zero vector.
-	SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.trackReordering);
+	// SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.trackReordering);
+	SpikeSolver mySolver(solverOptions);
 
 	for (int i=0; i<5; i++) {
 		if (i > 0) {
@@ -429,11 +448,11 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 			pb.safeFactorization = true;
 			break;
 
-		case OPT_VAR_BAND:
-			pb.variousBandwidth = true;
+		case OPT_CONST_BAND:
+			pb.variousBandwidth = false;
 			break;
-		case OPT_TRACK_REORDER:
-			pb.trackReordering = true;
+		case OPT_NO_TRACK_REORDER:
+			pb.trackReordering = false;
 			break;
 		}
 
@@ -493,13 +512,13 @@ void ShowUsage()
 	cout << "        METHOD=1 or METHOD=bicgstab2     use BiCGStab(2). This is the default." << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
-	cout << " --var-band" << endl;
-	cout << "        Use various-bandwidth-method to solve the problem." << endl; 
+	cout << " --const-band" << endl;
+	cout << "        Do not use various-bandwidth-method to solve the problem." << endl; 
 	cout << " -f=METHOD" << endl;
 	cout << " --factorization-method=METHOD" << endl;
 	cout << "        Specify the factorization type used to assemble the reduced matrix" << endl;
-	cout << "        METHOD=0 or METHOD=lu_ul                for both applying LU and UL.  This is the default." << endl;
-	cout << "        METHOD=1 or METHOD=lu_lu                for applying a complete LU" << endl;
+	cout << "        METHOD=0 or METHOD=lu_ul                for both applying LU and UL." << endl;
+	cout << "        METHOD=1 or METHOD=lu_lu                for applying a complete LU. This is the default." << endl;
 	cout << " --precond-method=METHOD" << endl;
 	cout << "        Specify the preconditioner to be used" << endl;
 	cout << "        METHOD=0 or METHOD=SPIKE                for using SPIKE preconditioner.  This is the default." << endl;
