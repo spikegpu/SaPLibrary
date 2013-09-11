@@ -152,6 +152,7 @@ struct SolverOptions
 	bool          safeFactorization;
 	bool          variousBandwidth;
 	bool		  singleComponent;
+	bool		  trackReordering;
 };
 
 
@@ -212,12 +213,14 @@ public:
 	       bool          scale = true,
 	       ValueType     dropOff_frac = 0,
 	       SolverType    solver = BiCGStab2,
-	       SolverMethod  method = LU_UL,
+	       SolverMethod  method = LU_only,
 	       PrecondMethod precontMethod = Spike,
 		   bool			 singleComponent = false,
 	       bool          safeFactorization = false,
-	       bool          variousBandwidth = false,
+	       bool          variousBandwidth = true,
 		   bool			 trackReordering = false);
+
+	Solver(const SolverOptions&	solverOptions);
 
 	~Solver() {
 		int numComponents = m_precond_pointers.size();
@@ -270,11 +273,12 @@ SolverOptions::SolverOptions()
 	performReorder(true),
 	applyScaling(true),
 	dropOffFraction(0),
-	method(LU_UL),
+	method(LU_only),
 	precondMethod(Spike),
 	safeFactorization(false),
-	variousBandwidth(false),
-    singleComponent(false)
+	variousBandwidth(true),
+    singleComponent(false),
+	trackReordering(false)
 {
 }
 
@@ -336,6 +340,23 @@ Solver<Matrix, Vector>::Solver(int           numPartitions,
 {
 }
 
+// ----------------------------------------------------------------------------
+// Solver::Solver()
+//
+// This is the constructor for the Solver class. This constructor takes use of
+// a SolverOption object.
+// ----------------------------------------------------------------------------
+template <typename Matrix, typename Vector>
+Solver<Matrix, Vector>::Solver(const SolverOptions &solverOptions)
+:	m_monitor(solverOptions.maxIterations, solverOptions.tolerance),
+	m_precond(solverOptions.numPartitions, solverOptions.performReorder, solverOptions.applyScaling, solverOptions.dropOffFraction, solverOptions.method, solverOptions.precondMethod, 
+			  solverOptions.safeFactorization, solverOptions.variousBandwidth, solverOptions.trackReordering),
+	m_solver(solverOptions.solverType),
+	m_singleComponent(solverOptions.singleComponent),
+	m_trackReordering(solverOptions.trackReordering),
+	m_isSetup(0)
+{
+}
 
 // ----------------------------------------------------------------------------
 // Solver::setup()
