@@ -536,6 +536,8 @@ void ShowUsage()
 	cout << " -o=OUTFILE" << endl;
 	cout << " --output-file=OUTFILE" << endl;
 	cout << "        Write the solution to the file OUTFILE (MatrixMarket format)." << endl;
+	cout << " --single-component" << endl;
+	cout << "		 Do not break the problem into several components." << endl;
 	cout << " -k=METHOD" << endl;
 	cout << " --krylov-method=METHOD" << endl;
 	cout << "        Specify the iterative Krylov solver:" << endl;
