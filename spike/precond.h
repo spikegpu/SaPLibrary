@@ -169,9 +169,6 @@ private:
 	template <typename Matrix>
 	void convertToBandedMatrix(const Matrix&  A);
 
-	template <typename Matrix>
-	void updateMatrix(const Matrix&  A);
-
 	void extractOffDiagonal(Vector& mat_WV);
 
 	void partBandedLU();
@@ -315,7 +312,7 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 }
 
 // ----------------------------------------------------------------------------
-// Precond::updateMatrix()
+// Precond::update()
 //
 // Assume we are to solve many systems with exactly the same matrix pattern.
 // When we have solved one, next time we don't bother doing permutation and 
@@ -324,29 +321,9 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 // the solver has solved at least one system.
 // ----------------------------------------------------------------------------
 template <typename Vector>
-template <typename Matrix>
-void
-Precond<Vector>::updateMatrix(const Matrix& A) {
-	cusp::coo_matrix<int, ValueType, cusp::host_memory> Acoo = A;
-	cusp::array1d<ValueType, cusp::host_memory> B(m_B.size(), 0);
-	cusp::blas::fill(m_WV_host, 0);
-	cusp::blas::fill(m_offDiags_host, 0);
-
-	int nnz = Acoo.num_entries;
-
-	for (int i=0; i < nnz; i++) {
-		if (m_typeMap[i] == 2)
-			m_offDiags_host[m_offDiagMap[i]] = m_WV_host[m_WVMap[i]] = Acoo.values[i] * m_scaleMap[i];
-		else
-			B[m_bandedMatMap[i]] = Acoo.values[i] * m_scaleMap[i];
-	}
-
-	m_B = B;
-}
-
-template <typename Vector>
 void
 Precond<Vector>::update(const cusp::array1d<ValueType, cusp::host_memory>& entries) {
+	// If setup function is not called at all, directly return from this function
 	if (!m_isSetup) {
 		fprintf(stderr, "Warning: the update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
 		return;
@@ -501,22 +478,17 @@ template <typename Matrix>
 void
 Precond<Vector>::setup(const Matrix&  A)
 {
-	if (m_isSetup) {
-		m_n = A.num_rows;
-		updateMatrix(A);
-	} else {
-		m_n = A.num_rows;
+	m_n = A.num_rows;
 
-		if (m_trackReordering)
-			m_isSetup = true;
+	if (m_trackReordering)
+		m_isSetup = true;
 
-		// Form the banded matrix based on the specified matrix, either through
-		// transformation (reordering and drop-off) or straight conversion.
-		if (m_reorder)
-			transformToBandedMatrix(A);
-		else
-			convertToBandedMatrix(A);
-	}
+	// Form the banded matrix based on the specified matrix, either through
+	// transformation (reordering and drop-off) or straight conversion.
+	if (m_reorder)
+		transformToBandedMatrix(A);
+	else
+		convertToBandedMatrix(A);
 
 	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
 	if (m_k == 0)
@@ -856,9 +828,14 @@ template <typename Matrix>
 void
 Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 {
+	CPUTimer reorder_timer, assemble_timer, transfer_timer;
+
+	transfer_timer.Start();
 	// Reorder the matrix and apply drop-off. For this, we convert the
 	// input matrix to COO format and copy it on the host.
 	cusp::coo_matrix<int, ValueType, cusp::host_memory> Acoo = A;
+	transfer_timer.Stop();
+	m_time_transfer = transfer_timer.getElapsed();
 
 	cusp::array1d<ValueType, cusp::host_memory>  B;
 	cusp::array1d<int, cusp::host_memory>        optReordering;
@@ -876,7 +853,6 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 
 	const ValueType dropMin = 1.0/100;
 
-	CPUTimer reorder_timer, assemble_timer, transfer_timer;
 
 	reorder_timer.Start();
 	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, m_scaleMap);

@@ -268,6 +268,7 @@ int main(int argc, char** argv)
 			if (!getNextNonEmptyLine(fin, pb.fileMat))
 				break;
 			cusp::io::read_matrix_market_file(A, pb.fileMat);
+			cusp::multiply(A, x_target, b);
 		}
 
 		SpmvFunctor  mySpmv(A);
@@ -309,7 +310,7 @@ int main(int argc, char** argv)
 
 		ClearStats(mySolver);
 
-		if (pb.fileMat.length() == 0)
+		if (pb.fileMatList.length() == 0)
 			break;
 	}
 
@@ -350,7 +351,7 @@ void spikeSetDevice() {
 	}
 
 	// fprintf(stderr, "Use Device: %d\n", max_idx);
-	std::cerr << "Use device: " << max_idx << std::endl;
+	std::cerr << "Use device: " << max_idx << endl;
 	cudaSetDevice(max_idx);
 }
 
