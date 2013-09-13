@@ -53,7 +53,7 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
 	  OPT_NO_REORDERING, OPT_NO_SCALING,
 	  OPT_TOL, OPT_MAXIT,
 	  OPT_DROPOFF_FRAC, 
-	  OPT_MATFILE, OPT_MATLIST, OPT_RHSFILE, 
+	  OPT_MATFILE, OPT_RHSFILE, 
 	  OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
 	  OPT_KRYLOV, OPT_SAFE_FACT,
 	  OPT_CONST_BAND, OPT_SINGLE_COMP};
@@ -74,7 +74,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
-	{ OPT_MATLIST,		 "--matrix-list",		 SO_REQ_CMB },
 	{ OPT_RHSFILE,       "-r",                   SO_REQ_CMB },
 	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
@@ -106,7 +105,6 @@ struct Problem {
 	int           N;
 	int			  nnz;
 	int           k;
-	REAL          d;
 
 	int           numPart;
 
@@ -120,7 +118,6 @@ struct Problem {
 	string        fileMat;
 	string        fileRhs;
 	string        fileSol;
-	string		  fileMatList;
 
 	spike::SolverType    krylov;
 	spike::SolverMethod  factorization;
@@ -157,9 +154,6 @@ void PrintStats(const Problem&	   pb,
 
 void ClearStats(const SpikeSolver& mySolver);
 
-bool getNextNonEmptyLine(std::ifstream &fin, string &str);
-
-
 // -------------------------------------------------------------------
 // MAIN
 // -------------------------------------------------------------------
@@ -170,7 +164,6 @@ int main(int argc, char** argv)
 	pb.N = 0;
 	pb.nnz = 0;
 	pb.k = 0;
-	pb.d = 1.0;
 	pb.maxIt = 100;
 	pb.tol = 1e-6;
 	pb.fraction = 0.0;
@@ -184,7 +177,7 @@ int main(int argc, char** argv)
 	pb.safeFactorization = false;
 	pb.variousBandwidth = true;
 	pb.krylov = spike::BiCGStab2;
-	pb.trackReordering = true;
+	pb.trackReordering = false;
 
 	pb.verbose = false;
 
@@ -198,11 +191,6 @@ int main(int argc, char** argv)
 
 	if (pb.variousBandwidth)
 		pb.factorization = spike::LU_only;
-
-	if (pb.fileMat.length() > 0)
-		pb.trackReordering = false;
-	else
-		pb.trackReordering = true;
 
 	// Print information on the problem that will be solved.
 	if (pb.verbose)
@@ -220,18 +208,7 @@ int main(int argc, char** argv)
 	Vector x_target;
 	Vector delta_x_target;
 
-	std::ifstream fin;
-
-	if (pb.fileMat.length() > 0)
-		cusp::io::read_matrix_market_file(A, pb.fileMat);
-	else {
-		fin.open(pb.fileMatList.data(), std::ios::in);
-		if (!getNextNonEmptyLine(fin, pb.fileMat)) {
-			fprintf(stderr, "The matrix list file %s cannot be opened or there is no matrix file specified at all.\n", pb.fileMatList.data());
-			exit(-1);
-		}
-		cusp::io::read_matrix_market_file(A, pb.fileMat);
-	}
+	cusp::io::read_matrix_market_file(A, pb.fileMat);
 
 	pb.N = A.num_rows;
 	pb.nnz = A.num_entries;
@@ -241,7 +218,6 @@ int main(int argc, char** argv)
 		GetRhsVector(A, b, x_target);
 
 	SolverOptions solverOptions;
-	solverOptions.numPartitions = pb.numPart;
 
 	solverOptions.solverType = pb.krylov;
 	solverOptions.maxNumIterations = pb.maxIt;
@@ -259,63 +235,21 @@ int main(int argc, char** argv)
 
 	// Create the SPIKE Solver object and the SPMV functor.
 	// Set the initial guess to the zero vector.
-	// SpikeSolver  mySolver(pb.numPart, pb.maxIt, pb.tol, pb.reorder, pb.scale, pb.fraction, pb.krylov, pb.factorization, pb.precondMethod, pb.singleComponent, pb.safeFactorization, pb.variousBandwidth, pb.trackReordering);
-	SpikeSolver mySolver(solverOptions);
+	SpikeSolver mySolver(pb.numPart, solverOptions);
 
-	for (int i=0; ; i++) {
+	SpmvFunctor  mySpmv(A);
+	Vector       x(pb.N, 0);
 
-		if (i > 0) {
-			if (!getNextNonEmptyLine(fin, pb.fileMat))
-				break;
-			cusp::io::read_matrix_market_file(A, pb.fileMat);
-			cusp::multiply(A, x_target, b);
-		}
+	mySolver.setup(A);
+	bool success = mySolver.solve(mySpmv, b, x);
 
-		SpmvFunctor  mySpmv(A);
-		Vector       x(pb.N, 0);
+	// If an output file was specified, write the solution vector
+	// in MatrixMarket format.
+	if (pb.fileSol.length() > 0)
+		cusp::io::write_matrix_market_file(x, pb.fileSol);
 
-		if (i == 0)
-			mySolver.setup(A);
-		else
-			mySolver.update(A.values);
-
-		bool success = mySolver.solve(mySpmv, b, x);
-
-		// If an output file was specified, write the solution vector
-		// in MatrixMarket format.
-		if (pb.fileSol.length() > 0)
-			cusp::io::write_matrix_market_file(x, pb.fileSol);
-
-		// Print solution statistics.
-		PrintStats(pb, success, mySolver, mySpmv, pb.verbose);
-
-		// Calculate the actual residual and its norm.
-		if (pb.verbose) {
-			Vector r(pb.N);
-			mySpmv(x, r);
-			cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
-			cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
-			cout << "|b|            = " << cusp::blas::nrm2(b) << endl;	
-
-			// If we have used a generated RHS, print the difference
-			// between the target solution and the obtained solution.
-			//    x_target <- x_target - x
-			if (pb.fileRhs.length() == 0) {
-				cout << "|x_target|     = " << cusp::blas::nrm2(x_target) << endl;
-				delta_x_target.resize(pb.N);
-				cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
-				cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
-			}
-		}
-
-		ClearStats(mySolver);
-
-		if (pb.fileMatList.length() == 0)
-			break;
-	}
-
-	if (fin.is_open())
-		fin.close();
+	// Print solution statistics.
+	PrintStats(pb, success, mySolver, mySpmv, pb.verbose);
 
 	// That's all folks!
 	return 0;
@@ -333,9 +267,9 @@ int main(int argc, char** argv)
 void spikeSetDevice() {
 	int deviceCount = 0;
 	
-	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess) {
-		cudaSetDevice(0);
-		return;
+	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount <= 0) {
+		std::cerr << "There is no available device." << endl;
+		exit(-1);
 	}
 
 	size_t max_free_size = 0;
@@ -350,7 +284,6 @@ void spikeSetDevice() {
 			}
 	}
 
-	// fprintf(stderr, "Use Device: %d\n", max_idx);
 	std::cerr << "Use device: " << max_idx << endl;
 	cudaSetDevice(max_idx);
 }
@@ -419,10 +352,6 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 			pb.fileMat = args.OptionArg();
 			break;
 
-		case OPT_MATLIST:
-			pb.fileMatList = args.OptionArg();
-			break;
-
 		case OPT_RHSFILE:
 			pb.fileRhs = args.OptionArg();
 			break;
@@ -489,7 +418,7 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 	}
 
 	// If no problem was defined, show usage and exit.
-	if (pb.fileMat.length() == 0 && pb.fileMatList.length() == 0) {
+	if (pb.fileMat.length() == 0) {
 		cout << "No matrix file was defined!" << endl << endl;
 		ShowUsage();
 		return false;
@@ -528,8 +457,6 @@ void ShowUsage()
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
-	cout << " --matrix-list=MATLISTFILE" << endl;
-	cout << "        Specify a list of matrices (MatrixMarket format) in the file MATLISTFILE." << endl;
 	cout << " -r=RHSFILE" << endl;
 	cout << " --rhs-file=RHSFILE" << endl;
 	cout << "        Read the right-handside vector from the file RHSFILE (MatrixMarket format)." << endl;
@@ -806,22 +733,4 @@ void ClearStats(const SpikeSolver& mySolver)
 	stats.time_fullLU = 0;
 	stats.timeSolve = 0;
 	stats.time_shuffle = 0;
-}
-
-bool getNextNonEmptyLine(std::ifstream &fin, string &str)
-{
-	if (!fin.is_open())
-		return false;
-
-	while (getline(fin, str)) {
-		int length = str.length();
-
-		if (length == 0)
-			continue;
-		
-		for (int i=0; i < length; i++)
-			if (str[i] > ' ')
-				return true;
-	}
-	return false;
 }

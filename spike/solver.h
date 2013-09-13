@@ -137,8 +137,6 @@ struct SolverOptions
 {
 	SolverOptions();
 
-	int           numPartitions;
-	
 	SolverType    solverType;
 	int           maxNumIterations;
 	double        tolerance;
@@ -206,21 +204,8 @@ public:
 	typedef typename cusp::coo_matrix<int, ValueType, cusp::host_memory> MatrixCOO;
 	typedef typename cusp::array1d<int, cusp::host_memory>	VectorI;
 
-	Solver(int           numPartitions,
-	       int           maxIterations = 100,
-	       ValueType     tolerance = 1e-6,
-	       bool          reorder = true,
-	       bool          scale = true,
-	       ValueType     dropOff_frac = 0,
-	       SolverType    solver = BiCGStab2,
-	       SolverMethod  method = LU_only,
-	       PrecondMethod precontMethod = Spike,
-		   bool			 singleComponent = false,
-	       bool          safeFactorization = false,
-	       bool          variousBandwidth = true,
-		   bool			 trackReordering = true);
-
-	Solver(const SolverOptions&	solverOptions);
+	Solver(int					numPartitions,
+		   const SolverOptions&	solverOptions);
 
 	~Solver() {
 		int numComponents = m_precond_pointers.size();
@@ -253,7 +238,7 @@ private:
 	int                      m_n;
 	bool					 m_singleComponent;
 	bool					 m_trackReordering;
-	bool					 m_isSetup;
+	bool					 m_setupDone;
 
 	SolverStats              m_stats;
 };
@@ -266,8 +251,7 @@ private:
 // all options.
 // ----------------------------------------------------------------------------
 SolverOptions::SolverOptions()
-:	numPartitions(1),
-	solverType(BiCGStab2),
+:   solverType(BiCGStab2),
 	maxNumIterations(100),
 	tolerance(1e-6),
 	performReorder(true),
@@ -311,35 +295,6 @@ SolverStats::SolverStats()
 {
 }
 
-
-// ----------------------------------------------------------------------------
-// Solver::Solver()
-//
-// This is the constructor for the Solver class.
-// ----------------------------------------------------------------------------
-template <typename Matrix, typename Vector>
-Solver<Matrix, Vector>::Solver(int           numPartitions,
-                               int           maxIterations,
-                               ValueType     tolerance,
-                               bool          reorder,
-                               bool          scale,
-                               ValueType     dropOff_frac,
-                               SolverType    solver,
-                               SolverMethod  method,
-                               PrecondMethod precondMethod,
-							   bool			 singleComponent,
-                               bool          safeFactorization,
-                               bool          variousBandwidth,
-							   bool			 trackReordering)
-:	m_monitor(maxIterations, tolerance),
-	m_precond(numPartitions, reorder, scale, dropOff_frac, method, precondMethod, safeFactorization, variousBandwidth, trackReordering),
-	m_solver(solver),
-	m_singleComponent(singleComponent),
-	m_trackReordering(trackReordering),
-	m_isSetup(0)
-{
-}
-
 // ----------------------------------------------------------------------------
 // Solver::Solver()
 //
@@ -347,14 +302,15 @@ Solver<Matrix, Vector>::Solver(int           numPartitions,
 // a SolverOption object.
 // ----------------------------------------------------------------------------
 template <typename Matrix, typename Vector>
-Solver<Matrix, Vector>::Solver(const SolverOptions &solverOptions)
+Solver<Matrix, Vector>::Solver(int					numPartitions,
+							   const SolverOptions &solverOptions)
 :	m_monitor(solverOptions.maxNumIterations, solverOptions.tolerance),
-	m_precond(solverOptions.numPartitions, solverOptions.performReorder, solverOptions.applyScaling, solverOptions.dropOffFraction, solverOptions.method, solverOptions.precondMethod, 
+	m_precond(numPartitions, solverOptions.performReorder, solverOptions.applyScaling, solverOptions.dropOffFraction, solverOptions.method, solverOptions.precondMethod, 
 			  solverOptions.safeFactorization, solverOptions.variousBandwidth, solverOptions.trackReordering),
 	m_solver(solverOptions.solverType),
 	m_singleComponent(solverOptions.singleComponent),
 	m_trackReordering(solverOptions.trackReordering),
-	m_isSetup(0)
+	m_setupDone(0)
 {
 }
 
@@ -496,9 +452,7 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
 	}
 
-	if (m_trackReordering)
-		m_isSetup = true;
-
+	m_setupDone = true;
 	return true;
 }
 
@@ -510,10 +464,16 @@ template <typename Matrix, typename Vector>
 bool
 Solver<Matrix, Vector>::update(const Vector& entries)
 {
-	if (!m_isSetup) {
-		fprintf(stderr, "Warning: the update function is NOT called due to the fact that the preconditioners have not been set up yet.\n");
+	if (!m_setupDone) {
+		fprintf(stderr, "The update function is NOT called due to the fact that the preconditioners have not been set up yet.\n");
 		return false;
 	}
+
+	if (!m_trackReordering) {
+		fprintf(stderr, "The update function is NOT called due to the fact that no reordering information is tracked during setup.\n");
+		return false;
+	}
+
 	CPUTimer timer;
 	timer.Start();
 
