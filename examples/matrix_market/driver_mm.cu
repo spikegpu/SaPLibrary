@@ -126,7 +126,6 @@ struct Problem {
 	bool		  singleComponent;
 	bool          safeFactorization;
 	bool		  variousBandwidth;
-	bool		  trackReordering;
 
 	bool          verbose;
 };
@@ -177,7 +176,6 @@ int main(int argc, char** argv)
 	pb.safeFactorization = false;
 	pb.variousBandwidth = true;
 	pb.krylov = spike::BiCGStab2;
-	pb.trackReordering = false;
 
 	pb.verbose = false;
 
@@ -231,7 +229,7 @@ int main(int argc, char** argv)
 	solverOptions.precondMethod = pb.precondMethod;
 	solverOptions.safeFactorization = pb.safeFactorization;
 	solverOptions.variousBandwidth = pb.variousBandwidth;
-	solverOptions.trackReordering = pb.trackReordering;
+	solverOptions.trackReordering = false;
 
 	// Create the SPIKE Solver object and the SPMV functor.
 	// Set the initial guess to the zero vector.
