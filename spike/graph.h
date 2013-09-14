@@ -104,12 +104,12 @@ public:
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph
+// Graph
 //
 // This class...
 // ----------------------------------------------------------------------------
 template <typename T>
-class SpikeGraph
+class Graph
 {
 public:
 	typedef typename cusp::coo_matrix<int, T, cusp::host_memory> MatrixCOO;
@@ -128,7 +128,7 @@ public:
 	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMap;
 	typedef typename cusp::array1d<T, cusp::host_memory>		 MatrixMapF;
 
-	SpikeGraph(bool		trackReordering = false);
+	Graph(bool		trackReordering = false);
 
 	double  getTimeMC64() const     {return m_timeMC64;}
 	double  getTimeRCM() const      {return m_timeRCM;}
@@ -141,30 +141,29 @@ public:
 	                   VectorI&         mc64RowPerm,
 	                   Vector&          mc64RowScale,
 	                   Vector&          mc64ColScale,
-					   MatrixMapF&		scaleMap);
+	                   MatrixMapF&      scaleMap);
 
 	int        dropOff(T   frac,
 	                   T&  frac_actual);
-	int		   dropOff(T   frac,
-                       T&  frac_actual,
-					   T   dropMin);
+	int        dropOff(T   frac,
+	                   T&  frac_actual,
+	                   T   dropMin);
 	void	   dropOffPost(T   frac,
-                       T&  frac_actual,
-					   T   dropMin,
-					   int numPartitions);
+	                   T&  frac_actual,
+	                   T   dropMin,
+	                   int numPartitions);
 
-	void       assembleOffDiagMatrices(int       bandwidth,
-	                                   int       numPartitions,
-	                                   Vector&   WV_host,
-	                                   Vector&   offDiags_host,
-	                                   VectorI&  offDiagWidths_left,
-									   VectorI&	 offDiagWidths_right,
-                                       VectorI&  offDiagPerms_left,
-                                       VectorI&  offDiagPerms_right,
-									   MatrixMap& typeMap,
-									   MatrixMap& offDiagMap,
-									   MatrixMap& WVMap
-									   );
+	void       assembleOffDiagMatrices(int        bandwidth,
+	                                   int        numPartitions,
+	                                   Vector&    WV_host,
+	                                   Vector&    offDiags_host,
+	                                   VectorI&   offDiagWidths_left,
+	                                   VectorI&   offDiagWidths_right,
+	                                   VectorI&   offDiagPerms_left,
+	                                   VectorI&   offDiagPerms_right,
+	                                   MatrixMap& typeMap,
+	                                   MatrixMap& offDiagMap,
+	                                   MatrixMap& WVMap);
 
 	void       secondLevelReordering(int         bandwidth,
 	                                 int         numPartitions,
@@ -172,22 +171,22 @@ public:
 	                                 VectorI&    secondPerm,
 	                                 VectorI&    first_rows);
 
-	void       assembleBandedMatrix(int       bandwidth,
-									VectorI&  ks_col,
-									VectorI&  ks_row,
-	                                Vector&   B,
-									MatrixMap& typeMap,
-									MatrixMap& bandedMatMap);
+	void       assembleBandedMatrix(int        bandwidth,
+	                                VectorI&   ks_col,
+	                                VectorI&   ks_row,
+	                                Vector&    B,
+	                                MatrixMap& typeMap,
+	                                MatrixMap& bandedMatMap);
 
-	void       assembleBandedMatrix(int       bandwidth,
-	                                int       numPartitions,
-									VectorI&  ks_col,
-									VectorI&  ks_row,
-	                                Vector&   B,
-	                                VectorI&  ks,
-	                                VectorI&  BOffsets,
-									MatrixMap& typeMap,
-									MatrixMap& bandedMatMap);
+	void       assembleBandedMatrix(int        bandwidth,
+	                                int        numPartitions,
+	                                VectorI&   ks_col,
+	                                VectorI&   ks_row,
+	                                Vector&    B,
+	                                VectorI&   ks,
+	                                VectorI&   BOffsets,
+	                                MatrixMap& typeMap,
+	                                MatrixMap& bandedMatMap);
 
 private:
 	int           m_n;
@@ -197,19 +196,19 @@ private:
 
 	EdgeIterator  m_first;
 
-	bool		  m_trackReordering;
+	bool          m_trackReordering;
 
 	double        m_timeMC64;
 	double        m_timeRCM;
 	double        m_timeDropoff;
 
-	VectorB		  m_exists;
+	VectorB       m_exists;
 
-	bool       MC64(bool      scale,
-	                VectorI&  mc64RowPerm,
-	                Vector&   mc64RowScale,
-	                Vector&   mc64ColScale,
-					MatrixMapF& scaleMap);
+	bool       MC64(bool        scale,
+	                VectorI&    mc64RowPerm,
+	                Vector&     mc64RowScale,
+	                Vector&     mc64ColScale,
+	                MatrixMapF& scaleMap);
 
 	int        RCM(EdgeVector&  edges,
 	               VectorI&     optReordering,
@@ -222,10 +221,10 @@ private:
 	                          VectorI&       optReordering,
 	                          VectorI&       optPerm);
 
-	void	   buildTopology(EdgeIterator&	  begin,
-							 EdgeIterator&	  end,
-							 VectorI&		  degrees,
-							 std::vector<int>*	   in_out_graph);
+	void       buildTopology(EdgeIterator&      begin,
+	                         EdgeIterator&      end,
+	                         VectorI&           degrees,
+	                         std::vector<int>*  in_out_graph);
 
 	static const T LOC_INFINITY;
 
@@ -233,8 +232,8 @@ private:
 	void       find_minimum_match(VectorI&  mc64RowPerm,
 	                              Vector&   mc64RowScale,
 	                              Vector&   mc64ColScale);
-	void       init_reduced_cval(VectorI& row_ptr, 
-	                             VectorI& rows, 
+	void       init_reduced_cval(VectorI& row_ptr,
+	                             VectorI& rows,
 	                             Vector& c_val, Vector& u_val, Vector& v_val, 
 	                             VectorI& match_nodes, VectorI& rev_match_nodes,
 	                             VectorI& matched, VectorI& rev_matched);
@@ -249,16 +248,16 @@ private:
 
 
 template <typename T>
-const T SpikeGraph<T>::LOC_INFINITY = 1e37;
+const T Graph<T>::LOC_INFINITY = 1e37;
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::SpikeGraph()
+// Graph::Graph()
 //
-// This is the constructor for the SpikeGraph class...
+// This is the constructor for the Graph class...
 // ----------------------------------------------------------------------------
 template <typename T>
-SpikeGraph<T>::SpikeGraph(bool trackReordering)
+Graph<T>::Graph(bool trackReordering)
 :	m_timeMC64(0),
 	m_timeRCM(0),
 	m_timeDropoff(0),
@@ -268,7 +267,7 @@ SpikeGraph<T>::SpikeGraph(bool trackReordering)
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::reorder()
+// Graph::reorder()
 //
 // This function applied various reordering algorithms to the specified matrix
 // (assumed to be in COO format and on the host) for bandwidth reduction and
@@ -276,14 +275,14 @@ SpikeGraph<T>::SpikeGraph(bool trackReordering)
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-SpikeGraph<T>::reorder(const MatrixCOO&  Acoo,
-                       bool              scale,
-                       VectorI&          optReordering,
-                       VectorI&          optPerm,
-                       VectorI&          mc64RowPerm,
-                       Vector&           mc64RowScale,
-                       Vector&           mc64ColScale,
-					   MatrixMapF&		 scaleMap)
+Graph<T>::reorder(const MatrixCOO&  Acoo,
+                  bool              scale,
+                  VectorI&          optReordering,
+                  VectorI&          optPerm,
+                  VectorI&          mc64RowPerm,
+                  Vector&           mc64RowScale,
+                  Vector&           mc64ColScale,
+                  MatrixMapF&       scaleMap)
 {
 	m_n = Acoo.num_rows;
 	m_nnz = Acoo.num_entries;
@@ -376,7 +375,7 @@ struct PermApplier
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::dropOff()
+// Graph::dropOff()
 //
 // This function identifies the elements that can be removed in the reordered
 // matrix while reducing the Frobenius norm by no more than the specified
@@ -389,8 +388,8 @@ struct PermApplier
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-SpikeGraph<T>::dropOff(T   frac,
-                       T&  frac_actual)
+Graph<T>::dropOff(T   frac,
+                  T&  frac_actual)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -445,7 +444,7 @@ SpikeGraph<T>::dropOff(T   frac,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::dropOff()
+// Graph::dropOff()
 //
 // This function is similar with the one which specifies the maximum fraction
 // to drop off, but differs in the fact that it only drops elements no larger
@@ -454,9 +453,9 @@ SpikeGraph<T>::dropOff(T   frac,
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-SpikeGraph<T>::dropOff(T   frac,
-                       T&  frac_actual,
-					   T   dropMin)
+Graph<T>::dropOff(T   frac,
+                  T&  frac_actual,
+                  T   dropMin)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -522,7 +521,7 @@ SpikeGraph<T>::dropOff(T   frac,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::dropOffPost()
+// Graph::dropOffPost()
 //
 // (Working for second-stage reordering only) This function drops more element
 // inside the envelop, in the hope that the half-bandwidth can be reduced further
@@ -530,10 +529,10 @@ SpikeGraph<T>::dropOff(T   frac,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-SpikeGraph<T>::dropOffPost(T   frac,
-                       T&  frac_actual,
-					   T   dropMin,
-					   int numPartitions)
+Graph<T>::dropOffPost(T   frac,
+                      T&  frac_actual,
+                      T   dropMin,
+                      int numPartitions)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -598,25 +597,24 @@ SpikeGraph<T>::dropOffPost(T   frac,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::assembleOffDiagMatrices()
+// Graph::assembleOffDiagMatrices()
 //
 // This function finds all non-zeroes in off-diagonal matrices and assemble
 // off-diagonal matrices.
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-SpikeGraph<T>::assembleOffDiagMatrices(int       bandwidth,
-                                       int       numPartitions,
-                                       Vector&   WV_host,
-                                       Vector&   offDiags_host,
-                                       VectorI&  offDiagWidths_left,
-                                       VectorI&  offDiagWidths_right,
-                                       VectorI&  offDiagPerms_left,
-                                       VectorI&  offDiagPerms_right,
-									   MatrixMap& typeMap,
-									   MatrixMap& offDiagMap,
-									   MatrixMap& WVMap
-									   )
+Graph<T>::assembleOffDiagMatrices(int        bandwidth,
+                                  int        numPartitions,
+                                  Vector&    WV_host,
+                                  Vector&    offDiags_host,
+                                  VectorI&   offDiagWidths_left,
+                                  VectorI&   offDiagWidths_right,
+                                  VectorI&   offDiagPerms_left,
+                                  VectorI&   offDiagPerms_right,
+                                  MatrixMap& typeMap,
+                                  MatrixMap& offDiagMap,
+                                  MatrixMap& WVMap)
 {
 	if (WV_host.size() != 2*bandwidth*bandwidth*(numPartitions-1)) {
 		WV_host.resize(2*bandwidth*bandwidth*(numPartitions-1), 0);
@@ -728,7 +726,7 @@ SpikeGraph<T>::assembleOffDiagMatrices(int       bandwidth,
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::secondLevelReordering()
+// Graph::secondLevelReordering()
 //
 // This function applies the second-stage reordering if the flags ``m_reorder''
 // and ``m_secondLevelReordering'' are both true. Second-level reordering is
@@ -736,11 +734,11 @@ SpikeGraph<T>::assembleOffDiagMatrices(int       bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-SpikeGraph<T>::secondLevelReordering(int       bandwidth,
-                                     int       numPartitions,
-                                     VectorI&  secondReorder,
-                                     VectorI&  secondPerm,
-                                     VectorI&  first_rows)
+Graph<T>::secondLevelReordering(int       bandwidth,
+                                int       numPartitions,
+                                VectorI&  secondReorder,
+                                VectorI&  secondPerm,
+                                VectorI&  first_rows)
 {
 	{
 		secondPerm.resize(m_n);
@@ -800,7 +798,7 @@ SpikeGraph<T>::secondLevelReordering(int       bandwidth,
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::assembleBandedMatrix()
+// Graph::assembleBandedMatrix()
 //
 // These functions assemble the Spike banded matrix using current information
 // in the graph. The first version creates a banded matrix of constant
@@ -809,12 +807,12 @@ SpikeGraph<T>::secondLevelReordering(int       bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-SpikeGraph<T>::assembleBandedMatrix(int       bandwidth,
-									VectorI&  ks_col,
-									VectorI&  ks_row,
-                                    Vector&   B,
-									MatrixMap& typeMap,
-									MatrixMap& bandedMatMap)
+Graph<T>::assembleBandedMatrix(int        bandwidth,
+                               VectorI&   ks_col,
+                               VectorI&   ks_row,
+                               Vector&    B,
+                               MatrixMap& typeMap,
+                               MatrixMap& bandedMatMap)
 {
 	// Drop all edges from begin() to 'first'; i.e., keep all edges from
 	// 'first' to end().
@@ -870,15 +868,15 @@ SpikeGraph<T>::assembleBandedMatrix(int       bandwidth,
 
 template <typename T>
 void
-SpikeGraph<T>::assembleBandedMatrix(int       bandwidth,
-                                    int       numPartitions,
-									VectorI&  ks_col,
-									VectorI&  ks_row,
-                                    Vector&   B,
-                                    VectorI&  ks,
-                                    VectorI&  BOffsets,
-									MatrixMap& typeMap,
-									MatrixMap& bandedMatMap)
+Graph<T>::assembleBandedMatrix(int        bandwidth,
+                               int        numPartitions,
+                               VectorI&   ks_col,
+                               VectorI&   ks_row,
+                               Vector&    B,
+                               VectorI&   ks,
+                               VectorI&   BOffsets,
+                               MatrixMap& typeMap,
+                               MatrixMap& bandedMatMap)
 {
 	ks.resize(numPartitions);
 	BOffsets.resize(numPartitions);
@@ -972,17 +970,17 @@ SpikeGraph<T>::assembleBandedMatrix(int       bandwidth,
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::MC64()
+// Graph::MC64()
 //
 // This function performs the mc64 reordering algorithm...
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-SpikeGraph<T>::MC64(bool      scale,
-                    VectorI&  mc64RowPerm,
-                    Vector&   mc64RowScale,
-                    Vector&   mc64ColScale,
-					MatrixMapF& scaleMap)
+Graph<T>::MC64(bool        scale,
+               VectorI&    mc64RowPerm,
+               Vector&     mc64RowScale,
+               Vector&     mc64ColScale,
+               MatrixMapF& scaleMap)
 {
 	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
 
@@ -1009,7 +1007,7 @@ SpikeGraph<T>::MC64(bool      scale,
 
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::RCM()
+// Graph::RCM()
 //
 // This function implements the Reverse Cuthill-McKee algorithm...
 // The return value is the obtained bandwidth. A value of -1 is returned if
@@ -1017,9 +1015,9 @@ SpikeGraph<T>::MC64(bool      scale,
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-SpikeGraph<T>::RCM(EdgeVector&  edges,
-                   VectorI&     optReordering,
-                   VectorI&     optPerm)
+Graph<T>::RCM(EdgeVector&  edges,
+              VectorI&     optReordering,
+              VectorI&     optPerm)
 {
 	optReordering.resize(m_n);
 	optPerm.resize(m_n);
@@ -1167,19 +1165,19 @@ SpikeGraph<T>::RCM(EdgeVector&  edges,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::partitionedRCM()
+// Graph::partitionedRCM()
 //
 // This function implements the second-level Reverse Cuthill-McKee algorithm,
 // dealing with a specified partition
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-SpikeGraph<T>::partitionedRCM(EdgeIterator&  begin,
-                              EdgeIterator&  end,
-                              int            node_begin,
-                              int            node_end,
-                              VectorI&       optReordering,
-                              VectorI&       optPerm)
+Graph<T>::partitionedRCM(EdgeIterator&  begin,
+                         EdgeIterator&  end,
+                         int            node_begin,
+                         int            node_end,
+                         VectorI&       optReordering,
+                         VectorI&       optPerm)
 {
 	static std::vector<int> tmp_reordering;
 	tmp_reordering.resize(m_n);
@@ -1315,16 +1313,17 @@ SpikeGraph<T>::partitionedRCM(EdgeIterator&  begin,
 }
 
 //	--------------------------------------------------------------------------
-//	SpikeGraph::buildTopology()
+//	Graph::buildTopology()
 //
 //	This function builds the topology for the graph for RCM processing
 //	--------------------------------------------------------------------------
 template <typename T>
 void
-SpikeGraph<T>::buildTopology(EdgeIterator&		   begin,
-							 EdgeIterator&		   end,
-							 VectorI&			   degrees,
-							 std::vector<int>*	   in_out_graph) {
+Graph<T>::buildTopology(EdgeIterator&      begin,
+                        EdgeIterator&      end,
+                        VectorI&           degrees,
+                        std::vector<int>*  in_out_graph)
+{
 	for(EdgeIterator edgeIt = begin; edgeIt != end; edgeIt++) {
 		int from = edgeIt -> m_from, to = edgeIt -> m_to;
 		if (from != to) {
@@ -1337,25 +1336,25 @@ SpikeGraph<T>::buildTopology(EdgeIterator&		   begin,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::find_minimum_match()
-// SpikeGraph::get_csc_matrix
-// SpikeGraph::init_reduced_cval
-// SpikeGraph::find_shortest_aug_path
+// Graph::find_minimum_match()
+// Graph::get_csc_matrix
+// Graph::init_reduced_cval
+// Graph::find_shortest_aug_path
 //
 // These are the worker functions for the MC64 algorithm.
 // ----------------------------------------------------------------------------
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::find_minimum_match()
+// Graph::find_minimum_match()
 //
 // This is the entry function of the core part of MC64 algorithm, which reorders
 // the matrix by finding the minimum match of a bipartite graph.
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-SpikeGraph<T>::find_minimum_match(VectorI&  mc64RowPerm,
-                                  Vector&   mc64RowScale,
-                                  Vector&   mc64ColScale)
+Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
+                             Vector&   mc64RowScale,
+                             Vector&   mc64ColScale)
 {
 	// Allocate space for the output vectors.
 	mc64RowPerm.resize(m_n, 0);
@@ -1396,7 +1395,7 @@ SpikeGraph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::get_csc_matrix()
+// Graph::get_csc_matrix()
 //
 // This function initializes the bipartite graph used in MC64. By specially
 // assigning weights on edges, MC64 can vary (this version is option 5 in intel's
@@ -1404,10 +1403,10 @@ SpikeGraph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-SpikeGraph<T>::get_csc_matrix(VectorI&  row_ptr,
-                              VectorI&  rows,
-                              Vector&   c_val,
-                              Vector&   max_val_in_col)
+Graph<T>::get_csc_matrix(VectorI&  row_ptr,
+                         VectorI&  rows,
+                         Vector&   c_val,
+                         Vector&   max_val_in_col)
 {
 	cusp::blas::fill(c_val, LOC_INFINITY);
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
@@ -1430,22 +1429,22 @@ SpikeGraph<T>::get_csc_matrix(VectorI&  row_ptr,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::init_reduced_cval()
+// Graph::init_reduced_cval()
 //
 // This function assigns a (partial) match for speeding up MC64. If this function
 // were not to be called, we should start from zero: no match found at the beginning.
 // ----------------------------------------------------------------------------
 template <typename T>
 void 
-SpikeGraph<T>::init_reduced_cval(VectorI&  row_ptr,
-                                 VectorI&  rows,
-                                 Vector&   c_val,
-                                 Vector&   u_val,
-                                 Vector&   v_val,
-                                 VectorI&  match_nodes,
-                                 VectorI&  rev_match_nodes,
-                                 VectorI&  matched,
-                                 VectorI&  rev_matched) 
+Graph<T>::init_reduced_cval(VectorI&  row_ptr,
+                            VectorI&  rows,
+                            Vector&   c_val,
+                            Vector&   u_val,
+                            Vector&   v_val,
+                            VectorI&  match_nodes,
+                            VectorI&  rev_match_nodes,
+                            VectorI&  matched,
+                            VectorI&  rev_matched) 
 {
 	int i, j;
 	cusp::blas::fill(u_val, LOC_INFINITY);
@@ -1494,26 +1493,26 @@ SpikeGraph<T>::init_reduced_cval(VectorI&  row_ptr,
 }
 
 // ----------------------------------------------------------------------------
-// SpikeGraph::find_shortest_aug_path()
+// Graph::find_shortest_aug_path()
 //
 // The core part of the algorithm of finding minimum match: finding the shortest
 // augmenting path and applying it.
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-SpikeGraph<T>::find_shortest_aug_path(int       init_node,
-                                      VectorI&  matched,
-                                      VectorI&  rev_matched,
-                                      VectorI&  match_nodes,
-                                      VectorI&  rev_match_nodes,
-                                      VectorI&  row_ptr,
-                                      VectorI&  rows,
-                                      VectorI&  prev,
-                                      Vector&   u_val,
-                                      Vector&   v_val,
-                                      Vector&   c_val,
-                                      bool&     success,
-                                      VectorI&  irn) 
+Graph<T>::find_shortest_aug_path(int       init_node,
+                                 VectorI&  matched,
+                                 VectorI&  rev_matched,
+                                 VectorI&  match_nodes,
+                                 VectorI&  rev_match_nodes,
+                                 VectorI&  row_ptr,
+                                 VectorI&  rows,
+                                 VectorI&  prev,
+                                 Vector&   u_val,
+                                 Vector&   v_val,
+                                 Vector&   c_val,
+                                 bool&     success,
+                                 VectorI&  irn) 
 {
 	success = false;
 

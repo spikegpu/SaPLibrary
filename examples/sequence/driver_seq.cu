@@ -16,12 +16,10 @@
 // -----------------------------------------------------------------------------
 typedef double REAL;
 
-typedef cusp::device_memory MEMORY;
-typedef typename cusp::csr_matrix<int, REAL, MEMORY>      Matrix;
-typedef typename cusp::array1d<REAL, MEMORY>              Vector;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Matrix, Vector>       SpikeSolver;
-typedef typename spike::SolverOptions				 SolverOptions;
+typedef typename spike::Solver<Matrix, Vector> SpikeSolver;
 
 
 // -----------------------------------------------------------------------------
@@ -96,14 +94,14 @@ void ShowUsage();
 
 void spikeSetDevice();
 
-bool GetProblemSpecs(int                   argc, 
-                     char**                argv,
-                     string&               fileMat,
-                     int&                  numPart,
-                     spike::SolverOptions& opts);
+bool GetProblemSpecs(int             argc, 
+                     char**          argv,
+                     string&         fileMat,
+                     int&            numPart,
+                     spike::Options& opts);
 
-void PrintStats(bool               success,
-	            const SpikeSolver& solver);
+void PrintStats(bool                success,
+                const spike::Stats& stats);
 
 
 
@@ -113,9 +111,9 @@ void PrintStats(bool               success,
 int main(int argc, char** argv) 
 {
 	// Set up the problem to be solved.
-	string               fileMat;
-	int                  numPart;
-	spike::SolverOptions opts;
+	string         fileMat;
+	int            numPart;
+	spike::Options opts;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, numPart, opts))
 		return 1;
@@ -211,11 +209,11 @@ void spikeSetDevice() {
 // to be solved.
 // -----------------------------------------------------------------------------
 bool
-GetProblemSpecs(int                   argc, 
-                char**                argv,
-                string&               fileMat,
-                int&                  numPart,
-                spike::SolverOptions& opts)
+GetProblemSpecs(int             argc, 
+                char**          argv,
+                string&         fileMat,
+                int&            numPart,
+                spike::Options& opts)
 {
 	opts.solverType = spike::BiCGStab2;
 	opts.precondMethod = spike::Spike;
@@ -328,7 +326,7 @@ void ShowUsage()
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
 	cout << "        Frobenius norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
 	cout << " --single-component" << endl;
-	cout << "		 Do not break the problem into several components." << endl;
+	cout << "        Do not break the problem into several components." << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " -? -h --help" << endl;
@@ -342,11 +340,9 @@ void ShowUsage()
 //
 // This function prints solver statistics.
 // -----------------------------------------------------------------------------
-void PrintStats(bool               success,
-                const SpikeSolver& solver)
+void PrintStats(bool                success,
+                const spike::Stats& stats)
 {
-	const spike::SolverStats& stats = solver.getStats();
-
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;
 

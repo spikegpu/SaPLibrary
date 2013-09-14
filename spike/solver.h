@@ -3,7 +3,6 @@
 
 #include <limits>
 #include <vector>
-#include <map>
 
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
@@ -16,6 +15,7 @@
 #include <thrust/functional.h>
 
 #include <spike/common.h>
+#include <spike/components.h>
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
@@ -25,117 +25,15 @@
 
 namespace spike {
 
-// ----------------------------------------------------------------------------
-// SolverComponent
-//
-// This structure breaks the original matrix into components and the following
-// stage can deal with each component.
-// ----------------------------------------------------------------------------
-struct SolverComponents
-{
-	typedef typename cusp::array1d<int, cusp::host_memory> VectorI;
-
-	VectorI		m_compIndices;
-	int			m_n;
-	int			m_numComponents;
-
-	SolverComponents(int n);
-
-	int			getComponentIndex(int node);
-	void		combineComponents(int node1, int node2);
-
-	void		adjustComponentIndices();
-};
-
-SolverComponents::SolverComponents(int n)
-	:m_n(n)
-{
-	m_compIndices.resize(m_n);
-	thrust::sequence(m_compIndices.begin(), m_compIndices.end());
-	m_numComponents = m_n;
-}
-
-int SolverComponents::getComponentIndex(int node)
-{
-	if (m_compIndices[node] == node)
-		return node;
-
-	m_compIndices[node] = getComponentIndex(m_compIndices[node]);
-	return m_compIndices[node];
-}
-
-void SolverComponents::combineComponents(int node1, int node2)
-{
-	int r1 = getComponentIndex(node1), r2 = getComponentIndex(node2);
-
-	if (r1 != r2) {
-		m_compIndices[r1] = r2;
-		m_numComponents --;
-	}
-}
-
-void SolverComponents::adjustComponentIndices()
-{
-	for (int i = 0; i < m_n; i++)
-		m_compIndices[i] = getComponentIndex(i);
-
-	std::map<int, int> compIndicesMapping;
-	VectorI			   compCounts(m_numComponents, 0);
-
-	int cur_count = 0;
-	for (int i = 0; i < m_n; i++) {
-		int compIndex = m_compIndices[i];
-		if (compIndicesMapping.find(compIndex) == compIndicesMapping.end())
-			m_compIndices[i] = compIndicesMapping[compIndex] = (++cur_count);
-		else
-			m_compIndices[i] = compIndicesMapping[compIndex];
-
-		compCounts[--m_compIndices[i]]++;
-	}
-
-	int numComponents = m_numComponents;
-
-	bool found = false;
-	int selected = -1;
-	for (int i = 0; i < m_numComponents; i++) {
-		if (compCounts[i] == 1) {
-			numComponents --;
-			if (! found) {
-				found = true;
-				selected = i;
-			}
-		}
-	}
-
-	if (found) {
-		m_numComponents = numComponents + 1;
-		for (int i = 0; i < m_n; i++)
-			if (compCounts[m_compIndices[i]] == 1)
-				m_compIndices[i] = selected;
-
-		cur_count = 0;
-		compIndicesMapping.clear();
-		for (int i = 0; i < m_n; i++) {
-			int compIndex = m_compIndices[i];
-			if (compIndicesMapping.find(compIndex) == compIndicesMapping.end())
-				m_compIndices[i] = compIndicesMapping[compIndex] = (++cur_count);
-			else
-				m_compIndices[i] = compIndicesMapping[compIndex];
-
-			--m_compIndices[i];
-		}
-	}
-}
-
 
 // ----------------------------------------------------------------------------
-// SolverOptions
+// Options
 //
 // This structure encapsulates all solver options.
 // ----------------------------------------------------------------------------
-struct SolverOptions
+struct Options
 {
-	SolverOptions();
+	Options();
 
 	SolverType    solverType;
 	int           maxNumIterations;
@@ -149,27 +47,27 @@ struct SolverOptions
 	PrecondMethod precondMethod;
 	bool          safeFactorization;
 	bool          variousBandwidth;
-	bool		  singleComponent;
-	bool		  trackReordering;
+	bool          singleComponent;
+	bool          trackReordering;
 };
 
 
 // ----------------------------------------------------------------------------
-// SolverStats
+// Stats
 //
 // This structure encapsulates all solver statistics, both from the iterative
 // solver and the preconditioner.
 // ----------------------------------------------------------------------------
-struct SolverStats
+struct Stats
 {
-	SolverStats();
+	Stats();
 
 	double      timeSetup;
 	double      timeSolve;
 
-	double		time_reorder;
-	double		time_cpu_assemble;
-	double		time_transfer;
+	double      time_reorder;
+	double      time_cpu_assemble;
+	double      time_transfer;
 	double      time_toBanded;
 	double      time_offDiags;
 	double      time_bandLU;
@@ -204,8 +102,8 @@ public:
 	typedef typename cusp::coo_matrix<int, ValueType, cusp::host_memory> MatrixCOO;
 	typedef typename cusp::array1d<int, cusp::host_memory>	VectorI;
 
-	Solver(int					numPartitions,
-		   const SolverOptions&	solverOptions);
+	Solver(int             numPartitions,
+	       const Options&  opts);
 
 	~Solver() {
 		int numComponents = m_precond_pointers.size();
@@ -223,35 +121,35 @@ public:
 	           const Vector&  b,
 	           Vector&        x);
 
-	const SolverStats&  getStats() const {return m_stats;}
+	const Stats&  getStats() const {return m_stats;}
 
 private:
 	SolverType               m_solver;
 	Monitor<Vector>          m_monitor;
 	Precond<Vector>          m_precond;
 	std::vector<Precond<Vector> *>  m_precond_pointers;
-	std::vector<VectorI>			m_comp_reorderings;
-	VectorI							m_comp_perms;
-	VectorI							m_compIndices;
-	VectorI							m_compMap;
+	std::vector<VectorI>     m_comp_reorderings;
+	VectorI                  m_comp_perms;
+	VectorI                  m_compIndices;
+	VectorI                  m_compMap;
 
 	int                      m_n;
-	bool					 m_singleComponent;
-	bool					 m_trackReordering;
-	bool					 m_setupDone;
+	bool                     m_singleComponent;
+	bool                     m_trackReordering;
+	bool                     m_setupDone;
 
-	SolverStats              m_stats;
+	Stats                    m_stats;
 };
 
 
 // ----------------------------------------------------------------------------
-// SolverOptions::SolverOptions()
+// Options::Options()
 //
-// This is the constructor for the SolverOptions. It sets default values for
+// This is the constructor for the Options. It sets default values for
 // all options.
 // ----------------------------------------------------------------------------
-SolverOptions::SolverOptions()
-:   solverType(BiCGStab2),
+Options::Options()
+:	solverType(BiCGStab2),
 	maxNumIterations(100),
 	tolerance(1e-6),
 	performReorder(true),
@@ -261,19 +159,19 @@ SolverOptions::SolverOptions()
 	precondMethod(Spike),
 	safeFactorization(false),
 	variousBandwidth(true),
-    singleComponent(false),
+	singleComponent(false),
 	trackReordering(true)
 {
 }
 
 
 // ----------------------------------------------------------------------------
-// SolverStats::SolverStats()
+// Stats::Stats()
 //
-// This is the constructor for the SolverStats. It initializes all
+// This is the constructor for the Stats. It initializes all
 // timing and performance measures.
 // ----------------------------------------------------------------------------
-SolverStats::SolverStats()
+Stats::Stats()
 :	timeSetup(0),
 	timeSolve(0),
 	time_reorder(0),
@@ -295,6 +193,7 @@ SolverStats::SolverStats()
 {
 }
 
+
 // ----------------------------------------------------------------------------
 // Solver::Solver()
 //
@@ -302,14 +201,14 @@ SolverStats::SolverStats()
 // a SolverOption object.
 // ----------------------------------------------------------------------------
 template <typename Matrix, typename Vector>
-Solver<Matrix, Vector>::Solver(int					numPartitions,
-							   const SolverOptions &solverOptions)
-:	m_monitor(solverOptions.maxNumIterations, solverOptions.tolerance),
-	m_precond(numPartitions, solverOptions.performReorder, solverOptions.applyScaling, solverOptions.dropOffFraction, solverOptions.method, solverOptions.precondMethod, 
-			  solverOptions.safeFactorization, solverOptions.variousBandwidth, solverOptions.trackReordering),
-	m_solver(solverOptions.solverType),
-	m_singleComponent(solverOptions.singleComponent),
-	m_trackReordering(solverOptions.trackReordering),
+Solver<Matrix, Vector>::Solver(int             numPartitions,
+                               const Options&  opts)
+:	m_monitor(opts.maxNumIterations, opts.tolerance),
+	m_precond(numPartitions, opts.performReorder, opts.applyScaling, opts.dropOffFraction, opts.method, opts.precondMethod, 
+	          opts.safeFactorization, opts.variousBandwidth, opts.trackReordering),
+	m_solver(opts.solverType),
+	m_singleComponent(opts.singleComponent),
+	m_trackReordering(opts.trackReordering),
 	m_setupDone(0)
 {
 }
@@ -334,7 +233,7 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 
 	MatrixCOO Acoo;
 	
-	SolverComponents sc(m_n);
+	Components sc(m_n);
 	int numComponents;
 
 	if (!m_singleComponent) {
@@ -456,6 +355,7 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 	return true;
 }
 
+
 // ----------------------------------------------------------------------------
 // Solver::update()
 //
@@ -524,6 +424,7 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 	return true;
 }
 
+
 // ----------------------------------------------------------------------------
 // Solver::solve()
 //
@@ -560,9 +461,7 @@ Solver<Matrix, Vector>::solve(SpmvOperator& spmv,
 }
 
 
-
 } // namespace spike
-
 
 
 #endif

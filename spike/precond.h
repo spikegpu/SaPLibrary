@@ -51,17 +51,17 @@ public:
 	        PrecondMethod  precondMethod,
 	        bool           safeFactorization,
 	        bool           variousBandwidth,
-			bool		   trackReordering);
+	        bool           trackReordering);
 
-	Precond(const		   Precond &prec);
+	Precond(const Precond&  prec);
 
 	~Precond() {}
 
 	Precond & operator = (const Precond &prec);
 
-	double getTimeReorder() const		  {return m_time_reorder;}
-	double getTimeCPUAssemble() const	  {return m_time_cpu_assemble;}
-	double getTimeTransfer() const		  {return m_time_transfer;}
+	double getTimeReorder() const         {return m_time_reorder;}
+	double getTimeCPUAssemble() const     {return m_time_cpu_assemble;}
+	double getTimeTransfer() const        {return m_time_transfer;}
 	double getTimeToBanded() const        {return m_time_toBanded;}
 	double getTimeCopyOffDiags() const    {return m_time_offDiags;}
 	double getTimeBandLU() const          {return m_time_bandLU;}
@@ -76,10 +76,11 @@ public:
 	double getActualDropOff() const       {return m_dropOff_actual;}
 
 	template <typename Matrix>
-	void setup(const Matrix&  A);
-	bool   isSetup() const				  {return m_isSetup;}
+	void   setup(const Matrix&  A);
 
-	void update(const cusp::array1d<ValueType, cusp::host_memory>& entries);
+	bool   isSetup() const                {return m_isSetup;}
+
+	void update(const VectorH& entries);
 	void solve(Vector& v, Vector& z);
 
 private:
@@ -94,14 +95,14 @@ private:
 	PrecondMethod  m_precondMethod;
 	bool           m_safeFactorization;
 	bool           m_variousBandwidth;
-	bool		   m_trackReordering;
+	bool           m_trackReordering;
 
-	bool		   m_isSetup;
-	MatrixMap	   m_offDiagMap;
-	MatrixMap	   m_WVMap;
-	MatrixMap	   m_typeMap;
-	MatrixMap	   m_bandedMatMap;
-	MatrixMapF	   m_scaleMap;
+	bool           m_isSetup;
+	MatrixMap      m_offDiagMap;
+	MatrixMap      m_WVMap;
+	MatrixMap      m_typeMap;
+	MatrixMap      m_bandedMatMap;
+	MatrixMapF     m_scaleMap;
 
 	// Used in various-bandwidth method only, host versions
 	cusp::array1d<int, cusp::host_memory>  m_ks_host;
@@ -116,8 +117,8 @@ private:
 	VectorI        m_ks;                 // All half-bandwidths
 	VectorI        m_offDiagWidths_left; // All left half-bandwidths in terms of rows
 	VectorI        m_offDiagWidths_right;// All right half-bandwidths in terms of rows
-	VectorI		   m_offDiagPerms_left;
-	VectorI		   m_offDiagPerms_right;
+	VectorI        m_offDiagPerms_left;
+	VectorI        m_offDiagPerms_right;
 	VectorI        m_first_rows;
 	VectorI        m_spike_ks;           // All half-bandwidths which are for spikes.
 	                                     // m_spike_ks[i] = MAX ( m_ks[i] , m_ks[i+1] )
@@ -152,9 +153,9 @@ private:
 	ValueType      m_dropOff_actual;     // actual dropOff fraction achieved
 
 	GPUTimer       m_timer;
-	double		   m_time_reorder;		 // CPU time for matrix reordering
-	double		   m_time_cpu_assemble;	 // Time for acquiring the banded matrix and off-diagonal matrics on CPU
-	double		   m_time_transfer;		 // Time for data transferring from CPU to GPU
+	double         m_time_reorder;       // CPU time for matrix reordering
+	double         m_time_cpu_assemble;  // Time for acquiring the banded matrix and off-diagonal matrics on CPU
+	double         m_time_transfer;      // Time for data transferring from CPU to GPU
 	double         m_time_toBanded;      // GPU time for transformation or conversion to banded double       
 	double         m_time_offDiags;      // GPU time to copy off-diagonal blocks
 	double         m_time_bandLU;        // GPU time for LU factorization of banded blocks
@@ -232,7 +233,7 @@ Precond<Vector>::Precond(int            numPart,
                          PrecondMethod  precondMethod,
                          bool           safeFactorization,
                          bool           variousBandwidth,
-						 bool			trackReordering)
+                         bool           trackReordering)
 :	m_numPartitions(numPart),
 	m_reorder(reorder),
 	m_scale(scale),
@@ -274,41 +275,41 @@ Precond<Vector>::Precond(const Precond<Vector> &prec):
 	m_time_fullLU(0),
 	m_time_shuffle(0)
 {
-	m_numPartitions	=	prec.m_numPartitions;
+	m_numPartitions     = prec.m_numPartitions;
 
-	m_reorder		=   prec.m_reorder;;
-	m_scale			=	prec.m_scale;
-	m_dropOff_frac	=	prec.m_dropOff_frac;
-	m_method		=	prec.m_method;
-	m_precondMethod =	prec.m_precondMethod;
+	m_reorder           = prec.m_reorder;;
+	m_scale             = prec.m_scale;
+	m_dropOff_frac      = prec.m_dropOff_frac;
+	m_method            = prec.m_method;
+	m_precondMethod     = prec.m_precondMethod;
 	m_safeFactorization = prec.m_safeFactorization;
-	m_variousBandwidth = prec.m_variousBandwidth;
-	m_trackReordering = prec.m_trackReordering;
+	m_variousBandwidth  = prec.m_variousBandwidth;
+	m_trackReordering   = prec.m_trackReordering;
 }
 
 template <typename Vector>
 Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 {
-	m_numPartitions	=	prec.m_numPartitions;
+	m_numPartitions     = prec.m_numPartitions;
 
-	m_reorder		=   prec.m_reorder;;
-	m_scale			=	prec.m_scale;
-	m_dropOff_frac	=	prec.m_dropOff_frac;
-	m_method		=	prec.m_method;
-	m_precondMethod =	prec.m_precondMethod;
+	m_reorder           = prec.m_reorder;;
+	m_scale             = prec.m_scale;
+	m_dropOff_frac      = prec.m_dropOff_frac;
+	m_method            = prec.m_method;
+	m_precondMethod     = prec.m_precondMethod;
 	m_safeFactorization = prec.m_safeFactorization;
-	m_variousBandwidth = prec.m_variousBandwidth;
-	m_trackReordering = prec.m_trackReordering;
+	m_variousBandwidth  = prec.m_variousBandwidth;
+	m_trackReordering   = prec.m_trackReordering;
 
-	m_isSetup		=	0;
-	m_ks_host		=	prec.m_ks_host;
+	m_isSetup           = 0;
+	m_ks_host           = prec.m_ks_host;
 	m_offDiagWidths_left_host = prec.m_offDiagWidths_left_host;
 	m_offDiagWidths_right_host = prec.m_offDiagWidths_right_host;
-	m_first_rows_host = prec.m_first_rows_host;
-	m_BOffsets_host =   prec.m_BOffsets_host;
+	m_first_rows_host   = prec.m_first_rows_host;
+	m_BOffsets_host     = prec.m_BOffsets_host;
 
 	m_time_shuffle = 0;
-	return		*this;
+	return *this;
 }
 
 // ----------------------------------------------------------------------------
@@ -322,7 +323,8 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 // ----------------------------------------------------------------------------
 template <typename Vector>
 void
-Precond<Vector>::update(const cusp::array1d<ValueType, cusp::host_memory>& entries) {
+Precond<Vector>::update(const VectorH& entries)
+{
 	// If setup function is not called at all, directly return from this function
 	if (!m_isSetup) {
 		fprintf(stderr, "Warning: the update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
@@ -846,10 +848,10 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	cusp::array1d<int, cusp::host_memory>        secondReorder;
 	cusp::array1d<int, cusp::host_memory>        secondPerm;
 
-	SpikeGraph<ValueType>						 graph(m_trackReordering);
+	Graph<ValueType>  graph(m_trackReordering);
 
-	cusp::array1d<int, cusp::host_memory>		 offDiagPerms_left;
-	cusp::array1d<int, cusp::host_memory>		 offDiagPerms_right;
+	cusp::array1d<int, cusp::host_memory>  offDiagPerms_left;
+	cusp::array1d<int, cusp::host_memory>  offDiagPerms_right;
 
 	const ValueType dropMin = 1.0/100;
 
@@ -917,7 +919,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		assemble_timer.Start();
 		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, B,
 		                           m_ks_host, m_BOffsets_host, 
-								   m_typeMap, m_bandedMatMap);
+		                           m_typeMap, m_bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 	} else {
@@ -996,15 +998,6 @@ template <typename Matrix>
 void
 Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
 {
-/*
-	cusp::coo_matrix<int, ValueType, cusp::host_memory> Acoo = A;
-	cusp::array1d<ValueType, cusp::host_memory>         B;
-	SpikeGraph<ValueType>  graph;
-	m_k = graph.convert(Acoo, B);
-	m_B = B;
-*/
-
-
 	// Convert matrix to COO format.
 	cusp::coo_matrix<int, ValueType, MemorySpace> Acoo = A;
 	int n = Acoo.num_rows;
@@ -1028,8 +1021,8 @@ Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
 	int  maxNumPartitions = MAX(1, m_n / MAX(m_k + 1, 2 * m_k));
 	if (m_numPartitions > maxNumPartitions) {
 		std::cerr << "P = " << m_numPartitions << " is too large for N = "
-			<< m_n << " and K = " << m_k << std::endl
-			<< "The number of partitions was reset to P = " << maxNumPartitions << std::endl;
+		          << m_n << " and K = " << m_k << std::endl
+		          << "The number of partitions was reset to P = " << maxNumPartitions << std::endl;
 		m_numPartitions = maxNumPartitions;
 	}
 
@@ -1177,8 +1170,8 @@ void
 Precond<Vector>::partFullLU_var()
 {
 	ValueType* d_R = thrust::raw_pointer_cast(&m_R[0]);
-	int*	   p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
-	int*	   p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
+	int*       p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
+	int*       p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
 	int        two_k = 2 * m_k;
 
 	// The first k rows of each diagonal block do not need a division step and

@@ -87,13 +87,13 @@ CSimpleOptA::SOption g_options[] = {
 // -----------------------------------------------------------------------------
 void ShowUsage();
 void spikeSetDevice();
-bool GetProblemSpecs(int                   argc, 
-                     char**                argv,
-				     string&               fileMat,
-                     string&               fileRhs,
-                     string&               fileSol,
-                     int&                  numPart,
-                     spike::SolverOptions& opts);
+bool GetProblemSpecs(int             argc, 
+                     char**          argv,
+                     string&         fileMat,
+                     string&         fileRhs,
+                     string&         fileSol,
+                     int&            numPart,
+                     spike::Options& opts);
 void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv);
@@ -105,11 +105,11 @@ void PrintStats(bool               success,
 int main(int argc, char** argv) 
 {
 	// Set up the problem to be solved.
-	string  fileMat;
-	string  fileRhs;
-	string  fileSol;
-	int     numPart;
-	spike::SolverOptions  opts;
+	string         fileMat;
+	string         fileRhs;
+	string         fileSol;
+	int            numPart;
+	spike::Options opts;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, opts))
 		return 1;
@@ -185,13 +185,13 @@ void spikeSetDevice() {
 // to be solved.
 // -----------------------------------------------------------------------------
 bool
-GetProblemSpecs(int                   argc, 
-                char**                argv,
-				string&               fileMat,
-                string&               fileRhs,
-                string&               fileSol,
-                int&                  numPart,
-                spike::SolverOptions& opts)
+GetProblemSpecs(int             argc, 
+                char**          argv,
+                string&         fileMat,
+                string&         fileRhs,
+                string&         fileSol,
+                int&            numPart,
+                spike::Options& opts)
 {
 	numPart = -1;
 
@@ -375,7 +375,7 @@ void ShowUsage()
 	cout << " --output-file=OUTFILE" << endl;
 	cout << "        Write the solution to the file OUTFILE (MatrixMarket format)." << endl;
 	cout << " --single-component" << endl;
-	cout << "		 Do not break the problem into several components." << endl;
+	cout << "        Do not break the problem into several components." << endl;
 	cout << " -k=METHOD" << endl;
 	cout << " --krylov-method=METHOD" << endl;
 	cout << "        Specify the iterative Krylov solver:" << endl;
@@ -409,7 +409,7 @@ void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv)
 {
-	spike::SolverStats stats = mySolver.getStats();
+	spike::Stats stats = mySolver.getStats();
 
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;
