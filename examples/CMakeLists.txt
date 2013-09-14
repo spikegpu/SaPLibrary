@@ -29,5 +29,6 @@ include_directories(..)
 cuda_include_directories(/usr/local/cuda/cusp)
 
 ADD_SUBDIRECTORY(matrix_market)
+ADD_SUBDIRECTORY(sequence)
 #ADD_SUBDIRECTORY(synthetic_banded)
 #ADD_SUBDIRECTORY(synthetic_sparse)
