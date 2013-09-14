@@ -9,32 +9,20 @@
 #include <spike/solver.h>
 
 
-
-// Macro to obtain a random number between two specified values
-#define RAND(L,H)  ((L) + ((H)-(L)) * (float)rand()/(float)RAND_MAX)
-#define MAX(A,B)   (((A) > (B)) ? (A) : (B))
-#define MIN(A,B)   (((A) < (B)) ? (A) : (B))
-
-
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Typedefs
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 typedef double REAL;
 
-typedef cusp::device_memory MEMORY;
-typedef typename cusp::csr_matrix<int, REAL, MEMORY> Matrix;
-typedef typename cusp::array1d<REAL, MEMORY>         Vector;
-
-typedef typename cusp::coo_matrix<int, REAL, cusp::host_memory>  MatrixHost;
-typedef typename cusp::array1d<REAL, cusp::host_memory>          VectorHost;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorHost;
 
 typedef typename spike::Solver<Matrix, Vector>       SpikeSolver;
 typedef typename spike::SpmvCusp<Matrix, Vector>     SpmvFunctor;
-typedef typename spike::SolverOptions				 SolverOptions;
 
 
-// -------------------------------------------------------------------
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 using std::cout;
 using std::cin;
 using std::endl;
@@ -42,11 +30,10 @@ using std::string;
 using std::vector;
 
 
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Definitions for SimpleOpt and SimpleGlob
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 #include <SimpleOpt/SimpleOpt.h>
-
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
@@ -88,8 +75,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
-	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
-	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
     { OPT_HELP,          "-?",                   SO_NONE    },
 	{ OPT_HELP,          "-h",                   SO_NONE    },
     { OPT_HELP,          "--help",               SO_NONE    },
@@ -97,171 +82,78 @@ CSimpleOptA::SOption g_options[] = {
 };
 
 
-// -------------------------------------------------------------------
-// Problem types
-// Problem definition
-// -------------------------------------------------------------------
-struct Problem {
-	int           N;
-	int			  nnz;
-	int           k;
-
-	int           numPart;
-
-	int           maxIt;
-	REAL          tol;
-	REAL          fraction;
-
-	bool          reorder;
-	bool          scale;
-
-	string        fileMat;
-	string        fileRhs;
-	string        fileSol;
-
-	spike::SolverType    krylov;
-	spike::SolverMethod  factorization;
-	spike::PrecondMethod precondMethod;
-
-	bool		  singleComponent;
-	bool          safeFactorization;
-	bool		  variousBandwidth;
-
-	bool          verbose;
-};
-
-
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Forward declarations.
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 void ShowUsage();
-static const char* GetLastErrorText(int a_nError) ;
-
 void spikeSetDevice();
-
-bool GetProblemSpecs(int argc, char** argv, Problem& pb);
-
-void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
-
-void PrintProblem(const Problem& pb, bool verbose);
-
-void PrintStats(const Problem&	   pb,
-				bool               success,
+bool GetProblemSpecs(int                   argc, 
+                     char**                argv,
+				     string&               fileMat,
+                     string&               fileRhs,
+                     string&               fileSol,
+                     int&                  numPart,
+                     spike::SolverOptions& opts);
+void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
-                const SpmvFunctor& mySpmv,
-                bool               verbose);
+                const SpmvFunctor& mySpmv);
 
-void ClearStats(const SpikeSolver& mySolver);
 
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // MAIN
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 int main(int argc, char** argv) 
 {
-	Problem pb;
+	// Set up the problem to be solved.
+	string  fileMat;
+	string  fileRhs;
+	string  fileSol;
+	int     numPart;
+	spike::SolverOptions  opts;
 
-	pb.N = 0;
-	pb.nnz = 0;
-	pb.k = 0;
-	pb.maxIt = 100;
-	pb.tol = 1e-6;
-	pb.fraction = 0.0;
-	pb.reorder = true;
-	pb.scale = true;
-	pb.numPart = 1;
-
-	pb.factorization = spike::LU_only;
-	pb.precondMethod = spike::Spike;
-	pb.singleComponent = false;
-	pb.safeFactorization = false;
-	pb.variousBandwidth = true;
-	pb.krylov = spike::BiCGStab2;
-
-	pb.verbose = false;
-
-
-	// Get the problem specification from the program arguments.
-	if (!GetProblemSpecs(argc, argv, pb))
+	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, opts))
 		return 1;
-
-	if (!pb.reorder)
-		pb.variousBandwidth = false;
-
-	if (pb.variousBandwidth)
-		pb.factorization = spike::LU_only;
-
-	// Print information on the problem that will be solved.
-	if (pb.verbose)
-		PrintProblem(pb, pb.verbose);
-
 
 	// Get the device with most available memory.
 	spikeSetDevice();
 
-
-	// Get matrix and rhs. Note that the 'target' solution is only
-	// set if using a generated RHS.
+	// Get matrix and rhs.
 	Matrix A;
 	Vector b;
-	Vector x_target;
-	Vector delta_x_target;
 
-	cusp::io::read_matrix_market_file(A, pb.fileMat);
+	cusp::io::read_matrix_market_file(A, fileMat);
 
-	pb.N = A.num_rows;
-	pb.nnz = A.num_entries;
-	if (pb.fileRhs.length() > 0)
-		cusp::io::read_matrix_market_file(b, pb.fileRhs);
+	if (fileRhs.length() > 0)
+		cusp::io::read_matrix_market_file(b, fileRhs);
 	else
-		GetRhsVector(A, b, x_target);
+		b.resize(A.num_rows, 1);
 
-	SolverOptions solverOptions;
-
-	solverOptions.solverType = pb.krylov;
-	solverOptions.maxNumIterations = pb.maxIt;
-	solverOptions.tolerance = pb.tol;
-
-	solverOptions.performReorder = pb.reorder;
-	solverOptions.applyScaling = pb.scale;
-	solverOptions.dropOffFraction = pb.fraction;
-
-	solverOptions.method = pb.factorization;
-	solverOptions.precondMethod = pb.precondMethod;
-	solverOptions.safeFactorization = pb.safeFactorization;
-	solverOptions.variousBandwidth = pb.variousBandwidth;
-	solverOptions.trackReordering = false;
-
-	// Create the SPIKE Solver object and the SPMV functor.
+	// Create the SPIKE Solver object and the SPMV functor. Perform the solver
+	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
-	SpikeSolver mySolver(pb.numPart, solverOptions);
-
+	SpikeSolver mySolver(numPart, opts);
 	SpmvFunctor  mySpmv(A);
-	Vector       x(pb.N, 0);
+	Vector       x(A.num_rows, 0);
 
 	mySolver.setup(A);
 	bool success = mySolver.solve(mySpmv, b, x);
 
-	// If an output file was specified, write the solution vector
-	// in MatrixMarket format.
-	if (pb.fileSol.length() > 0)
-		cusp::io::write_matrix_market_file(x, pb.fileSol);
+	// Write solution file and print solver statistics.
+	if (fileSol.length() > 0)
+		cusp::io::write_matrix_market_file(x, fileSol);
 
-	// Print solution statistics.
-	PrintStats(pb, success, mySolver, mySpmv, pb.verbose);
+	PrintStats(success, mySolver, mySpmv);
 
-	// That's all folks!
 	return 0;
 }
 
-// -------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
 // spikeSetDevice()
 //
-// This function gets the device with maximum free space and set that
-// device to working device. 
-// FIXME:
-// Note that this function shall be removed when we start multi-gpu
-// support. 
-// -------------------------------------------------------------------
+// This function sets the active device to be the one with maximum available
+// space.
+// -----------------------------------------------------------------------------
 void spikeSetDevice() {
 	int deviceCount = 0;
 	
@@ -286,20 +178,28 @@ void spikeSetDevice() {
 	cudaSetDevice(max_idx);
 }
 
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // GetProblemSpecs()
 //
-// This function parses the specified program arguments and sets up
-// the problem to be solved.
-// -------------------------------------------------------------------
+// This function parses the specified program arguments and sets up the problem
+// to be solved.
+// -----------------------------------------------------------------------------
 bool
-GetProblemSpecs(int argc, char** argv, Problem& pb)
+GetProblemSpecs(int                   argc, 
+                char**                argv,
+				string&               fileMat,
+                string&               fileRhs,
+                string&               fileSol,
+                int&                  numPart,
+                spike::SolverOptions& opts)
 {
-	// Create the option parser and pass it the arguments from main
-	// and the array of valid options.
+	numPart = -1;
+
+	// Create the option parser and pass it the program arguments and the array
+	// of valid options. Then loop for as long as there are arguments to be
+	// processed.
 	CSimpleOptA args(argc, argv, g_options);
 
-	// Loop while there are arguments to be processed.
 	while (args.Next()) {
 		// Exit immediately if we encounter an invalid argument.
 		if (args.LastError() != SO_SUCCESS) {
@@ -308,129 +208,141 @@ GetProblemSpecs(int argc, char** argv, Problem& pb)
 			return false;
 		}
 
+		// Process the current argument.
 		switch (args.OptionId()) {
-
-		case OPT_HELP:
-			ShowUsage();
-			return false;
-
-		case OPT_PART:
-			pb.numPart = atoi(args.OptionArg());
-			if (pb.numPart <= 0) {
-				cout << "Invalid value for the number of partitions. P = " << pb.numPart << endl;
+			case OPT_HELP:
+				ShowUsage();
 				return false;
-			}
-			break;
-
-		case OPT_TOL:
-			pb.tol = atof(args.OptionArg());
-			break;
-			
-		case OPT_MAXIT:
-			pb.maxIt = atoi(args.OptionArg());
-			break;
-
-		case OPT_DROPOFF_FRAC:
-			pb.fraction = atof(args.OptionArg());
-			break;
-
-		case OPT_NO_REORDERING:
-			pb.reorder = false;
-			break;
-
-		case OPT_NO_SCALING:
-			pb.scale = false;
-			break;
-
-		case OPT_VERBOSE:
-			pb.verbose = true;
-			break;
-
-		case OPT_MATFILE:
-			pb.fileMat = args.OptionArg();
-			break;
-
-		case OPT_RHSFILE:
-			pb.fileRhs = args.OptionArg();
-			break;
-
-		case OPT_OUTFILE:
-			pb.fileSol = args.OptionArg();
-			break;
-
-		case OPT_FACTORIZATION:
-			{
-				string fact = args.OptionArg();
-				std::transform(fact.begin(), fact.end(), fact.begin(), ::toupper);
-				if (fact == "0" || fact == "LU_UL")
-					pb.factorization = spike::LU_UL;
-				else if (fact == "1" || fact == "LU_LU")
-					pb.factorization = spike::LU_only;
-				else
-					return false;
-			}
-
-			break;
-
-		case OPT_PRECOND:
-			{
-				string precond = args.OptionArg();
-				std::transform(precond.begin(), precond.end(), precond.begin(), ::toupper);
-				if (precond == "0" || precond == "SPIKE")
-					pb.precondMethod = spike::Spike;
-				else if(precond == "1" || precond == "BLOCK")
-					pb.precondMethod = spike::Block;
-				else
-					return false;
-			}
-
-			break;
-
-		case OPT_KRYLOV:
-			{
-				string kry = args.OptionArg();
-				std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
-				if (kry == "0" || kry == "BICGSTAB")
-					pb.krylov = spike::BiCGStab;
-				else if (kry == "1" || kry == "BICGSTAB2")
-					pb.krylov = spike::BiCGStab2;
-				else
-					return false;
-			}
-
-			break;
-
-		case OPT_SINGLE_COMP:
-			pb.singleComponent = true;
-			break;
-
-		case OPT_SAFE_FACT:
-			pb.safeFactorization = true;
-			break;
-
-		case OPT_CONST_BAND:
-			pb.variousBandwidth = false;
-			break;
+			case OPT_PART:
+				numPart = atoi(args.OptionArg());
+				break;
+			case OPT_TOL:
+				opts.tolerance = atof(args.OptionArg());
+				break;
+			case OPT_MAXIT:
+				opts.maxNumIterations = atoi(args.OptionArg());
+				break;
+			case OPT_DROPOFF_FRAC:
+				opts.dropOffFraction = atof(args.OptionArg());
+				break;
+			case OPT_NO_REORDERING:
+				opts.performReorder = false;
+				break;
+			case OPT_NO_SCALING:
+				opts.applyScaling = false;
+				break;
+			case OPT_MATFILE:
+				fileMat = args.OptionArg();
+				break;
+			case OPT_RHSFILE:
+				fileRhs = args.OptionArg();
+				break;
+			case OPT_OUTFILE:
+				fileSol = args.OptionArg();
+				break;
+			case OPT_FACTORIZATION:
+				{
+					string fact = args.OptionArg();
+					std::transform(fact.begin(), fact.end(), fact.begin(), ::toupper);
+					if (fact == "0" || fact == "LU_UL")
+						opts.method = spike::LU_UL;
+					else if (fact == "1" || fact == "LU_LU")
+						opts.method = spike::LU_only;
+					else
+						return false;
+				}
+				break;
+			case OPT_PRECOND:
+				{
+					string precond = args.OptionArg();
+					std::transform(precond.begin(), precond.end(), precond.begin(), ::toupper);
+					if (precond == "0" || precond == "SPIKE")
+						opts.precondMethod = spike::Spike;
+					else if(precond == "1" || precond == "BLOCK")
+						opts.precondMethod = spike::Block;
+					else
+						return false;
+				}
+				break;
+			case OPT_KRYLOV:
+				{
+					string kry = args.OptionArg();
+					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
+					if (kry == "0" || kry == "BICGSTAB")
+						opts.solverType = spike::BiCGStab;
+					else if (kry == "1" || kry == "BICGSTAB2")
+						opts.solverType = spike::BiCGStab2;
+					else
+						return false;
+				}
+				break;
+			case OPT_SINGLE_COMP:
+				opts.singleComponent = true;
+				break;
+			case OPT_SAFE_FACT:
+				opts.safeFactorization = true;
+				break;
+			case OPT_CONST_BAND:
+				opts.variousBandwidth = false;
+				break;
 		}
-
 	}
 
-	// If no problem was defined, show usage and exit.
-	if (pb.fileMat.length() == 0) {
-		cout << "No matrix file was defined!" << endl << endl;
+	// If the number of partitions was not defined, show usage and exit.
+	if (numPart <= 0) {
+		cout << "The number of partitions must be specified." << endl << endl;
 		ShowUsage();
 		return false;
 	}
+
+	// If no problem was defined, show usage and exit.
+	if (fileMat.length() == 0) {
+		cout << "The matrix filename is required." << endl << endl;
+		ShowUsage();
+		return false;
+	}
+
+	// If no reordering, force using constant bandwidth.
+	if (!opts.performReorder)
+		opts.variousBandwidth = false;
+
+	// If using variable bandwidth, force using LU factorization.
+	if (opts.variousBandwidth)
+		opts.method = spike::LU_only;
+
+	// Print out the problem specifications.
+	cout << endl;
+	cout << "Matrix file: " << fileMat << endl;
+	if (fileRhs.length() > 0)
+		cout << "Rhs file:    " << fileRhs << endl;
+	if (fileSol.length() > 0)
+		cout << "Sol file:    " << fileSol << endl;
+	cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
+	cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
+	cout << "Tolerance: " << opts.tolerance << endl;
+	cout << "Max. iterations: " << opts.maxNumIterations << endl;
+	cout << "Preconditioner: " << (opts.precondMethod == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
+	cout << "Factorization method: " << (opts.method == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
+	if (opts.dropOffFraction > 0)
+		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
+	else
+		cout << "No drop-off." << endl;
+	cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
+	cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
+	cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
+	cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
+	cout << (opts.variousBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
+	cout << endl << endl;
 
 	return true;
 }
 
 
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // ShowUsage()
 //
 // This function displays the correct usage of this program
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 void ShowUsage()
 {
 	cout << "Usage:  driver_mm [OPTIONS]" << endl;
@@ -482,253 +394,55 @@ void ShowUsage()
 	cout << "        Specify the preconditioner to be used" << endl;
 	cout << "        METHOD=0 or METHOD=SPIKE                for using SPIKE preconditioner.  This is the default." << endl;
 	cout << "        METHOD=1 or METHOD=BLOCK                for using Block preconditionera." << endl;
-	cout << " -v --verbose" << endl;
-	cout << "        Verbose output." << endl; 
 	cout << " -? -h --help" << endl;
 	cout << "        Print this message and exit." << endl;
 	cout << endl;
 }
 
 
-// -------------------------------------------------------------------
-// GetLastErrorText()
-//
-// This function translates SO error codes to human readable strings.
-// -------------------------------------------------------------------
-static const char* GetLastErrorText(int a_nError) 
-{
-    switch (a_nError) {
-    case SO_SUCCESS:            return "Success";
-    case SO_OPT_INVALID:        return "Unrecognized option";
-    case SO_OPT_MULTIPLE:       return "Option matched multiple strings";
-    case SO_ARG_INVALID:        return "Option does not accept argument";
-    case SO_ARG_INVALID_TYPE:   return "Invalid argument format";
-    case SO_ARG_MISSING:        return "Required argument is missing";
-    case SO_ARG_INVALID_DATA:   return "Invalid argument data";
-    default:                    return "Unknown error";
-    }
-}
-
-
-// -------------------------------------------------------------------
-// GetRhsVector()
-//
-// This function generates a RHS vector of appropriate dimension. We
-// use the method of manufactured solution, meaning we set
-//    b = A * x
-// for a known "solution" vector x.
-// -------------------------------------------------------------------
-void
-GetRhsVector(const Matrix& A, Vector& b, Vector& x_target)
-{
-	// Create a desired solution vector (on the host), then copy it
-	// to the device.
-	int     N = A.num_rows;
-	REAL    dt = 1.0/(N-1);
-	REAL    max_val = 100.0;
-
-	VectorHost xh(N);
-
-	for (int i = 0; i < N; i++) {
-		REAL t = i *dt;
-		xh[i] = 4 * max_val * t * (1 - t);
-	}
-
-	x_target = xh;
-	
-	// Calculate the RHS vector.
-	b.resize(N);
-	cusp::multiply(A, x_target, b);
-	////cusp::io::write_matrix_market_file(b, "b.mtx");
-}
-
-
-// -------------------------------------------------------------------
-// PrintProblem()
-//
-// This function prints information about the problem and solution
-// parameters.
-// -------------------------------------------------------------------
-void PrintProblem(const Problem& pb, bool verbose)
-{
-	string factTypeStr;
-	string precondStr;
-	switch (pb.factorization) {
-	case spike::LU_UL:
-		factTypeStr = "LU-UL";
-		break;
-	case spike::LU_only:
-		factTypeStr = "LU-LU";
-		break;
-	}
-
-	switch (pb.precondMethod) {
-	case spike::Spike:
-		precondStr = "SPIKE";
-		break;
-	case spike::Block:
-		precondStr = "BLOCK";
-		break;
-	}
-
-	string krylovTypeStr;
-	switch (pb.krylov) {
-	case spike::BiCGStab:
-		krylovTypeStr = "BiCGStab";
-		break;
-	case spike::BiCGStab2:
-		krylovTypeStr = "BiCGStab2";
-		break;
-	}
-
-	if (verbose) {
-		cout << endl;
-		cout << "Application problem from file" << endl
-			<< "  Matrix file: " << pb.fileMat << endl;
-		if (pb.fileRhs.length() > 0)
-			cout << "  Rhs file: " << pb.fileRhs << endl;
-		cout << "Using " << pb.numPart << " partition";
-		if (pb.numPart > 1)
-			cout << "s";
-		cout << "." << endl;
-		cout << "Iterative solver: " << krylovTypeStr << endl;
-		cout << "Tolerance: " << pb.tol << endl;
-		cout << "Max. iterations: " << pb.maxIt << endl;
-		if (pb.fraction > 0)
-			cout << "Drop-off fraction: " << pb.fraction << endl;
-		else
-			cout << "No drop-off." << endl;
-		cout << (pb.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
-		cout << (pb.reorder ? "Perform reordering." : "Do not perform reordering.") << endl;
-		cout << (pb.scale   ? "Apply scaling." : "Do not apply scaling.") << endl;
-		cout << (pb.safeFactorization ? "Using safe factorization." : "Using non-safe fast factorization.") << endl;
-		cout << (pb.variousBandwidth ? "Using various-bandwidth method." : "Not using various-bandwidth method.") << endl;
-		cout << "Factorization method: " << factTypeStr << endl;
-		cout << "Preconditioner: " << precondStr << endl;
-		if (pb.fileRhs.length() > 0)
-			cout << "Sol file: " << pb.fileSol << endl;
-		cout << endl << endl;
-	} else {
-		cout << pb.fileMat;
-		cout << "     " << pb.numPart;
-		cout << "     " << pb.maxIt << "  " << pb.tol;
-		cout << "     " << (pb.reorder ? "T" : "F") << (pb.scale ? "T" : "F");
-		cout << "     " << pb.fraction;
-		cout << "     " << factTypeStr << "  " << precondStr << "   "<<(pb.safeFactorization ? "T" : "F");
-		cout << "	  " << (pb.variousBandwidth ? "T" : "F");
-		cout << endl;
-	}
-}
-
-
-// -------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // PrintStats()
 //
 // This function prints solver statistics.
-// -------------------------------------------------------------------
-void PrintStats(const Problem&	   pb,
-				bool               success,
+// -----------------------------------------------------------------------------
+void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
-                const SpmvFunctor& mySpmv,
-                bool               verbose)
+                const SpmvFunctor& mySpmv)
 {
 	spike::SolverStats stats = mySolver.getStats();
 
-	if (verbose) {
-		cout << endl;
-		cout << (success ? "Success" : "Failed") << endl;
+	cout << endl;
+	cout << (success ? "Success" : "Failed") << endl;
 
-		cout << "Number of iterations = " << stats.numIterations << endl;
-		cout << "Residual norm        = " << stats.residualNorm << endl;
-		cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
-		cout << endl;
-		cout << "Bandwidth after reordering = " << stats.bandwidthReorder << endl;
-		cout << "Bandwidth                  = " << stats.bandwidth << endl;
-		cout << "Actual drop-off fraction   = " << stats.actualDropOff << endl;
-		cout << endl;
-		cout << "Setup time total  = " << stats.timeSetup << endl;
-		double timeSetupGPU = stats.time_toBanded + stats.time_offDiags
-			+ stats.time_bandLU + stats.time_bandUL
-			+ stats.time_assembly + stats.time_fullLU;
-		cout << "  Setup time GPU  = " << timeSetupGPU << endl;
-		cout << "    form banded matrix       = " << stats.time_toBanded << endl;
-		cout << "    extract off-diags blocks = " << stats.time_offDiags << endl;
-		cout << "    banded LU factorization  = " << stats.time_bandLU << endl;
-		cout << "    banded UL factorization  = " << stats.time_bandUL << endl;
-		cout << "    assemble reduced matrix  = " << stats.time_assembly << endl;
-		cout << "    reduced matrix LU        = " << stats.time_fullLU << endl;
-		cout << "  Setup time CPU  = " << stats.timeSetup - timeSetupGPU << endl;
-		cout << "    reorder                  = " << stats.time_reorder << endl;
-		cout << "    CPU assemble             = " << stats.time_cpu_assemble << endl;
-		cout << "    data transfer            = " << stats.time_transfer << endl;
-		cout << "Solve time        = " << stats.timeSolve << endl;
-		cout << "  shuffle time    = " << stats.time_shuffle << endl;
-		cout << endl;
-		cout << "SPMV count = " << mySpmv.getCount() 
-			 << "  total time = " << mySpmv.getTime() 
-			 << "  GFlop/s = " << mySpmv.getGFlops()
-			 << endl;
-		cout << endl;
-	} else {
-		string matName = pb.fileMat;
-		unsigned end_pos = matName.rfind(".mtx");
-		if (end_pos == string::npos)
-			end_pos = matName.size();
-		unsigned start_pos;
-		for (start_pos = end_pos - 1; start_pos > 0; start_pos --)
-			if (matName[start_pos] == '/' || matName[start_pos] == '\\') {
-				start_pos++;
-				break;
-			}
-		matName = matName.substr(start_pos, end_pos - start_pos);
-		cout << matName				   << ",";
-		cout << pb.N				   << ",";
-		cout << pb.nnz				   << ",";
-		cout << stats.bandwidth		   << ",";
-		cout << (success ? "T" : "F")  << ",";
-		cout << pb.numPart			   << ",";
-		cout << stats.numIterations    << ",";
-		cout << stats.time_reorder	   << ",";
-		cout << stats.time_cpu_assemble<< ",";
-		cout << stats.time_transfer	   << ",";
-		cout << stats.time_offDiags	   << ",";
-		cout << stats.time_bandLU	   << ",";
-		cout << stats.time_bandUL      << ",";
-		cout << stats.time_assembly	   << ",";
-		cout << stats.time_fullLU	   << ",";
-		cout << stats.timeSetup        << ",";
-		cout << stats.timeSolve        << ",";
-		cout << stats.timeSetup
-				+ stats.timeSolve;
-		cout << endl;
-	}
-}
-
-// -------------------------------------------------------------------
-// ClearStats()
-//
-// This function clears solver statistics.
-// -------------------------------------------------------------------
-void ClearStats(const SpikeSolver& mySolver)
-{
-	spike::SolverStats stats = mySolver.getStats();
-
-	stats.numIterations = 0;
-	stats.residualNorm = 0;
-	stats.bandwidthReorder = 0;
-	stats.bandwidth = 0;
-	stats.actualDropOff = 0;
-
-	stats.timeSetup = 0;
-	stats.time_reorder = 0;
-	stats.time_cpu_assemble = 0;
-	stats.time_transfer = 0;
-	stats.time_toBanded = 0;
-	stats.time_offDiags = 0;
-	stats.time_bandLU = 0;
-	stats.time_bandUL = 0;
-	stats.time_assembly = 0;
-	stats.time_fullLU = 0;
-	stats.timeSolve = 0;
-	stats.time_shuffle = 0;
+	cout << "Number of iterations = " << stats.numIterations << endl;
+	cout << "Residual norm        = " << stats.residualNorm << endl;
+	cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
+	cout << endl;
+	cout << "Bandwidth after reordering = " << stats.bandwidthReorder << endl;
+	cout << "Bandwidth                  = " << stats.bandwidth << endl;
+	cout << "Actual drop-off fraction   = " << stats.actualDropOff << endl;
+	cout << endl;
+	cout << "Setup time total  = " << stats.timeSetup << endl;
+	double timeSetupGPU = stats.time_toBanded + stats.time_offDiags
+		+ stats.time_bandLU + stats.time_bandUL
+		+ stats.time_assembly + stats.time_fullLU;
+	cout << "  Setup time GPU  = " << timeSetupGPU << endl;
+	cout << "    form banded matrix       = " << stats.time_toBanded << endl;
+	cout << "    extract off-diags blocks = " << stats.time_offDiags << endl;
+	cout << "    banded LU factorization  = " << stats.time_bandLU << endl;
+	cout << "    banded UL factorization  = " << stats.time_bandUL << endl;
+	cout << "    assemble reduced matrix  = " << stats.time_assembly << endl;
+	cout << "    reduced matrix LU        = " << stats.time_fullLU << endl;
+	cout << "  Setup time CPU  = " << stats.timeSetup - timeSetupGPU << endl;
+	cout << "    reorder                  = " << stats.time_reorder << endl;
+	cout << "    CPU assemble             = " << stats.time_cpu_assemble << endl;
+	cout << "    data transfer            = " << stats.time_transfer << endl;
+	cout << "Solve time        = " << stats.timeSolve << endl;
+	cout << "  shuffle time    = " << stats.time_shuffle << endl;
+	cout << endl;
+	cout << "SPMV count = " << mySpmv.getCount() 
+		 << "  total time = " << mySpmv.getTime() 
+		 << "  GFlop/s = " << mySpmv.getGFlops()
+		 << endl;
+	cout << endl;
 }
