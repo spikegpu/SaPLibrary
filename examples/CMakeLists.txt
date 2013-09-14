@@ -28,6 +28,29 @@ include_directories(..)
 
 cuda_include_directories(/usr/local/cuda/cusp)
 
+
+SET(SPIKE_HEADERS
+	../../spike/bicgstab2.h
+	../../spike/common.h
+	../../spike/components.h
+	../../spike/graph.h
+	../../spike/monitor.h
+	../../spike/precond.h
+	../../spike/solver.h
+	../../spike/spmv.h
+	../../spike/timer.h
+)
+
+SET(SPIKE_CUHEADERS
+	../../spike/device/data_transfer.cuh
+	../../spike/device/factor_band_const.cuh
+	../../spike/device/factor_band_var.cuh
+	../../spike/device/inner_product.cuh
+	../../spike/device/shuffle.cuh
+	../../spike/device/sweep_band_const.cuh
+	../../spike/device/sweep_band_var.cuh
+)
+
 ADD_SUBDIRECTORY(matrix_market)
 ADD_SUBDIRECTORY(sequence)
 #ADD_SUBDIRECTORY(synthetic_banded)
