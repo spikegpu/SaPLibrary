@@ -221,7 +221,7 @@ GetProblemSpecs(int             argc,
 	opts.performReorder = true;
 	opts.applyScaling = true;
 	opts.dropOffFraction = 0.0;
-	opts.variousBandwidth = true;
+	opts.variableBandwidth = true;
 	opts.trackReordering = true;
 
 	numPart = -1;

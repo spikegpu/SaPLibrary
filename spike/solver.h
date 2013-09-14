@@ -46,7 +46,7 @@ struct Options
 	SolverMethod  method;
 	PrecondMethod precondMethod;
 	bool          safeFactorization;
-	bool          variousBandwidth;
+	bool          variableBandwidth;
 	bool          singleComponent;
 	bool          trackReordering;
 };
@@ -63,6 +63,7 @@ struct Stats
 	Stats();
 
 	double      timeSetup;
+	double      timeUpdate;
 	double      timeSolve;
 
 	double      time_reorder;
@@ -100,7 +101,7 @@ public:
 	typedef typename Matrix::value_type   ValueType;
 	typedef typename Matrix::memory_space MemorySpace;
 	typedef typename cusp::coo_matrix<int, ValueType, cusp::host_memory> MatrixCOO;
-	typedef typename cusp::array1d<int, cusp::host_memory>	VectorI;
+	typedef typename cusp::array1d<int, cusp::host_memory> VectorI;
 
 	Solver(int             numPartitions,
 	       const Options&  opts);
@@ -158,7 +159,7 @@ Options::Options()
 	method(LU_only),
 	precondMethod(Spike),
 	safeFactorization(false),
-	variousBandwidth(true),
+	variableBandwidth(true),
 	singleComponent(false),
 	trackReordering(true)
 {
@@ -205,13 +206,14 @@ Solver<Matrix, Vector>::Solver(int             numPartitions,
                                const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
 	m_precond(numPartitions, opts.performReorder, opts.applyScaling, opts.dropOffFraction, opts.method, opts.precondMethod, 
-	          opts.safeFactorization, opts.variousBandwidth, opts.trackReordering),
+	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
 	m_singleComponent(opts.singleComponent),
 	m_trackReordering(opts.trackReordering),
-	m_setupDone(0)
+	m_setupDone(false)
 {
 }
+
 
 // ----------------------------------------------------------------------------
 // Solver::setup()
@@ -342,7 +344,6 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
 		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
 		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
-		m_stats.actualDropOff += m_precond_pointers[i]->getActualDropOff();
 		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
 		m_stats.time_offDiags += m_precond_pointers[i]->getTimeCopyOffDiags();
 		m_stats.time_bandLU += m_precond_pointers[i]->getTimeBandLU();
@@ -352,6 +353,7 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 	}
 
 	m_setupDone = true;
+
 	return true;
 }
 
@@ -364,6 +366,7 @@ template <typename Matrix, typename Vector>
 bool
 Solver<Matrix, Vector>::update(const Vector& entries)
 {
+	// Check if this call to update() is legal.
 	if (!m_setupDone) {
 		fprintf(stderr, "The update function is NOT called due to the fact that the preconditioners have not been set up yet.\n");
 		return false;
@@ -374,6 +377,7 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 		return false;
 	}
 
+	// Update the preconditioner.
 	CPUTimer timer;
 	timer.Start();
 
@@ -390,12 +394,8 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 
 	timer.Stop();
 
-	m_stats.timeSetup = timer.getElapsed();
+	m_stats.timeUpdate = timer.getElapsed();
 
-	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
-	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
-	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
-	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
 	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
 	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
 	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
@@ -406,14 +406,8 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 	m_stats.time_fullLU = m_precond_pointers[0]->getTimeFullLU();
 
 	for (int i=1; i < numComponents; i++) {
-		if (m_stats.bandwidthReorder < m_precond_pointers[i]->getBandwidthReordering())
-			m_stats.bandwidthReorder = m_precond_pointers[i]->getBandwidthReordering();
-		if (m_stats.bandwidth < m_precond_pointers[i]->getBandwidth())
-			m_stats.bandwidth = m_precond_pointers[i]->getBandwidth();
-		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
 		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
 		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
-		m_stats.actualDropOff += m_precond_pointers[i]->getActualDropOff();
 		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
 		m_stats.time_offDiags += m_precond_pointers[i]->getTimeCopyOffDiags();
 		m_stats.time_bandLU += m_precond_pointers[i]->getTimeBandLU();

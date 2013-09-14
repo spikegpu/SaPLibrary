@@ -283,7 +283,7 @@ GetProblemSpecs(int             argc,
 				opts.safeFactorization = true;
 				break;
 			case OPT_CONST_BAND:
-				opts.variousBandwidth = false;
+				opts.variableBandwidth = false;
 				break;
 		}
 	}
@@ -304,10 +304,10 @@ GetProblemSpecs(int             argc,
 
 	// If no reordering, force using constant bandwidth.
 	if (!opts.performReorder)
-		opts.variousBandwidth = false;
+		opts.variableBandwidth = false;
 
 	// If using variable bandwidth, force using LU factorization.
-	if (opts.variousBandwidth)
+	if (opts.variableBandwidth)
 		opts.method = spike::LU_only;
 
 	// Print out the problem specifications.
@@ -331,7 +331,7 @@ GetProblemSpecs(int             argc,
 	cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
 	cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
 	cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
-	cout << (opts.variousBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
+	cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
 	cout << endl << endl;
 
 	return true;

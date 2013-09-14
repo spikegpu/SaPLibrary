@@ -50,7 +50,7 @@ public:
 	        SolverMethod   method,
 	        PrecondMethod  precondMethod,
 	        bool           safeFactorization,
-	        bool           variousBandwidth,
+	        bool           variableBandwidth,
 	        bool           trackReordering);
 
 	Precond(const Precond&  prec);
@@ -94,7 +94,7 @@ private:
 	SolverMethod   m_method;
 	PrecondMethod  m_precondMethod;
 	bool           m_safeFactorization;
-	bool           m_variousBandwidth;
+	bool           m_variableBandwidth;
 	bool           m_trackReordering;
 
 	bool           m_isSetup;
@@ -232,7 +232,7 @@ Precond<Vector>::Precond(int            numPart,
                          SolverMethod   method,
                          PrecondMethod  precondMethod,
                          bool           safeFactorization,
-                         bool           variousBandwidth,
+                         bool           variableBandwidth,
                          bool           trackReordering)
 :	m_numPartitions(numPart),
 	m_reorder(reorder),
@@ -241,7 +241,7 @@ Precond<Vector>::Precond(int            numPart,
 	m_method(method),
 	m_precondMethod(precondMethod),
 	m_safeFactorization(safeFactorization),
-	m_variousBandwidth(variousBandwidth),
+	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
 	m_isSetup(0),
 	m_k_reorder(0),
@@ -283,7 +283,7 @@ Precond<Vector>::Precond(const Precond<Vector> &prec):
 	m_method            = prec.m_method;
 	m_precondMethod     = prec.m_precondMethod;
 	m_safeFactorization = prec.m_safeFactorization;
-	m_variousBandwidth  = prec.m_variousBandwidth;
+	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
 }
 
@@ -298,7 +298,7 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 	m_method            = prec.m_method;
 	m_precondMethod     = prec.m_precondMethod;
 	m_safeFactorization = prec.m_safeFactorization;
-	m_variousBandwidth  = prec.m_variousBandwidth;
+	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
 
 	m_isSetup           = 0;
@@ -643,7 +643,7 @@ Precond<Vector>::getSRev(Vector&  rhs,
 	}
 
 	if (m_numPartitions > 1 && m_precondMethod == Spike) {
-		if (!m_variousBandwidth) {
+		if (!m_variableBandwidth) {
 			sol = rhs;
 			// Calculate modified RHS
 			partBandedFwdSweep(rhs);
@@ -865,7 +865,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	int dropped = 0;
 
 	if (m_dropOff_frac > 0) {
-		if (!m_variousBandwidth)
+		if (!m_variableBandwidth)
 			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual);
 		else
 			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual, dropMin);
@@ -894,18 +894,18 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	// If there is just one partition, do not use variable band and
 	// second stage reordering.
 	if (m_numPartitions == 1 || m_k == 0) {
-		if (m_variousBandwidth)
+		if (m_variableBandwidth)
 			std::cerr << "A single partition is used or the half-bandwidth is zero. Variable-band option was disabled." << std::endl;
-		m_variousBandwidth = false;
+		m_variableBandwidth = false;
 	}
 
 	if (m_dropOff_frac > 0) {
-		if (m_variousBandwidth)
+		if (m_variableBandwidth)
 			graph.dropOffPost(m_dropOff_frac, m_dropOff_actual, dropMin, m_numPartitions);
 	}
 
 	// Assemble the banded matrix.
-	if (m_variousBandwidth) {
+	if (m_variableBandwidth) {
 		assemble_timer.Start();
 		graph.assembleOffDiagMatrices(m_k, m_numPartitions, m_WV_host, m_offDiags_host, m_offDiagWidths_left_host, m_offDiagWidths_right_host, offDiagPerms_left, offDiagPerms_right, m_typeMap, m_offDiagMap, m_WVMap);
 		assemble_timer.Stop();
@@ -941,7 +941,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	}
 	m_B = B;
 
-	if (m_variousBandwidth) {
+	if (m_variableBandwidth) {
 		m_ks = m_ks_host;
 		m_offDiagWidths_left = m_offDiagWidths_left_host;
 		m_offDiagWidths_right = m_offDiagWidths_right_host;
@@ -962,7 +962,7 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		thrust::sequence(m_compB2Offsets.begin(), m_compB2Offsets.end(), 0, 2 * m_k * (2 * m_k + 1));
 	}
 
-	if (m_variousBandwidth) {
+	if (m_variableBandwidth) {
 		VectorI buffer2(m_n);
 		m_secondReordering = secondReorder;
 		combinePermutation(m_secondReordering, m_optReordering, buffer2);
@@ -1028,9 +1028,9 @@ Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
 
 	// If there is just one partition, it's meaningless to apply various-bandwidth method
 	if (m_numPartitions == 1) {
-		if (m_variousBandwidth) {
+		if (m_variableBandwidth) {
 			std::cerr << "Partition number equals one, it's thus meaningless to use various-bandwidth method." << std::endl;
-			m_variousBandwidth = false;
+			m_variableBandwidth = false;
 		}
 	}
 
@@ -1053,7 +1053,6 @@ Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
 }
 
 
-
 // ----------------------------------------------------------------------------
 // Precond::extractOffDiagonal()
 //
@@ -1066,7 +1065,7 @@ void
 Precond<Vector>::extractOffDiagonal(Vector&  mat_WV)
 {
 	// If second-level reordering is enabled, the off-diagonal matrices are already in the host.
-	if (m_variousBandwidth) {
+	if (m_variableBandwidth) {
 		mat_WV = m_WV_host;
 		m_offDiags = m_offDiags_host;
 		return;
@@ -1110,7 +1109,7 @@ template <typename Vector>
 void
 Precond<Vector>::partFullLU()
 {
-	if (!m_variousBandwidth)
+	if (!m_variableBandwidth)
 		partFullLU_const();
 	else
 		partFullLU_var();
@@ -1239,7 +1238,7 @@ template <typename Vector>
 void
 Precond<Vector>::partBandedLU()
 {
-	if (!m_variousBandwidth) {
+	if (!m_variableBandwidth) {
 		if (m_numPartitions > 1)
 			partBandedLU_const();
 		else
@@ -1587,7 +1586,7 @@ template <typename Vector>
 void 
 Precond<Vector>::partBandedFwdSweep(Vector&  v)
 {
-	if (!m_variousBandwidth)
+	if (!m_variableBandwidth)
 		partBandedFwdSweep_const(v);
 	else
 		partBandedFwdSweep_var(v);
@@ -1655,7 +1654,7 @@ template <typename Vector>
 void 
 Precond<Vector>::partBandedBckSweep(Vector&  v)
 {
-	if (!m_variousBandwidth)
+	if (!m_variableBandwidth)
 		partBandedBckSweep_const(v);
 	else
 		partBandedBckSweep_var(v);
@@ -1751,7 +1750,7 @@ Precond<Vector>::partFullFwdSweep(Vector&  v)
 
 	dim3 grids(m_numPartitions-1, 1);
 
-	if (!m_variousBandwidth) {
+	if (!m_variableBandwidth) {
 		if (m_k > 512)
 			device::forwardElimLNormal_g512<ValueType, ValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
@@ -1787,7 +1786,7 @@ Precond<Vector>::partFullBckSweep(Vector&  v)
 
 	dim3 grids(m_numPartitions-1, 1);
 
-	if (!m_variousBandwidth) {
+	if (!m_variableBandwidth) {
 		if (m_k > 512)
 			device::backwardElimUNormal_g512<ValueType, ValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
@@ -1829,7 +1828,7 @@ Precond<Vector>::purifyRHS(Vector&  v,
 
 	dim3 grids(m_k, m_numPartitions-1);
 
-	if (!m_variousBandwidth) {
+	if (!m_variableBandwidth) {
 		if (m_k > 256)
 			device::innerProductBCX_g256<ValueType, ValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
 		else if (m_k > 64)
@@ -1865,7 +1864,7 @@ template <typename Vector>
 void
 Precond<Vector>::calculateSpikes(Vector&  WV)
 {
-	if (!m_variousBandwidth)
+	if (!m_variableBandwidth)
 		calculateSpikes_const(WV);
 	else {
 		int totalRHSCount = cusp::blas::nrm1(m_offDiagWidths_right_host) + cusp::blas::nrm1(m_offDiagWidths_left_host);
@@ -2368,7 +2367,7 @@ Precond<Vector>::assembleReducedMat(Vector&  WV)
 
 	dim3 grids(m_k, m_numPartitions-1);
 
-	if (!m_variousBandwidth) {
+	if (!m_variableBandwidth) {
 		if (m_k > 1024)
 			device::assembleReducedMat_general<ValueType><<<grids, 512>>>(m_k, p_WV, p_R);
 		else if (m_k > 32)
