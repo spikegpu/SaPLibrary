@@ -180,9 +180,9 @@ int main(int argc, char** argv)
 void spikeSetDevice() {
 	int deviceCount = 0;
 	
-	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess) {
-		cudaSetDevice(0);
-		return;
+	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount <= 0) {
+		std::cerr << "There is no available device." << endl;
+		exit(-1);
 	}
 
 	size_t max_free_size = 0;
