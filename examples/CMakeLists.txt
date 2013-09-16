@@ -53,5 +53,6 @@ SET(SPIKE_CUHEADERS
 
 ADD_SUBDIRECTORY(matrix_market)
 ADD_SUBDIRECTORY(sequence)
+ADD_SUBDIRECTORY(test)
 #ADD_SUBDIRECTORY(synthetic_banded)
 #ADD_SUBDIRECTORY(synthetic_sparse)
