@@ -114,6 +114,7 @@ int main(int argc, char** argv)
 	string         fileMat;
 	int            numPart;
 	spike::Options opts;
+	opts.trackReordering = true;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, numPart, opts))
 		return 1;

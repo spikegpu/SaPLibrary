@@ -96,6 +96,15 @@ struct ExpOp: public thrust::unary_function<T, T>
 	}
 };
 
+template<typename T>
+struct NotTrue: public thrust::unary_function<T, T>
+{
+	__host__ __device__
+	bool operator() (T a) {
+		return !a;
+	}
+};
+
 } // namespace spike
 
 

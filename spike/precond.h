@@ -23,12 +23,9 @@
 
 namespace spike {
 
-
-// ----------------------------------------------------------------------------
-// Precond
-//
-// This class encapsulates the truncated Spike preconditioner.
-// ----------------------------------------------------------------------------
+/**
+ * This class encapsulates the truncated Spike preconditioner.
+ */
 template <typename Vector>
 class Precond {
 public:
@@ -38,10 +35,12 @@ public:
 
 	typedef typename cusp::array1d<int, MemorySpace> VectorI;
 	typedef typename cusp::array1d<ValueType, cusp::host_memory> VectorH;
-	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMap;
-	typedef typename cusp::array1d<ValueType, cusp::host_memory> MatrixMapF;
+	typedef typename cusp::array1d<int, MemorySpace>		 MatrixMap;
+	typedef typename cusp::array1d<ValueType, MemorySpace>	 MatrixMapF;
+	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMapH;
+	typedef typename cusp::array1d<ValueType, cusp::host_memory> MatrixMapFH;
 
-	Precond():m_isSetup(0) {};
+	Precond():m_setupDone(0) {};
 
 	Precond(int            numPart,
 	        bool           reorder,
@@ -78,9 +77,9 @@ public:
 	template <typename Matrix>
 	void   setup(const Matrix&  A);
 
-	bool   isSetup() const                {return m_isSetup;}
+	bool   setupDone() const                {return m_setupDone;}
 
-	void update(const VectorH& entries);
+	void update(const Vector& entries);
 	void solve(Vector& v, Vector& z);
 
 private:
@@ -97,7 +96,7 @@ private:
 	bool           m_variableBandwidth;
 	bool           m_trackReordering;
 
-	bool           m_isSetup;
+	bool           m_setupDone;
 	MatrixMap      m_offDiagMap;
 	MatrixMap      m_WVMap;
 	MatrixMap      m_typeMap;
@@ -219,11 +218,9 @@ private:
 	void getSRev(Vector& rhs, Vector& sol);
 };
 
-// ----------------------------------------------------------------------------
-// Precond::Precond()
-//
-// This is the constructor for the Precond class.
-// ----------------------------------------------------------------------------
+/**
+ * This is the constructor for the Precond class.
+ */
 template <typename Vector>
 Precond<Vector>::Precond(int            numPart,
                          bool           reorder,
@@ -243,7 +240,7 @@ Precond<Vector>::Precond(int            numPart,
 	m_safeFactorization(safeFactorization),
 	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
-	m_isSetup(0),
+	m_setupDone(false),
 	m_k_reorder(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
@@ -259,9 +256,12 @@ Precond<Vector>::Precond(int            numPart,
 {
 }
 
+/**
+ * This is the copy constructor for the Precond class.
+ */
 template <typename Vector>
 Precond<Vector>::Precond(const Precond<Vector> &prec):
-	m_isSetup(0),
+	m_setupDone(false),
 	m_k_reorder(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
@@ -301,7 +301,7 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
 
-	m_isSetup           = 0;
+	m_setupDone         = false;
 	m_ks_host           = prec.m_ks_host;
 	m_offDiagWidths_left_host = prec.m_offDiagWidths_left_host;
 	m_offDiagWidths_right_host = prec.m_offDiagWidths_right_host;
@@ -312,22 +312,28 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 	return *this;
 }
 
-// ----------------------------------------------------------------------------
-// Precond::update()
-//
-// Assume we are to solve many systems with exactly the same matrix pattern.
-// When we have solved one, next time we don't bother doing permutation and 
-// scaling again. Instead, we keep track of the mapping from the sparse matrix
-// to the banded ones and directly update them. This function is called when
-// the solver has solved at least one system.
-// ----------------------------------------------------------------------------
+/*! \brief This function updates the banded matrix and off-diagonal matrices
+ *         based on the given entries.
+ *
+ * Assume we are to solve many systems with exactly the same matrix pattern.
+ * When we have solved one, next time we don't bother doing permutation and 
+ * scaling again. Instead, we keep track of the mapping from the sparse matrix
+ * to the banded ones and directly update them. This function is called when
+ * the solver has solved at least one system and during setup, the mapping is
+ * tracked. Otherwise report error and exit.
+ */
 template <typename Vector>
 void
-Precond<Vector>::update(const VectorH& entries)
+Precond<Vector>::update(const Vector& entries)
 {
 	// If setup function is not called at all, directly return from this function
-	if (!m_isSetup) {
-		fprintf(stderr, "Warning: the update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
+	if (!m_setupDone) {
+		fprintf(stderr, "The update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
+		return;
+	}
+
+	if (!m_trackReordering) {
+		fprintf(stderr, "The update function is NOT called due to the fact that no reordering information is tracked during setup.\n");
 		return;
 	}
 
@@ -335,26 +341,20 @@ Precond<Vector>::update(const VectorH& entries)
 
 	m_timer.Start();
 
-	cusp::array1d<ValueType, cusp::host_memory> B(m_B.size(), 0);
-	cusp::blas::fill(m_WV_host, 0);
-	cusp::blas::fill(m_offDiags_host, 0);
 
-	int nnz = entries.size();
+	cusp::blas::fill(m_B, 0);
 
-	for (int i=0; i < nnz; i++) {
-		if (m_typeMap[i] == 2)
-			m_offDiags_host[m_offDiagMap[i]] = m_WV_host[m_WVMap[i]] = entries[i] * m_scaleMap[i];
-		else
-			B[m_bandedMatMap[i]] = entries[i] * m_scaleMap[i];
-	}
-
+	thrust::scatter_if(
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<ValueType>()),
+			m_bandedMatMap.begin(),
+			m_typeMap.begin(),
+			m_B.begin()
+			);
 	m_timer.Stop();
 	m_time_cpu_assemble = m_timer.getElapsed();
 
-	m_timer.Start();
-	m_B = B;
-	m_timer.Stop();
-	m_time_transfer = m_timer.getElapsed();
+	m_time_transfer = 0.0;
 
 	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
 	if (m_k == 0)
@@ -383,9 +383,27 @@ Precond<Vector>::update(const VectorH& entries)
 	// in the array m_offDiags.
 	Vector mat_WV;
 	mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
+	cusp::blas::fill(m_offDiags, 0);
 
 	m_timer.Start();
-	extractOffDiagonal(mat_WV);
+
+	thrust::scatter_if(
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<ValueType>()),
+			m_offDiagMap.begin(),
+			m_typeMap.begin(),
+			m_offDiags.begin(),
+			NotTrue<int>()
+			);
+
+	thrust::scatter_if(
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<ValueType>()),
+			m_WVMap.begin(),
+			m_typeMap.begin(),
+			mat_WV.begin(),
+			NotTrue<int>()
+			);
 	m_timer.Stop();
 	m_time_offDiags = m_timer.getElapsed();
 
@@ -482,8 +500,7 @@ Precond<Vector>::setup(const Matrix&  A)
 {
 	m_n = A.num_rows;
 
-	if (m_trackReordering)
-		m_isSetup = true;
+	m_setupDone = true;
 
 	// Form the banded matrix based on the specified matrix, either through
 	// transformation (reordering and drop-off) or straight conversion.
@@ -855,9 +872,15 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 
 	const ValueType dropMin = 1.0/100;
 
+	MatrixMapH      offDiagMap;
+	MatrixMapH      WVMap;
+	MatrixMapH      typeMap;
+	MatrixMapH      bandedMatMap;
+	MatrixMapFH     scaleMap;
+
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, m_scaleMap);
+	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap);
 	reorder_timer.Stop();
 
 	m_time_reorder += reorder_timer.getElapsed();
@@ -904,10 +927,11 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 			graph.dropOffPost(m_dropOff_frac, m_dropOff_actual, dropMin, m_numPartitions);
 	}
 
+
 	// Assemble the banded matrix.
 	if (m_variableBandwidth) {
 		assemble_timer.Start();
-		graph.assembleOffDiagMatrices(m_k, m_numPartitions, m_WV_host, m_offDiags_host, m_offDiagWidths_left_host, m_offDiagWidths_right_host, offDiagPerms_left, offDiagPerms_right, m_typeMap, m_offDiagMap, m_WVMap);
+		graph.assembleOffDiagMatrices(m_k, m_numPartitions, m_WV_host, m_offDiags_host, m_offDiagWidths_left_host, m_offDiagWidths_right_host, offDiagPerms_left, offDiagPerms_right, typeMap, offDiagMap, WVMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 
@@ -919,12 +943,12 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		assemble_timer.Start();
 		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, B,
 		                           m_ks_host, m_BOffsets_host, 
-		                           m_typeMap, m_bandedMatMap);
+		                           typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 	} else {
 		assemble_timer.Start();
-		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, B, m_typeMap, m_bandedMatMap);
+		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, B, typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 	}
@@ -979,6 +1003,14 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 		VectorI buffer = mc64RowPerm, buffer2(m_n);
 		combinePermutation(buffer, m_optPerm, buffer2);
 		m_optPerm = buffer2;
+	}
+
+	if (m_trackReordering) {
+		m_offDiagMap   = offDiagMap;
+		m_WVMap		   = WVMap;
+		m_typeMap	   = typeMap;
+		m_bandedMatMap = bandedMatMap;
+		m_scaleMap	   = scaleMap;
 	}
 
 	transfer_timer.Stop();

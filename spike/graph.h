@@ -686,7 +686,7 @@ Graph<T>::assembleOffDiagMatrices(int        bandwidth,
 				}
 
 				if (m_trackReordering) {
-					typeMap[it->m_ori_idx] = 2;
+					typeMap[it->m_ori_idx] = 0;
 					offDiagMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol);
 					WVMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth;
 				}
@@ -713,7 +713,7 @@ Graph<T>::assembleOffDiagMatrices(int        bandwidth,
 				}
 
 				if (m_trackReordering) {
-					typeMap[it->m_ori_idx] = 2;
+					typeMap[it->m_ori_idx] = 0;
 					offDiagMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth);
 					WVMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth;
 				}

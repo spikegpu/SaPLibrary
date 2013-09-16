@@ -119,6 +119,7 @@ int main(int argc, char** argv)
 	int            numPart;
 	bool		   verbose;
 	spike::Options opts;
+	// opts.trackReordering = true;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, verbose, opts))
 		return 1;

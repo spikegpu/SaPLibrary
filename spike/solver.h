@@ -25,12 +25,9 @@
 
 namespace spike {
 
-
-// ----------------------------------------------------------------------------
-// Options
-//
-// This structure encapsulates all solver options.
-// ----------------------------------------------------------------------------
+/**
+ * This structure encapsulates all solver options.
+ */
 struct Options
 {
 	Options();
@@ -52,12 +49,10 @@ struct Options
 };
 
 
-// ----------------------------------------------------------------------------
-// Stats
-//
-// This structure encapsulates all solver statistics, both from the iterative
-// solver and the preconditioner.
-// ----------------------------------------------------------------------------
+/**
+ * This structure encapsulates all solver statistics, both from the iterative
+ * solver and the preconditioner.
+ */
 struct Stats
 {
 	Stats();
@@ -89,11 +84,9 @@ struct Stats
 };
 
 
-// ----------------------------------------------------------------------------
-// Solver
-//
-// This class encapsulates the main SPIKE::GPU solver. 
-// ----------------------------------------------------------------------------
+/**
+ * This class encapsulates the main SPIKE::GPU solver. 
+ */
 template <typename Matrix, typename Vector>
 class Solver
 {
@@ -143,12 +136,10 @@ private:
 };
 
 
-// ----------------------------------------------------------------------------
-// Options::Options()
-//
-// This is the constructor for the Options. It sets default values for
-// all options.
-// ----------------------------------------------------------------------------
+/**
+ * This is the constructor for the Options class. It sets default values for
+ * all options.
+ */
 Options::Options()
 :	solverType(BiCGStab2),
 	maxNumIterations(100),
@@ -161,17 +152,14 @@ Options::Options()
 	safeFactorization(false),
 	variableBandwidth(true),
 	singleComponent(false),
-	trackReordering(true)
+	trackReordering(false)
 {
 }
 
-
-// ----------------------------------------------------------------------------
-// Stats::Stats()
-//
-// This is the constructor for the Stats. It initializes all
-// timing and performance measures.
-// ----------------------------------------------------------------------------
+/**
+ * This is the constructor for the Stats class. It initializes all
+ * timing and performance measures.
+ */
 Stats::Stats()
 :	timeSetup(0),
 	timeSolve(0),
@@ -195,12 +183,10 @@ Stats::Stats()
 }
 
 
-// ----------------------------------------------------------------------------
-// Solver::Solver()
-//
-// This is the constructor for the Solver class. This constructor takes use of
-// a SolverOption object.
-// ----------------------------------------------------------------------------
+/**
+ * This is the constructor for the Solver class. This constructor takes use of
+ * an Options object.
+ */
 template <typename Matrix, typename Vector>
 Solver<Matrix, Vector>::Solver(int             numPartitions,
                                const Options&  opts)
@@ -214,14 +200,11 @@ Solver<Matrix, Vector>::Solver(int             numPartitions,
 {
 }
 
-
-// ----------------------------------------------------------------------------
-// Solver::setup()
-//
-// This function performs the initial setup for the Spike solver. It prepares
-// the preconditioner based on the specified matrix A (which may be the system
-// matrix, or some approximation to it).
-// ----------------------------------------------------------------------------
+/**
+ * This function performs the initial setup for the Spike solver. It prepares
+ * the preconditioner based on the specified matrix A (which may be the system
+ * matrix, or some approximation to it).
+ */
 template <typename Matrix, typename Vector>
 bool
 Solver<Matrix, Vector>::setup(const Matrix& A)
@@ -357,11 +340,12 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 	return true;
 }
 
-
-// ----------------------------------------------------------------------------
-// Solver::update()
-//
-// ----------------------------------------------------------------------------
+/**
+ * This function does an update to the banded matrix and off-diagonal matrices after
+ * function setup has been called at least once and during setup, the reordering information
+ * is asked to be tracked. In case at least one of the conditions is not met, errors
+ * are reported.
+ */
 template <typename Matrix, typename Vector>
 bool
 Solver<Matrix, Vector>::update(const Vector& entries)
@@ -381,21 +365,30 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 	CPUTimer timer;
 	timer.Start();
 
-	cusp::array1d<ValueType, cusp::host_memory> h_entries = entries;
 
-	int numComponents = m_precond_pointers.size(), nnz = h_entries.size();
-	std::vector<cusp::array1d<ValueType, cusp::host_memory> > new_entries(numComponents);
+	int numComponents = m_precond_pointers.size();
 
-	for (int i=0; i < nnz; i++)
-		new_entries[m_compMap[i]].push_back(h_entries[i]);
+	if (numComponents <= 1)
+		m_precond_pointers[0] -> update(entries);
+	else {
+		cusp::array1d<ValueType, cusp::host_memory> h_entries = entries;
+		int nnz = h_entries.size();
+		std::vector<cusp::array1d<ValueType, cusp::host_memory> > new_entries(numComponents);
 
-	for (int i=0; i < numComponents; i++)
-		m_precond_pointers[i] -> update(new_entries[i]);
+		for (int i=0; i < nnz; i++)
+			new_entries[m_compMap[i]].push_back(h_entries[i]);
+
+		for (int i=0; i < numComponents; i++) {
+			Vector tmp_entries = new_entries[i];
+			m_precond_pointers[i] -> update(tmp_entries);
+		}
+	}
 
 	timer.Stop();
 
 	m_stats.timeUpdate = timer.getElapsed();
 
+	m_stats.time_reorder = 0;
 	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
 	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
 	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
@@ -418,13 +411,10 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 	return true;
 }
 
-
-// ----------------------------------------------------------------------------
-// Solver::solve()
-//
-// This function solves the system Ax=b, for given matrix A and right-handside
-// vector b.
-// ----------------------------------------------------------------------------
+/**
+ * This function solves the system Ax=b, for given matrix A and right-handside
+ * vector b.
+ */
 template <typename Matrix, typename Vector>
 template <typename SpmvOperator>
 bool
