@@ -483,16 +483,14 @@ Precond<Vector>::update(const Vector& entries)
 	////cusp::io::write_matrix_market_file(m_R, "R_lu.mtx");
 }
 
-// ----------------------------------------------------------------------------
-// Precond::setup()
-//
-// This function performs the initial preconditioner setup, based on the
-// specified matrix:
-// (1) Reorder the matrix (MC64 and/or RCM)
-// (2) Element drop-off (optional)
-// (3) LU factorization
-// (4) Get the reduced matrix
-// ----------------------------------------------------------------------------
+/**
+ * This function performs the initial preconditioner setup, based on the
+ * specified matrix:
+ * (1) Reorder the matrix (MC64 and/or RCM)
+ * (2) Element drop-off (optional)
+ * (3) LU factorization
+ * (4) Get the reduced matrix
+ */
 template <typename Vector>
 template <typename Matrix>
 void
@@ -618,13 +616,10 @@ Precond<Vector>::setup(const Matrix&  A)
 	////cusp::io::write_matrix_market_file(m_R, "R_lu.mtx");
 }
 
-
-// ----------------------------------------------------------------------------
-// SpikePrecond::solve()
-//
-// This function solves the system Mz=v, for a specified vector v, where M is
-// the implicitly defined preconditioner matrix.
-// ----------------------------------------------------------------------------
+/**
+ * This function solves the system Mz=v, for a specified vector v, where M is
+ * the implicitly defined preconditioner matrix.
+ */
 template <typename Vector>
 void
 Precond<Vector>::solve(Vector&  v,
@@ -643,12 +638,9 @@ Precond<Vector>::solve(Vector&  v,
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// SpikePrecond::getSRev()
-//
-// This function gets a rough solution of the input RHS.
-// ----------------------------------------------------------------------------
+/**
+ * This function gets a rough solution of the input RHS.
+ */
 template <typename Vector>
 void
 Precond<Vector>::getSRev(Vector&  rhs,
@@ -697,14 +689,11 @@ Precond<Vector>::getSRev(Vector&  rhs,
 	partBandedBckSweep(sol);
 }
 
-
-// ----------------------------------------------------------------------------
-// SpikePrecond::leftTrans()
-//
-// This function left transforms the system. We first apply the MC64 row
-// scaling and permutation (or only the MC64 row permutation) after which we
-// apply the RCM row permutation.
-// ----------------------------------------------------------------------------
+/**
+ * This function left transforms the system. We first apply the MC64 row
+ * scaling and permutation (or only the MC64 row permutation) after which we
+ * apply the RCM row permutation.
+ */
 template <typename Vector>
 void
 Precond<Vector>::leftTrans(Vector&  v,
@@ -716,13 +705,10 @@ Precond<Vector>::leftTrans(Vector&  v,
 		permute(v, m_optPerm, z);
 }
 
-
-// ----------------------------------------------------------------------------
-// SpikePrecond::rightTrans()
-//
-// This function right transforms the system. We apply the RCM column 
-// permutation and, if needed, the MC64 column scaling.
-// ----------------------------------------------------------------------------
+/**
+ * This function right transforms the system. We apply the RCM column 
+ * permutation and, if needed, the MC64 column scaling.
+ */
 template <typename Vector>
 void
 Precond<Vector>::rightTrans(Vector&  v,
@@ -734,13 +720,10 @@ Precond<Vector>::rightTrans(Vector&  v,
 		permute(v, m_optReordering, z);
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::permute()
-//
-// This function transforms the input vector 'v' into the output vector 'w' by
-// applying the permutation 'perm'.
-// ----------------------------------------------------------------------------
+/**
+ * This function transforms the input vector 'v' into the output vector 'w' by
+ * applying the permutation 'perm'.
+ */
 template <typename Vector>
 void
 Precond<Vector>::permute(Vector&   v,
@@ -753,13 +736,10 @@ Precond<Vector>::permute(Vector&   v,
 	m_time_shuffle += m_timer.getElapsed();
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::permuteAndScale()
-//
-// This function transforms the input vector 'v' into the output vector 'w' by
-// applying the permutation 'perm' followed by the scaling 'scale'.
-// ----------------------------------------------------------------------------
+/**
+ * This function transforms the input vector 'v' into the output vector 'w' by
+ * applying the permutation 'perm' followed by the scaling 'scale'.
+ */
 template <typename Vector>
 void
 Precond<Vector>::permuteAndScale(Vector&   v,
@@ -780,13 +760,10 @@ Precond<Vector>::permuteAndScale(Vector&   v,
 	m_time_shuffle += m_timer.getElapsed();
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::scaleAndPermute()
-//
-// This function transforms the input vector 'v' into the output vector 'w' by
-// applying the scaling 'scale' followed by the permutation 'perm'.
-// ----------------------------------------------------------------------------
+/**
+ * This function transforms the input vector 'v' into the output vector 'w' by
+ * applying the scaling 'scale' followed by the permutation 'perm'.
+ */ 
 template <typename Vector>
 void
 Precond<Vector>::scaleAndPermute(Vector&   v,
@@ -805,12 +782,9 @@ Precond<Vector>::scaleAndPermute(Vector&   v,
 	m_time_shuffle += m_timer.getElapsed();
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::combinePermutation()
-//
-// This function combines two permutations to one.
-// ----------------------------------------------------------------------------
+/**
+ * This function combines two permutations to one.
+ */
 template <typename Vector>
 void Precond<Vector>::combinePermutation(VectorI&  perm,
                                          VectorI&  perm2,
@@ -822,26 +796,23 @@ void Precond<Vector>::combinePermutation(VectorI&  perm,
 	m_time_shuffle += m_timer.getElapsed();
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::transformToBandedMatrix()
-//
-// This function applies the reordering and element drop-off algorithms to
-// obtain the banded matrix for the Spike method. On return, the following
-// member variables are set:
-//   m_B
-//       banded matrix after reordering and drop-off. This matrix is stored
-//       column-wise, band after band, in a contiguous 1-D array.
-//   m_k
-//       half band-width of the matrix m_B (after reordering and drop-off)
-//   m_optReordering
-//   m_optPerm
-//       permutation arrays obtained from the symmetric RCM algorithm
-//       row and column permutations obtained from the MC64 algorithm
-//   mc64RowScale
-//   mc64ColScale
-//       row and column scaling factors obtained from the MC64 algorithm
-// ----------------------------------------------------------------------------
+/**
+ * This function applies the reordering and element drop-off algorithms to
+ * obtain the banded matrix for the Spike method. On return, the following
+ * member variables are set:
+ *   m_B
+ *       banded matrix after reordering and drop-off. This matrix is stored
+ *       column-wise, band after band, in a contiguous 1-D array.
+ *   m_k
+ *       half band-width of the matrix m_B (after reordering and drop-off)
+ *   m_optReordering
+ *   m_optPerm
+ *       permutation arrays obtained from the symmetric RCM algorithm
+ *       row and column permutations obtained from the MC64 algorithm
+ *   mc64RowScale
+ *   mc64ColScale
+ *       row and column scaling factors obtained from the MC64 algorithm
+ */
 template <typename Vector>
 template <typename Matrix>
 void
@@ -1017,14 +988,11 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	m_time_transfer += transfer_timer.getElapsed();
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::convertToBandedMatrix()
-//
-// This function converts the specified sparse format matrix to a banded matrix
-// m_B which is stored column-wise, band after band, in a contiguous 1-D array.
-// It also sets m_k to be the half-bandwidth of m_B.
-// ----------------------------------------------------------------------------
+/**
+ * This function converts the specified sparse format matrix to a banded matrix
+ * m_B which is stored column-wise, band after band, in a contiguous 1-D array.
+ * It also sets m_k to be the half-bandwidth of m_B.
+ */
 template <typename Vector>
 template <typename Matrix>
 void
@@ -1085,13 +1053,11 @@ Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
 }
 
 
-// ----------------------------------------------------------------------------
-// Precond::extractOffDiagonal()
-//
-// This function extracts and saves the off-diagonal blocks. Simultaneously,
-// it also initializes the specified WV matrix with the off-diagonal blocks
-// (this will be later processed to obtain the actual spike blocks in WV).
-// ----------------------------------------------------------------------------
+/**
+ * This function extracts and saves the off-diagonal blocks. Simultaneously,
+ * it also initializes the specified WV matrix with the off-diagonal blocks
+ * (this will be later processed to obtain the actual spike blocks in WV).
+ */
 template <typename Vector>
 void
 Precond<Vector>::extractOffDiagonal(Vector&  mat_WV)
@@ -1123,20 +1089,16 @@ Precond<Vector>::extractOffDiagonal(Vector&  mat_WV)
 		device::copydWV<ValueType><<<m_numPartitions-1, m_k*m_k>>>(m_k, p_B, p_WV, p_offDiags, partSize, m_numPartitions, remainder);
 }
 
-
-
-// ----------------------------------------------------------------------------
-// Precond::partFullLU()
-// Precond::partFullLU_const()
-// Precond::partFullLU_var()
-//
-// This function performs the in-place LU factorization of the diagonal blocks
-// of the reduced matrix R. We take advantage of the special block structure of
-// each individual 2*k by 2*k diagonal block, namely:
-//       [ I_k  |   V  ]
-// R_i = [------+ -----]
-//       [  W   |  I_k ]
-// ----------------------------------------------------------------------------
+/*! \brief This function will call either Precond::partFullLU_const() or
+ *		   Precond::partFullLU_var()
+ *
+ * This function performs the in-place LU factorization of the diagonal blocks
+ * of the reduced matrix R. We take advantage of the special block structure of
+ * each individual 2*k by 2*k diagonal block, namely:
+ *       [ I_k  |   V  ]
+ * R_i = [------+ -----]
+ *       [  W   |  I_k ]
+ */
 template <typename Vector>
 void
 Precond<Vector>::partFullLU()
@@ -1255,17 +1217,13 @@ Precond<Vector>::partFullLU_var()
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::partBandedLU()
-// Precond::partBandedLU_one()
-// Precond::partBandedLU_const()
-// Precond::partBandedLU_var()
-//
-// This function performs the in-place LU factorization of the diagonal blocks
-// of the specified banded matrix B, on a per-partition basis, using the
-// "window sliding" method.
-// ----------------------------------------------------------------------------
+/*! \brief This function will call Precond::partBandedLU_one(), 
+ * Precond::partBandedLU_const() or Precond::partBandedLU_var().
+ *
+ * This function performs the in-place LU factorization of the diagonal blocks
+ * of the specified banded matrix B, on a per-partition basis, using the
+ * "window sliding" method.
+ */
 template <typename Vector>
 void
 Precond<Vector>::partBandedLU()
@@ -1524,14 +1482,11 @@ Precond<Vector>::partBandedLU_var()
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::partBandedUL()
-//
-// This function performs the in-place UL factorization of the diagonal blocks
-// of the specified banded matrix B, on a per-partition basis, using the
-// "window sliding" method.
-// ----------------------------------------------------------------------------
+/**
+ * This function performs the in-place UL factorization of the diagonal blocks
+ * of the specified banded matrix B, on a per-partition basis, using the
+ * "window sliding" method.
+ */
 template <typename Vector>
 void
 Precond<Vector>::partBandedUL(Vector& B)
@@ -1605,15 +1560,12 @@ Precond<Vector>::partBandedUL(Vector& B)
 }
 
 
-
-// ----------------------------------------------------------------------------
-// Precond::partBandedFwdElim()
-// Precond::partBandedFwdElim_const()
-// Precond::partBandedFwdElim_var()
-//
-// This function performs the forward elimination sweep for the given banded
-// matrix B (assumed to encode the LU factors) and vector v.
-// ----------------------------------------------------------------------------
+/*! \brief This function will call either Precond::partBandedFwdElim_const()
+ * or Precond::partBandedFwdElim_var()
+ *
+ * This function performs the forward elimination sweep for the given banded
+ * matrix B (assumed to encode the LU factors) and vector v.
+ */
 template <typename Vector>
 void 
 Precond<Vector>::partBandedFwdSweep(Vector&  v)
@@ -1673,15 +1625,12 @@ Precond<Vector>::partBandedFwdSweep_var(Vector&  v)
 		device::var::fwdElim_sol_narrow<ValueType, ValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::partBandedBckSweep()
-// Precond::partBandedBckSweep_const()
-// Precond::partBandedBckSweep_var()
-//
-// This function performs the backward substitution sweep for the given banded
-// matrix B (assumed to encode the LU factors) and vector v.
-// ----------------------------------------------------------------------------
+/*! \brief This function will call either Precond::partBandedBckSweep_const()
+ * or Precond::partBandedBckSweep_var().
+ *
+ * This function performs the backward substitution sweep for the given banded
+ * matrix B (assumed to encode the LU factors) and vector v.
+ */
 template <typename Vector>
 void 
 Precond<Vector>::partBandedBckSweep(Vector&  v)
@@ -1763,13 +1712,10 @@ Precond<Vector>::partBandedBckSweep_var(Vector&  v)
 		device::var::bckElim_sol_narrow<ValueType, ValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::partFullFwdSweep()
-//
-// This function performs the forward elimination sweep for the given full
-// matrix R (assumed to encode the LU factors) and vector v.
-// ----------------------------------------------------------------------------
+/**
+ * This function performs the forward elimination sweep for the given full
+ * matrix R (assumed to encode the LU factors) and vector v.
+ */
 template <typename Vector>
 void 
 Precond<Vector>::partFullFwdSweep(Vector&  v)
@@ -1799,13 +1745,10 @@ Precond<Vector>::partFullFwdSweep(Vector&  v)
 }
 
 
-
-// ----------------------------------------------------------------------------
-// Precond::partFullBckSweep()
-//
-// This function performs the backward substitution sweep for the given full
-// matrix R (assumed to encode the LU factors) and vector v.
-// ----------------------------------------------------------------------------
+/**
+ * This function performs the backward substitution sweep for the given full
+ * matrix R (assumed to encode the LU factors) and vector v.
+ */
 template <typename Vector>
 void 
 Precond<Vector>::partFullBckSweep(Vector&  v)
@@ -1838,14 +1781,11 @@ Precond<Vector>::partFullBckSweep(Vector&  v)
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::purifyRHS()
-//
-// This function applies the purification step by performing a specialized
-// inner product between the off-diagonal blocks of the original matrix
-// and the vector 'v'. The result is stored in the output vector 'res'.
-// ----------------------------------------------------------------------------
+/**
+ * This function applies the purification step by performing a specialized
+ * inner product between the off-diagonal blocks of the original matrix
+ * and the vector 'v'. The result is stored in the output vector 'res'.
+ */
 template <typename Vector>
 void 
 Precond<Vector>::purifyRHS(Vector&  v,
@@ -1884,14 +1824,11 @@ Precond<Vector>::purifyRHS(Vector&  v,
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::calculateSpikes()
-// Precond::calculateSpikes_const()
-// Precond::calculateSpikes_var()
-//
-// This function calculates the spike blocks in the LU_only case.
-// ----------------------------------------------------------------------------
+/*! \brief This function will either call Precond::calculateSpikes_const()
+ * or Precond::calculateSpikes_var().
+ *
+ * This function calculates the spike blocks in the LU_only case.
+ */
 template <typename Vector>
 void
 Precond<Vector>::calculateSpikes(Vector&  WV)
@@ -2295,13 +2232,10 @@ Precond<Vector>::calculateSpikes_var(Vector&  WV)
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::calculateSpikes
-//
-// This function adjust the number of threads used for kernels which can take
-// any number of threads.
-// ----------------------------------------------------------------------------
+/**
+ * This function adjust the number of threads used for kernels which can take
+ * any number of threads.
+ */
 template <typename Vector>
 int
 Precond<Vector>::adjustNumThreads(int inNumThreads) {
@@ -2319,12 +2253,9 @@ Precond<Vector>::adjustNumThreads(int inNumThreads) {
 	return 512;
 }
 
-
-// ----------------------------------------------------------------------------
-// Precond::calculateSpikes
-//
-// This function calculates the spike blocks in the LU_UL case.
-// ----------------------------------------------------------------------------
+/**
+ * This function calculates the spike blocks in the LU_UL case.
+ */
 template <typename Vector>
 void
 Precond<Vector>::calculateSpikes(Vector&  B2,
@@ -2384,12 +2315,9 @@ Precond<Vector>::calculateSpikes(Vector&  B2,
 	}
 }
 
-
-// ----------------------------------------------------------------------------
-// assembleReducedMat()
-//
-// This function assembles the truncated Spike reduced matrix R.
-// ----------------------------------------------------------------------------
+/**
+ * This function assembles the truncated Spike reduced matrix R.
+ */
 template <typename Vector>
 void
 Precond<Vector>::assembleReducedMat(Vector&  WV)
@@ -2420,12 +2348,10 @@ Precond<Vector>::assembleReducedMat(Vector&  WV)
 	}
 }
 
-// ----------------------------------------------------------------------------
-// copyLastPartition()
-//
-// This function copies the last partition from B2, which contains the UL results,
-// to m_B.
-// ----------------------------------------------------------------------------
+/**
+ * This function copies the last partition from B2, which contains the UL results,
+ * to m_B.
+ */
 template <typename Vector>
 void
 Precond<Vector>::copyLastPartition(Vector &B2) {
