@@ -32,20 +32,20 @@ struct Options
 {
 	Options();
 
-	SolverType    solverType;
-	int           maxNumIterations;
-	double        tolerance;
+	SolverType    solverType;			/** Indicate the Krylov method to use, BiCGStab(2) by default. */
+	int           maxNumIterations;		/** Indicate the maximum number of iterations the Krylov method will run, 100 by default. */
+	double        tolerance;			/** Indicate the tolerance of error accepted, 1e^(-6) by default. */
 
-	bool          performReorder;
-	bool          applyScaling;
-	double        dropOffFraction;
+	bool          performReorder;		/** Indicate whether to perform reordering to the matrix, true by default.*/
+	bool          applyScaling;			/** Indicate whether to apply scaling in MC64 or not, true by default.*/
+	double        dropOffFraction;		/** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
 
-	SolverMethod  method;
-	PrecondMethod precondMethod;
-	bool          safeFactorization;
-	bool          variableBandwidth;
-	bool          singleComponent;
-	bool          trackReordering;
+	SolverMethod  method;				/** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
+	PrecondMethod precondMethod;		/** Indicate the method to do preconditioning, SPIKE by default. */
+	bool          safeFactorization;	/** Indicate whether to use safe factorization methods, false by default. */
+	bool          variableBandwidth;	/** Indicate whether variable bandwidths be used for different partitions, true by default. */
+	bool          singleComponent;		/** Indicate whether the whole matrix is treated as a single component, false by default. */
+	bool          trackReordering;		/** Indicate whether to keep track of the reordering information, false by default. */
 };
 
 
