@@ -45,7 +45,7 @@ void precondSolveWrapper(Vector&                                                
 		Vector buffer_rhs(loc_n);
 		Vector buffer_sol(loc_n);
 
-		thrust::scatter_if(rhs.begin(), rhs.end(), comp_perms.begin(), compIndices.begin(), buffer_rhs.begin(), IsEqual<ValueType>(i));
+		thrust::scatter_if(rhs.begin(), rhs.end(), comp_perms.begin(), compIndices.begin(), buffer_rhs.begin(), IsEqual<int>(i));
 		precond_pointers[i]->solve(buffer_rhs, buffer_sol);
 		thrust::scatter(buffer_sol.begin(), buffer_sol.end(), comp_reorderings[i].begin(), sol.begin());
 	}
