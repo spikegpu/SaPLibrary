@@ -1,13 +1,7 @@
-Legal Notice
-============
-ALL USAGE OF HSL IS SUBJECT TO LICENCE. PLEASE REFER TO THE FILE LICENCE
-DISTRIBUTED WITH THIS SOFTWARE. IF YOU OBTAINED A COPY OF THIS SOFTWARE
-WITHOUT THIS FILE, PLEASE CONTACT NEGRUT@ENGR.WISC.EDU TO OBTAIN ONE.
-
 Introduction
 ============
 Thank you for downloading SpikeGPU software. You can find out more information
-about SpikeGPU by visiting our website: http://spikegpu.sbel/org
+about SpikeGPU by visiting our website: http://spikegpu.sbel.org
 
 Compilation
 ===========
@@ -26,7 +20,7 @@ For detailed usage of the example program, just do
 
 Files
 =====
-README               -   This file
-LICENCE              -   Licence agreement
-spike/				 -	 Including all header files to use the software
-examples/			 -	 Including all example programs (currently only support solving systems in matrix market format)
+README         -  This file
+LICENCE        -  Licence agreement
+spike/         -  Including all header files to use the software
+examples/      -  Including all example programs (currently only support solving systems in matrix market format)
