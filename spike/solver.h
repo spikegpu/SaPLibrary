@@ -57,30 +57,30 @@ struct Stats
 {
 	Stats();
 
-	double      timeSetup;
-	double      timeUpdate;
-	double      timeSolve;
+	double      timeSetup;				/** Time to setup the preconditioner. */
+	double      timeUpdate;				/** Time to update the preconditioner. */
+	double      timeSolve;				/** Time for Krylov solve. */
 
-	double      time_reorder;
-	double      time_cpu_assemble;
-	double      time_transfer;
-	double      time_toBanded;
-	double      time_offDiags;
-	double      time_bandLU;
-	double      time_bandUL;
-	double      time_fullLU;
-	double      time_assembly;
+	double      time_reorder;			/** Time to do reordering. */
+	double      time_cpu_assemble;		/** Time on CPU to achieve the banded matrix and off-diagonal matrices. */
+	double      time_transfer;			/** Time to transfer data from CPU to GPU. */
+	double      time_toBanded;			/** Time to form banded matrix when reordering is disabled. TODO: combine this with time_cpu_assemble*/
+	double      time_offDiags;			/** Time to achieve off-diagonal matrices on GPU. */
+	double      time_bandLU;			/** Time for LU factorization. */
+	double      time_bandUL;			/** Time for UL factorization (in LU_UL method only). */
+	double      time_fullLU;			/** Time for LU factorization on reduced matrix R. */
+	double      time_assembly;			/** Time for assembling off-diagonal matrices (including solving multiple RHS)*/
 
-	double      time_shuffle;
+	double      time_shuffle;			/** Total time to do vector reordering and scaling. */
 
-	int         bandwidthReorder;
-	int         bandwidth;
+	int         bandwidthReorder;		/** Half-bandwidth after reordering. */
+	int         bandwidth;				/** Half-bandwidth after reordering and drop-off. */
 
-	double      actualDropOff;
+	double      actualDropOff;			/** The fraction of elements dropped off. */
 
-	float       numIterations;
-	double      residualNorm;
-	double      relResidualNorm;
+	float       numIterations;			/** The number of iterations required for Krylov solver to converge. */
+	double      residualNorm;			/** The residual norm of the solution (i.e. |b-Ax|_2). */
+	double      relResidualNorm;		/** The relative residual norm of the solution (i.e. |b-Ax|_2 / |b|_2)*/
 };
 
 
@@ -115,6 +115,11 @@ public:
 	           const Vector&  b,
 	           Vector&        x);
 
+	/**
+	 * This is the function to get the statistic for the solver,
+	 * including the residual norm, half-bandwidth and all timing
+	 * information.
+	 */
 	const Stats&  getStats() const {return m_stats;}
 
 private:
