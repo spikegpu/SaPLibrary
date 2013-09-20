@@ -26,13 +26,14 @@ struct IsEqual
 	}
 };
 
+
 template <typename Vector>
-void precondSolveWrapper(Vector& rhs,
-						 Vector& sol,
-						 std::vector<Precond<Vector> *>&					precond_pointers,
-						 cusp::array1d<int, typename Vector::memory_space>&	compIndices,
-						 cusp::array1d<int, typename Vector::memory_space>&	comp_perms,
-						 std::vector<cusp::array1d<int, typename Vector::memory_space> >&	comp_reorderings)
+void precondSolveWrapper(Vector&                                                           rhs,
+                         Vector&                                                           sol,
+                         std::vector<Precond<Vector> *>&                                   precond_pointers,
+                         cusp::array1d<int, typename Vector::memory_space>&                compIndices,
+                         cusp::array1d<int, typename Vector::memory_space>&                comp_perms,
+                         std::vector<cusp::array1d<int, typename Vector::memory_space> >&  comp_reorderings)
 {
 	typedef typename Vector::value_type   ValueType;
 
@@ -57,17 +58,15 @@ void precondSolveWrapper(Vector& rhs,
 // This function implements a preconditioned BiCGStab(l) Krylov method.
 // ----------------------------------------------------------------------------
 template <typename SpmvOperator, typename Vector, int L>
-void bicgstabl(SpmvOperator&     spmv,
-               const Vector&     b,
-               Vector&           x,
-               Monitor<Vector>&  monitor,
-			   std::vector<Precond<Vector> *>&		    precond_pointers,
-			   cusp::array1d<int, cusp::host_memory>&	compIndices,
-			   cusp::array1d<int, cusp::host_memory>&	comp_perms,
-			   std::vector<cusp::array1d<int, cusp::host_memory> >&	comp_reorderings)
+void bicgstabl(SpmvOperator&                                         spmv,
+               const Vector&                                         b,
+               Vector&                                               x,
+               Monitor<Vector>&                                      monitor,
+               std::vector<Precond<Vector> *>&                       precond_pointers,
+               cusp::array1d<int, cusp::host_memory>&                compIndices,
+               cusp::array1d<int, cusp::host_memory>&                comp_perms,
+               std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
 {
-	using namespace cusp;
-
 	typedef typename Vector::value_type   ValueType;
 	typedef typename Vector::memory_space MemorySpace;
 
@@ -86,9 +85,9 @@ void bicgstabl(SpmvOperator&     spmv,
 	Vector xx(n);
 	Vector Pv(n);
 
-	array1d<int, MemorySpace> loc_compIndices = compIndices;
-	array1d<int, MemorySpace> loc_comp_perms = comp_perms;
-	std::vector<array1d<int, MemorySpace> > loc_comp_reorderings;
+	cusp::array1d<int, MemorySpace> loc_compIndices = compIndices;
+	cusp::array1d<int, MemorySpace> loc_comp_perms = comp_perms;
+	std::vector<cusp::array1d<int, MemorySpace> > loc_comp_reorderings;
 
 	int numComponents = comp_reorderings.size();
 	for (int i=0; i < numComponents; i++)
@@ -108,10 +107,10 @@ void bicgstabl(SpmvOperator&     spmv,
 
 	// r0 <- b - A * x
 	spmv(x, r0);
-	blas::axpby(b, r0, r0, ValueType(1), ValueType(-1));
+	cusp::blas::axpby(b, r0, r0, ValueType(1), ValueType(-1));
 
 	// r <- r0
-	blas::copy(r0, r);
+	cusp::blas::copy(r0, r);
 
 	// uu(0) <- u
 	// rr(0) <- r
@@ -129,7 +128,7 @@ void bicgstabl(SpmvOperator&     spmv,
 		monitor.increment(0.25f);
 
 		for(int j = 0; j < L; j++) {
-			rou1 = blas::dotc(rr[j], r0);
+			rou1 = cusp::blas::dotc(rr[j], r0);
 
 			// return with failure
 			if(rou0 == 0)
@@ -140,7 +139,7 @@ void bicgstabl(SpmvOperator&     spmv,
 
 			for(int i = 0; i <= j; i++) {
 				// uu(i) = rr(i) - beta * uu(i)
-				blas::axpby(rr[i], uu[i], uu[i], ValueType(1), -beta);
+				cusp::blas::axpby(rr[i], uu[i], uu[i], ValueType(1), -beta);
 			}
 
 			// uu(j+1) <- A * P^(-1) * uu(j);
@@ -149,7 +148,7 @@ void bicgstabl(SpmvOperator&     spmv,
 			spmv(Pv, uu[j+1]);
 
 			// gamma <- uu(j+1) . r0;
-			ValueType gamma = blas::dotc(uu[j+1], r0);
+			ValueType gamma = cusp::blas::dotc(uu[j+1], r0);
 			if(gamma == 0)
 				return;
 
@@ -157,7 +156,7 @@ void bicgstabl(SpmvOperator&     spmv,
 
 			for(int i = 0; i <= j; i++) {
 				// rr(i) <- rr(i) - alpha * uu(i+1)
-				blas::axpy(uu[i+1], rr[i], ValueType(-alpha));
+				cusp::blas::axpy(uu[i+1], rr[i], ValueType(-alpha));
 			}
 
 			// rr(j+1) = A * P^(-1) * rr(j)
@@ -166,7 +165,7 @@ void bicgstabl(SpmvOperator&     spmv,
 			spmv(Pv, rr[j+1]);
 			
 			// xx <- xx + alpha * uu(0)
-			blas::axpy(uu[0], xx, alpha);
+			cusp::blas::axpy(uu[0], xx, alpha);
 
 			if(monitor.done(rr[0])) {
 				//precond.solve(xx, x);
@@ -178,13 +177,13 @@ void bicgstabl(SpmvOperator&     spmv,
 
 		for(int j = 1; j <= L; j++) {
 			for(int i = 1; i < j; i++) {
-				tao[i][j] = blas::dotc(rr[j], rr[i]) / sigma[i];
-				blas::axpy(rr[i], rr[j], -tao[i][j]);
+				tao[i][j] = cusp::blas::dotc(rr[j], rr[i]) / sigma[i];
+				cusp::blas::axpy(rr[i], rr[j], -tao[i][j]);
 			}
-			sigma[j] = blas::dotc(rr[j], rr[j]);
+			sigma[j] = cusp::blas::dotc(rr[j], rr[j]);
 			if(sigma[j] == 0)
 				return;
-			gamma_prime[j] = blas::dotc(rr[j], rr[0]) / sigma[j];
+			gamma_prime[j] = cusp::blas::dotc(rr[j], rr[0]) / sigma[j];
 		}
 
 		gamma[L] = gamma_prime[L];
@@ -205,9 +204,9 @@ void bicgstabl(SpmvOperator&     spmv,
 		// xx    <- xx    + gamma * rr(0)
 		// rr(0) <- rr(0) - gamma'(L) * rr(L)
 		// uu(0) <- uu(0) - gamma(L) * uu(L)
-		blas::axpy(rr[0], xx,    gamma[1]);
-		blas::axpy(rr[L], rr[0], -gamma_prime[L]);
-		blas::axpy(uu[L], uu[0], -gamma[L]);
+		cusp::blas::axpy(rr[0], xx,    gamma[1]);
+		cusp::blas::axpy(rr[L], rr[0], -gamma_prime[L]);
+		cusp::blas::axpy(uu[L], uu[0], -gamma[L]);
 
 		monitor.increment(0.25f);
 
@@ -223,9 +222,9 @@ void bicgstabl(SpmvOperator&     spmv,
 		// xx    <- xx    + sum_j { gamma''(j) * rr(j) }
 		// rr(0) <- rr(0) - sum_j { gamma'(j) * rr(j) }
 		for(int j = 1; j < L; j++) {
-			blas::axpy(uu[j], uu[0],  -gamma[j]);
-			blas::axpy(rr[j], xx,     gamma_primeprime[j]);
-			blas::axpy(rr[j], rr[0],  -gamma_prime[j]);
+			cusp::blas::axpy(uu[j], uu[0],  -gamma[j]);
+			cusp::blas::axpy(rr[j], xx,     gamma_primeprime[j]);
+			cusp::blas::axpy(rr[j], rr[0],  -gamma_prime[j]);
 
 			if (monitor.done(rr[0])) {
 				// precond.solve(xx, x);
@@ -252,29 +251,27 @@ void bicgstabl(SpmvOperator&     spmv,
 // Specializations of the generic BiCGStab(L) function.
 // ----------------------------------------------------------------------------
 template <typename SpmvOperator, typename Vector>
-void bicgstab2(SpmvOperator&     spmv,
-               const Vector&     b,
-               Vector&           x,
-               Monitor<Vector>&  monitor,
-			   std::vector<Precond<Vector>*>&		    precond_pointers,
-			   cusp::array1d<int, cusp::host_memory>&	compIndices,
-			   cusp::array1d<int, cusp::host_memory>&	comp_perms,
-			   std::vector<cusp::array1d<int, cusp::host_memory> >&	comp_reorderings
-			   )
+void bicgstab2(SpmvOperator&                                         spmv,
+               const Vector&                                         b,
+               Vector&                                               x,
+               Monitor<Vector>&                                      monitor,
+               std::vector<Precond<Vector>*>&                        precond_pointers,
+               cusp::array1d<int, cusp::host_memory>&                compIndices,
+               cusp::array1d<int, cusp::host_memory>&                comp_perms,
+               std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
 {
 	bicgstabl<SpmvOperator, Vector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
 
 template <typename SpmvOperator, typename Vector>
-void bicgstab4(SpmvOperator&     spmv,
-               const Vector&     b,
-               Vector&           x,
-               Monitor<Vector>&  monitor,
-			   std::vector<Precond<Vector>*>&		    precond_pointers,
-			   cusp::array1d<int, cusp::host_memory>&	compIndices,
-			   cusp::array1d<int, cusp::host_memory>&	comp_perms,
-			   std::vector<cusp::array1d<int, cusp::host_memory> >&	comp_reorderings
-			   )
+void bicgstab4(SpmvOperator&                                         spmv,
+               const Vector&                                         b,
+               Vector&                                               x,
+               Monitor<Vector>&                                      monitor,
+               std::vector<Precond<Vector>*>&                        precond_pointers,
+               cusp::array1d<int, cusp::host_memory>&                compIndices,
+               cusp::array1d<int, cusp::host_memory>&                comp_perms,
+               std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
 {
 	bicgstabl<SpmvOperator, Vector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
