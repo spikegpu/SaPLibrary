@@ -7,6 +7,7 @@
 #include <cusp/blas.h>
 
 #include <spike/solver.h>
+#include <spike/spmv.h>
 
 
 // -----------------------------------------------------------------------------

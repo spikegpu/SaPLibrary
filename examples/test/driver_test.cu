@@ -7,7 +7,7 @@
 #include <cusp/blas.h>
 
 #include <spike/solver.h>
-
+#include <spike/spmv.h>
 
 
 // Macro to obtain a random number between two specified values

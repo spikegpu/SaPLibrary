@@ -19,7 +19,6 @@
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
-#include <spike/spmv.h>
 #include <spike/timer.h>
 
 
