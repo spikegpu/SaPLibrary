@@ -32,20 +32,20 @@ struct Options
 {
 	Options();
 
-	SolverType    solverType;			/** Indicate the Krylov method to use, BiCGStab(2) by default. */
-	int           maxNumIterations;		/** Indicate the maximum number of iterations the Krylov method will run, 100 by default. */
-	double        tolerance;			/** Indicate the tolerance of error accepted, 1e^(-6) by default. */
+	SolverType    solverType;           /** Indicate the Krylov method to use, BiCGStab(2) by default. */
+	int           maxNumIterations;     /** Indicate the maximum number of iterations the Krylov method will run, 100 by default. */
+	double        tolerance;            /** Indicate the tolerance of error accepted, 1e^(-6) by default. */
 
-	bool          performReorder;		/** Indicate whether to perform reordering to the matrix, true by default.*/
-	bool          applyScaling;			/** Indicate whether to apply scaling in MC64 or not, true by default.*/
-	double        dropOffFraction;		/** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
+	bool          performReorder;       /** Indicate whether to perform reordering to the matrix, true by default.*/
+	bool          applyScaling;         /** Indicate whether to apply scaling in MC64 or not, true by default.*/
+	double        dropOffFraction;      /** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
 
-	SolverMethod  method;				/** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
-	PrecondMethod precondMethod;		/** Indicate the method to do preconditioning, SPIKE by default. */
-	bool          safeFactorization;	/** Indicate whether to use safe factorization methods, false by default. */
-	bool          variableBandwidth;	/** Indicate whether variable bandwidths be used for different partitions, true by default. */
-	bool          singleComponent;		/** Indicate whether the whole matrix is treated as a single component, false by default. */
-	bool          trackReordering;		/** Indicate whether to keep track of the reordering information, false by default. */
+	SolverMethod  method;               /** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
+	PrecondMethod precondMethod;        /** Indicate the method to do preconditioning, SPIKE by default. */
+	bool          safeFactorization;    /** Indicate whether to use safe factorization methods, false by default. */
+	bool          variableBandwidth;    /** Indicate whether variable bandwidths be used for different partitions, true by default. */
+	bool          singleComponent;      /** Indicate whether the whole matrix is treated as a single component, false by default. */
+	bool          trackReordering;      /** Indicate whether to keep track of the reordering information, false by default. */
 };
 
 
@@ -57,30 +57,30 @@ struct Stats
 {
 	Stats();
 
-	double      timeSetup;				/** Time to setup the preconditioner. */
-	double      timeUpdate;				/** Time to update the preconditioner. */
-	double      timeSolve;				/** Time for Krylov solve. */
+	double      timeSetup;              /** Time to setup the preconditioner. */
+	double      timeUpdate;             /** Time to update the preconditioner. */
+	double      timeSolve;              /** Time for Krylov solve. */
 
-	double      time_reorder;			/** Time to do reordering. */
-	double      time_cpu_assemble;		/** Time on CPU to achieve the banded matrix and off-diagonal matrices. */
-	double      time_transfer;			/** Time to transfer data from CPU to GPU. */
-	double      time_toBanded;			/** Time to form banded matrix when reordering is disabled. TODO: combine this with time_cpu_assemble*/
-	double      time_offDiags;			/** Time to achieve off-diagonal matrices on GPU. */
-	double      time_bandLU;			/** Time for LU factorization. */
-	double      time_bandUL;			/** Time for UL factorization (in LU_UL method only). */
-	double      time_fullLU;			/** Time for LU factorization on reduced matrix R. */
-	double      time_assembly;			/** Time for assembling off-diagonal matrices (including solving multiple RHS)*/
+	double      time_reorder;           /** Time to do reordering. */
+	double      time_cpu_assemble;      /** Time on CPU to achieve the banded matrix and off-diagonal matrices. */
+	double      time_transfer;          /** Time to transfer data from CPU to GPU. */
+	double      time_toBanded;          /** Time to form banded matrix when reordering is disabled. TODO: combine this with time_cpu_assemble*/
+	double      time_offDiags;          /** Time to achieve off-diagonal matrices on GPU. */
+	double      time_bandLU;            /** Time for LU factorization. */
+	double      time_bandUL;            /** Time for UL factorization (in LU_UL method only). */
+	double      time_fullLU;            /** Time for LU factorization on reduced matrix R. */
+	double      time_assembly;          /** Time for assembling off-diagonal matrices (including solving multiple RHS)*/
 
-	double      time_shuffle;			/** Total time to do vector reordering and scaling. */
+	double      time_shuffle;           /** Total time to do vector reordering and scaling. */
 
-	int         bandwidthReorder;		/** Half-bandwidth after reordering. */
-	int         bandwidth;				/** Half-bandwidth after reordering and drop-off. */
+	int         bandwidthReorder;       /** Half-bandwidth after reordering. */
+	int         bandwidth;              /** Half-bandwidth after reordering and drop-off. */
 
-	double      actualDropOff;			/** The fraction of elements dropped off. */
+	double      actualDropOff;          /** The fraction of elements dropped off. */
 
-	float       numIterations;			/** The number of iterations required for Krylov solver to converge. */
-	double      residualNorm;			/** The residual norm of the solution (i.e. |b-Ax|_2). */
-	double      relResidualNorm;		/** The relative residual norm of the solution (i.e. |b-Ax|_2 / |b|_2)*/
+	float       numIterations;          /** The number of iterations required for Krylov solver to converge. */
+	double      residualNorm;           /** The residual norm of the solution (i.e. |b-Ax|_2). */
+	double      relResidualNorm;        /** The relative residual norm of the solution (i.e. |b-Ax|_2 / |b|_2)*/
 };
 
 
@@ -189,8 +189,8 @@ Stats::Stats()
 
 
 /**
- * This is the constructor for the Solver class. This constructor takes use of
- * an Options object.
+ * This is the constructor for the Solver class. It specifies the requested number
+ * of partitions and the structure of solver options.
  */
 template <typename Matrix, typename Vector>
 Solver<Matrix, Vector>::Solver(int             numPartitions,
