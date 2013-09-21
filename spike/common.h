@@ -48,17 +48,17 @@ const unsigned int MAX_GRID_DIMENSION = 32768;
 
 const unsigned int CRITICAL_THRESHOLD = 70;
 
-enum SolverType {
+enum KrylovSolverType {
 	BiCGStab,
 	BiCGStab2
 };
 
-enum SolverMethod {
+enum FactorizationMethod {
 	LU_UL,
 	LU_only
 };
 
-enum PrecondMethod {
+enum PreconditionerType {
 	Spike,
 	Block
 };

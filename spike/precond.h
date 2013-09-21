@@ -33,24 +33,24 @@ public:
 	typedef typename Vector::memory_space MemorySpace;
 	typedef typename Vector::value_type   ValueType;
 
-	typedef typename cusp::array1d<int, MemorySpace> VectorI;
+	typedef typename cusp::array1d<int, MemorySpace>             VectorI;
 	typedef typename cusp::array1d<ValueType, cusp::host_memory> VectorH;
-	typedef typename cusp::array1d<int, MemorySpace>		 MatrixMap;
-	typedef typename cusp::array1d<ValueType, MemorySpace>	 MatrixMapF;
-	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMapH;
+	typedef typename cusp::array1d<int, MemorySpace>             MatrixMap;
+	typedef typename cusp::array1d<ValueType, MemorySpace>       MatrixMapF;
+	typedef typename cusp::array1d<int, cusp::host_memory>       MatrixMapH;
 	typedef typename cusp::array1d<ValueType, cusp::host_memory> MatrixMapFH;
 
 	Precond():m_setupDone(0) {};
 
-	Precond(int            numPart,
-	        bool           reorder,
-	        bool           scale,
-	        ValueType      dropOff_frac,
-	        SolverMethod   method,
-	        PrecondMethod  precondMethod,
-	        bool           safeFactorization,
-	        bool           variableBandwidth,
-	        bool           trackReordering);
+	Precond(int                 numPart,
+	        bool                reorder,
+	        bool                scale,
+	        ValueType           dropOff_frac,
+	        FactorizationMethod factMethod,
+	        PreconditionerType  precondType,
+	        bool                safeFactorization,
+	        bool                variableBandwidth,
+	        bool                trackReordering);
 
 	Precond(const Precond&  prec);
 
@@ -77,33 +77,33 @@ public:
 	template <typename Matrix>
 	void   setup(const Matrix&  A);
 
-	bool   setupDone() const                {return m_setupDone;}
+	bool   setupDone() const              {return m_setupDone;}
 
 	void update(const Vector& entries);
 	void solve(Vector& v, Vector& z);
 
 private:
-	int            m_numPartitions;
-	int            m_n;
-	int            m_k;
+	int                  m_numPartitions;
+	int                  m_n;
+	int                  m_k;
 
-	bool           m_reorder;
-	bool           m_scale;
-	ValueType      m_dropOff_frac;
-	SolverMethod   m_method;
-	PrecondMethod  m_precondMethod;
-	bool           m_safeFactorization;
-	bool           m_variableBandwidth;
-	bool           m_trackReordering;
+	bool                 m_reorder;
+	bool                 m_scale;
+	ValueType            m_dropOff_frac;
+	FactorizationMethod  m_factMethod;
+	PreconditionerType   m_precondType;
+	bool                 m_safeFactorization;
+	bool                 m_variableBandwidth;
+	bool                 m_trackReordering;
 
-	bool           m_setupDone;
-	MatrixMap      m_offDiagMap;
-	MatrixMap      m_WVMap;
-	MatrixMap      m_typeMap;
-	MatrixMap      m_bandedMatMap;
-	MatrixMapF     m_scaleMap;
+	bool                 m_setupDone;
+	MatrixMap            m_offDiagMap;
+	MatrixMap            m_WVMap;
+	MatrixMap            m_typeMap;
+	MatrixMap            m_bandedMatMap;
+	MatrixMapF           m_scaleMap;
 
-	// Used in various-bandwidth method only, host versions
+	// Used in variable-bandwidth method only, host versions
 	cusp::array1d<int, cusp::host_memory>  m_ks_host;
 	cusp::array1d<int, cusp::host_memory>  m_ks_row_host;
 	cusp::array1d<int, cusp::host_memory>  m_ks_col_host;
@@ -112,10 +112,10 @@ private:
 	cusp::array1d<int, cusp::host_memory>  m_first_rows_host;
 	cusp::array1d<int, cusp::host_memory>  m_BOffsets_host;
 
-	// Used in various-bandwidth method only
-	VectorI        m_ks;                 // All half-bandwidths
-	VectorI        m_offDiagWidths_left; // All left half-bandwidths in terms of rows
-	VectorI        m_offDiagWidths_right;// All right half-bandwidths in terms of rows
+	// Used in variable-bandwidth method only
+	VectorI        m_ks;                    // All half-bandwidths
+	VectorI        m_offDiagWidths_left;    // All left half-bandwidths in terms of rows
+	VectorI        m_offDiagWidths_right;   // All right half-bandwidths in terms of rows
 	VectorI        m_offDiagPerms_left;
 	VectorI        m_offDiagPerms_right;
 	VectorI        m_first_rows;
@@ -222,21 +222,21 @@ private:
  * This is the constructor for the Precond class.
  */
 template <typename Vector>
-Precond<Vector>::Precond(int            numPart,
-                         bool           reorder,
-                         bool           scale,
-                         ValueType      dropOff_frac,
-                         SolverMethod   method,
-                         PrecondMethod  precondMethod,
-                         bool           safeFactorization,
-                         bool           variableBandwidth,
-                         bool           trackReordering)
+Precond<Vector>::Precond(int                 numPart,
+                         bool                reorder,
+                         bool                scale,
+                         ValueType           dropOff_frac,
+                         FactorizationMethod factMethod,
+                         PreconditionerType  precondType,
+                         bool                safeFactorization,
+                         bool                variableBandwidth,
+                         bool                trackReordering)
 :	m_numPartitions(numPart),
 	m_reorder(reorder),
 	m_scale(scale),
 	m_dropOff_frac(dropOff_frac),
-	m_method(method),
-	m_precondMethod(precondMethod),
+	m_factMethod(factMethod),
+	m_precondType(precondType),
 	m_safeFactorization(safeFactorization),
 	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
@@ -280,8 +280,8 @@ Precond<Vector>::Precond(const Precond<Vector> &prec):
 	m_reorder           = prec.m_reorder;;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
-	m_method            = prec.m_method;
-	m_precondMethod     = prec.m_precondMethod;
+	m_factMethod        = prec.m_factMethod;
+	m_precondType       = prec.m_precondType;
 	m_safeFactorization = prec.m_safeFactorization;
 	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
@@ -295,8 +295,8 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
 	m_reorder           = prec.m_reorder;;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
-	m_method            = prec.m_method;
-	m_precondMethod     = prec.m_precondMethod;
+	m_factMethod        = prec.m_factMethod;
+	m_precondType       = prec.m_precondType;
 	m_safeFactorization = prec.m_safeFactorization;
 	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
@@ -363,7 +363,7 @@ Precond<Vector>::update(const Vector& entries)
 
 	// If we are using a single partition, perform the LU factorization
 	// of the banded matrix and return.
-	if (m_precondMethod == Block || m_numPartitions == 1) {
+	if (m_precondType == Block || m_numPartitions == 1) {
 
 		m_timer.Start();
 		partBandedLU();
@@ -408,7 +408,7 @@ Precond<Vector>::update(const Vector& entries)
 	m_time_offDiags = m_timer.getElapsed();
 
 
-	switch (m_method) {
+	switch (m_factMethod) {
 	case LU_only:
 		// In this case, we perform the partitioned LU factorization of D
 		// and use the L and U factors to compute both the bottom of the 
@@ -514,7 +514,7 @@ Precond<Vector>::setup(const Matrix&  A)
 
 	// If we are using a single partition, perform the LU factorization
 	// of the banded matrix and return.
-	if (m_precondMethod == Block || m_numPartitions == 1) {
+	if (m_precondType == Block || m_numPartitions == 1) {
 
 		m_timer.Start();
 		partBandedLU();
@@ -541,7 +541,7 @@ Precond<Vector>::setup(const Matrix&  A)
 	m_time_offDiags = m_timer.getElapsed();
 
 
-	switch (m_method) {
+	switch (m_factMethod) {
 	case LU_only:
 		// In this case, we perform the partitioned LU factorization of D
 		// and use the L and U factors to compute both the bottom of the 
@@ -651,7 +651,7 @@ Precond<Vector>::getSRev(Vector&  rhs,
 		return;
 	}
 
-	if (m_numPartitions > 1 && m_precondMethod == Spike) {
+	if (m_numPartitions > 1 && m_precondType == Spike) {
 		if (!m_variableBandwidth) {
 			sol = rhs;
 			// Calculate modified RHS
@@ -1026,10 +1026,10 @@ Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
 		m_numPartitions = maxNumPartitions;
 	}
 
-	// If there is just one partition, it's meaningless to apply various-bandwidth method
+	// If there is just one partition, revert to using constant-bandwidth method.
 	if (m_numPartitions == 1) {
 		if (m_variableBandwidth) {
-			std::cerr << "Partition number equals one, it's thus meaningless to use various-bandwidth method." << std::endl;
+			std::cerr << "Using a single partition: revert to constant-bandwidth method." << std::endl;
 			m_variableBandwidth = false;
 		}
 	}
@@ -1301,7 +1301,7 @@ Precond<Vector>::partBandedLU_const()
 	int n_eff = m_n;
 	int numPart_eff = m_numPartitions;
 
-	if (m_method == LU_UL && m_numPartitions > 1 && m_precondMethod != Block) {
+	if (m_factMethod == LU_UL && m_numPartitions > 1 && m_precondType != Block) {
 		n_eff -= m_n / m_numPartitions;
 		numPart_eff--;
 	}
@@ -1586,7 +1586,7 @@ Precond<Vector>::partBandedFwdSweep_const(Vector&  v)
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
 
-	if (m_precondMethod == Block || m_method == LU_only || m_numPartitions == 1) {
+	if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
 		if (m_k > 1024)
 			device::forwardElimL_general<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else if (m_k > 32)
@@ -1651,7 +1651,7 @@ Precond<Vector>::partBandedBckSweep_const(Vector&  v)
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
 
-	if (m_precondMethod == Block || m_method == LU_only || m_numPartitions == 1) {
+	if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
 		if (m_numPartitions > 1) {
 			if (m_k > 1024)
 				device::backwardElimU_general<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);

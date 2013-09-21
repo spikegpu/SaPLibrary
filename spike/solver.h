@@ -31,20 +31,20 @@ struct Options
 {
 	Options();
 
-	SolverType    solverType;           /** Indicate the Krylov method to use, BiCGStab(2) by default. */
-	int           maxNumIterations;     /** Indicate the maximum number of iterations the Krylov method will run, 100 by default. */
-	double        tolerance;            /** Indicate the tolerance of error accepted, 1e^(-6) by default. */
+	KrylovSolverType    solverType;           /** Indicate the Krylov method to use, BiCGStab(2) by default. */
+	int                 maxNumIterations;     /** Indicate the maximum number of iterations the Krylov method will run, 100 by default. */
+	double              tolerance;            /** Indicate the tolerance of error accepted, 1e^(-6) by default. */
 
-	bool          performReorder;       /** Indicate whether to perform reordering to the matrix, true by default.*/
-	bool          applyScaling;         /** Indicate whether to apply scaling in MC64 or not, true by default.*/
-	double        dropOffFraction;      /** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
+	bool                performReorder;       /** Indicate whether to perform reordering to the matrix, true by default.*/
+	bool                applyScaling;         /** Indicate whether to apply scaling in MC64 or not, true by default.*/
+	double              dropOffFraction;      /** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
 
-	SolverMethod  method;               /** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
-	PrecondMethod precondMethod;        /** Indicate the method to do preconditioning, SPIKE by default. */
-	bool          safeFactorization;    /** Indicate whether to use safe factorization methods, false by default. */
-	bool          variableBandwidth;    /** Indicate whether variable bandwidths be used for different partitions, true by default. */
-	bool          singleComponent;      /** Indicate whether the whole matrix is treated as a single component, false by default. */
-	bool          trackReordering;      /** Indicate whether to keep track of the reordering information, false by default. */
+	FactorizationMethod factMethod;           /** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
+	PreconditionerType  precondType;          /** Indicate the method to do preconditioning, SPIKE by default. */
+	bool                safeFactorization;    /** Indicate whether to use safe factorization methods, false by default. */
+	bool                variableBandwidth;    /** Indicate whether variable bandwidths be used for different partitions, true by default. */
+	bool                singleComponent;      /** Indicate whether the whole matrix is treated as a single component, false by default. */
+	bool                trackReordering;      /** Indicate whether to keep track of the reordering information, false by default. */
 };
 
 
@@ -122,7 +122,7 @@ public:
 	const Stats&  getStats() const {return m_stats;}
 
 private:
-	SolverType               m_solver;
+	KrylovSolverType         m_solver;
 	Monitor<Vector>          m_monitor;
 	Precond<Vector>          m_precond;
 	std::vector<Precond<Vector> *>  m_precond_pointers;
@@ -152,8 +152,8 @@ Options::Options()
 	performReorder(true),
 	applyScaling(true),
 	dropOffFraction(0),
-	method(LU_only),
-	precondMethod(Spike),
+	factMethod(LU_only),
+	precondType(Spike),
 	safeFactorization(false),
 	variableBandwidth(true),
 	singleComponent(false),
@@ -197,7 +197,7 @@ template <typename Matrix, typename Vector>
 Solver<Matrix, Vector>::Solver(int             numPartitions,
                                const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
-	m_precond(numPartitions, opts.performReorder, opts.applyScaling, opts.dropOffFraction, opts.method, opts.precondMethod, 
+	m_precond(numPartitions, opts.performReorder, opts.applyScaling, opts.dropOffFraction, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
 	m_singleComponent(opts.singleComponent),

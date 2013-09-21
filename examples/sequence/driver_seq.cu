@@ -216,8 +216,8 @@ GetProblemSpecs(int             argc,
                 spike::Options& opts)
 {
 	opts.solverType = spike::BiCGStab2;
-	opts.precondMethod = spike::Spike;
-	opts.method = spike::LU_only;
+	opts.precondType = spike::Spike;
+	opts.factMethod = spike::LU_only;
 	opts.performReorder = true;
 	opts.applyScaling = true;
 	opts.dropOffFraction = 0.0;

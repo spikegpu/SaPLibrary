@@ -269,7 +269,7 @@ Graph<T>::Graph(bool trackReordering)
 // ----------------------------------------------------------------------------
 // Graph::reorder()
 //
-// This function applied various reordering algorithms to the specified matrix
+// This function applies various reordering algorithms to the specified matrix
 // (assumed to be in COO format and on the host) for bandwidth reduction and
 // diagonal boosting. It returns the half-bandwidth after reordering.
 // ----------------------------------------------------------------------------

@@ -66,12 +66,12 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,	 "--single-component",   SO_NONE    },
+	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
-	{ OPT_PRECOND,		 "--precond-method",     SO_REQ_CMB },
+	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
 	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
@@ -246,9 +246,9 @@ GetProblemSpecs(int             argc,
 					string fact = args.OptionArg();
 					std::transform(fact.begin(), fact.end(), fact.begin(), ::toupper);
 					if (fact == "0" || fact == "LU_UL")
-						opts.method = spike::LU_UL;
+						opts.factMethod = spike::LU_UL;
 					else if (fact == "1" || fact == "LU_LU")
-						opts.method = spike::LU_only;
+						opts.factMethod = spike::LU_only;
 					else
 						return false;
 				}
@@ -258,9 +258,9 @@ GetProblemSpecs(int             argc,
 					string precond = args.OptionArg();
 					std::transform(precond.begin(), precond.end(), precond.begin(), ::toupper);
 					if (precond == "0" || precond == "SPIKE")
-						opts.precondMethod = spike::Spike;
+						opts.precondType = spike::Spike;
 					else if(precond == "1" || precond == "BLOCK")
-						opts.precondMethod = spike::Block;
+						opts.precondType = spike::Block;
 					else
 						return false;
 				}
@@ -309,7 +309,7 @@ GetProblemSpecs(int             argc,
 
 	// If using variable bandwidth, force using LU factorization.
 	if (opts.variableBandwidth)
-		opts.method = spike::LU_only;
+		opts.factMethod = spike::LU_only;
 
 	// Print out the problem specifications.
 	cout << endl;
@@ -322,8 +322,8 @@ GetProblemSpecs(int             argc,
 	cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
 	cout << "Tolerance: " << opts.tolerance << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
-	cout << "Preconditioner: " << (opts.precondMethod == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
-	cout << "Factorization method: " << (opts.method == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
+	cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
+	cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
 	if (opts.dropOffFraction > 0)
 		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
 	else
@@ -385,7 +385,7 @@ void ShowUsage()
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;
-	cout << "        Do not use various-bandwidth-method to solve the problem." << endl; 
+	cout << "        Force using the constant-bandwidth method." << endl; 
 	cout << " -f=METHOD" << endl;
 	cout << " --factorization-method=METHOD" << endl;
 	cout << "        Specify the factorization type used to assemble the reduced matrix" << endl;
