@@ -2,7 +2,7 @@
 #define SPIKE_SPMV_H
 
 
-#include <cusp/blas.h>
+#include <cusp/multiply.h>
 
 #include <spike/timer.h>
 
