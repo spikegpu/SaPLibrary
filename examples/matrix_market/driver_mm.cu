@@ -38,13 +38,13 @@ using std::vector;
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
-	  OPT_NO_REORDERING, OPT_NO_SCALING,
-	  OPT_TOL, OPT_MAXIT,
-	  OPT_DROPOFF_FRAC, 
-	  OPT_MATFILE, OPT_RHSFILE, 
-	  OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
-	  OPT_KRYLOV, OPT_SAFE_FACT,
-	  OPT_CONST_BAND, OPT_SINGLE_COMP};
+      OPT_NO_REORDERING, OPT_NO_SCALING,
+      OPT_TOL, OPT_MAXIT,
+      OPT_DROPOFF_FRAC,
+      OPT_MATFILE, OPT_RHSFILE,
+      OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
+      OPT_KRYLOV, OPT_SAFE_FACT,
+      OPT_CONST_BAND, OPT_SINGLE_COMP};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -66,19 +66,19 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,	 "--single-component",	 SO_NONE	},
+	{ OPT_SINGLE_COMP,	 "--single-component",   SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
-	{ OPT_PRECOND,		 "--precond-method",	 SO_REQ_CMB },
+	{ OPT_PRECOND,		 "--precond-method",     SO_REQ_CMB },
 	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
-    { OPT_HELP,          "-?",                   SO_NONE    },
+	{ OPT_HELP,          "-?",                   SO_NONE    },
 	{ OPT_HELP,          "-h",                   SO_NONE    },
-    { OPT_HELP,          "--help",               SO_NONE    },
+	{ OPT_HELP,          "--help",               SO_NONE    },
 	SO_END_OF_OPTIONS
 };
 

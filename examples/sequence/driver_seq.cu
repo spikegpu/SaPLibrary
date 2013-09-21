@@ -37,11 +37,11 @@ using std::string;
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
-	  OPT_TOL, OPT_MAXIT,
-	  OPT_DROPOFF_FRAC, 
-	  OPT_MATFILE,
-	  OPT_SAFE_FACT,
-	  OPT_SINGLE_COMP};
+      OPT_TOL, OPT_MAXIT,
+      OPT_DROPOFF_FRAC, 
+      OPT_MATFILE,
+      OPT_SAFE_FACT,
+      OPT_SINGLE_COMP};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -59,13 +59,13 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,	 "--single-component",	 SO_NONE	},
+	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
-    { OPT_HELP,          "-?",                   SO_NONE    },
+	{ OPT_HELP,          "-?",                   SO_NONE    },
 	{ OPT_HELP,          "-h",                   SO_NONE    },
-    { OPT_HELP,          "--help",               SO_NONE    },
+	{ OPT_HELP,          "--help",               SO_NONE    },
 	SO_END_OF_OPTIONS
 };
 
@@ -80,7 +80,7 @@ public:
 	CustomSpmv(Matrix& A) : m_A(A) {}
 
 	void operator()(const Vector& v,
-		            Vector&       Av) {cusp::multiply(m_A, v, Av);}
+	                Vector&       Av) {cusp::multiply(m_A, v, Av);}
 
 private:
 	Matrix&      m_A;
@@ -114,7 +114,6 @@ int main(int argc, char** argv)
 	string         fileMat;
 	int            numPart;
 	spike::Options opts;
-	opts.trackReordering = true;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, numPart, opts))
 		return 1;
@@ -127,7 +126,7 @@ int main(int argc, char** argv)
 	cusp::io::read_matrix_market_file(A, fileMat);
 
 	// Create the SPIKE Solver object and the custom SPMV functor.
-	SpikeSolver	mySolver(numPart, opts);
+	SpikeSolver mySolver(numPart, opts);
 	CustomSpmv  mySpmv(A);
 
 	// Perform the solver setup.
