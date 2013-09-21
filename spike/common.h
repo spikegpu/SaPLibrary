@@ -63,6 +63,7 @@ enum PrecondMethod {
 	Block
 };
 
+inline
 void kernelConfigAdjust(int &numThreads, int &numBlockX, const int numThreadsMax) {
 	if (numThreads > numThreadsMax) {
 		numBlockX = (numThreads + numThreadsMax - 1) / numThreadsMax;
@@ -70,6 +71,7 @@ void kernelConfigAdjust(int &numThreads, int &numBlockX, const int numThreadsMax
 	}
 }
 
+inline
 void kernelConfigAdjust(int &numThreads, int &numBlockX, int &numBlockY, const int numThreadsMax, const int numBlockXMax) {
 	kernelConfigAdjust(numThreads, numBlockX, numThreadsMax);
 	if (numBlockX > numBlockXMax) {

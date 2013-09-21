@@ -145,6 +145,7 @@ private:
  * This is the constructor for the Options class. It sets default values for
  * all options.
  */
+inline
 Options::Options()
 :	solverType(BiCGStab2),
 	maxNumIterations(100),
@@ -165,6 +166,7 @@ Options::Options()
  * This is the constructor for the Stats class. It initializes all
  * timing and performance measures.
  */
+inline
 Stats::Stats()
 :	timeSetup(0),
 	timeSolve(0),
