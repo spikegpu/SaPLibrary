@@ -25,11 +25,15 @@ typedef double REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::array1d<int, cusp::device_memory>          VectorI;
 typedef typename cusp::array1d_view<Vector::iterator>			  VectorView;
+typedef typename cusp::array1d_view<VectorI::iterator>			  VectorIView;
 typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorHost;
+typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, VectorView>
+																  MatrixView;
 
-typedef typename spike::Solver<Matrix, Vector>		 SpikeSolver;
-typedef typename spike::SpmvCusp<Matrix, Vector>     SpmvFunctor;
+typedef typename spike::Solver<MatrixView, VectorView>			  SpikeSolver;
+typedef typename spike::SpmvCusp<MatrixView, VectorView>		  SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
@@ -146,14 +150,16 @@ int main(int argc, char** argv)
 	else
 		GetRhsVector(A, b, x_target);
 
+	MatrixView   Aview(A);
+
 	// Create the SPIKE Solver object and the SPMV functor. Perform the solver
 	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
-	SpikeSolver mySolver(numPart, opts);
-	SpmvFunctor  mySpmv(A);
+	SpikeSolver  mySolver(numPart, opts);
+	SpmvFunctor  mySpmv(Aview);
 	Vector       x(A.num_rows, 0);
 
-	mySolver.setup(A);
+	mySolver.setup(Aview);
 	cusp::blas::scal(A.values, 1.1);
 	cusp::blas::scal(b, 1.1);
 
@@ -173,7 +179,8 @@ int main(int argc, char** argv)
 	// Calculate the actual residual and its norm.
 	if (verbose) {
 		Vector r(A.num_rows);
-		mySpmv(x, r);
+		VectorView r_view(r);
+		mySpmv(x_view, r_view);
 		cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
 		cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
 		cout << "|b|            = " << cusp::blas::nrm2(b) << endl;	

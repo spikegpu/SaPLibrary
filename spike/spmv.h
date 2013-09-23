@@ -16,9 +16,13 @@ namespace spike {
 // This is the default CUSP-based SPMV functor class for the SPIKE solver.
 // It uses the cusp sparse matrix-vector multiply algorithm.
 // ----------------------------------------------------------------------------
-template <typename Matrix, typename Vector>
+template <typename Matrix, typename Array>
 class SpmvCusp {
 public:
+	typedef typename Array::value_type   ValueType;
+	typedef typename Array::memory_space MemorySpace;
+	typedef typename cusp::array1d<ValueType, MemorySpace> Vector;
+
 	SpmvCusp(Matrix& A)
 		: m_A(A), m_time(0), m_count(0) {}
 
@@ -31,8 +35,9 @@ public:
 		return 2 * nnz / (1e6 * avgTime);
 	}
 
-	void operator()(const Vector& v,
-	                Vector&       Av)
+	template <typename VectorType1, typename VectorType2>
+	void operator()(const VectorType1& v,
+	                VectorType2&       Av)
 	{
 		m_timer.Start();
 		cusp::multiply(m_A, v, Av);

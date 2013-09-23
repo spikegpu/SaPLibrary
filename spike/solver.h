@@ -86,7 +86,7 @@ struct Stats
 /**
  * This class encapsulates the main SPIKE::GPU solver. 
  */
-template <typename Matrix, typename Vector>
+template <typename Matrix, typename Array>
 class Solver
 {
 public:
@@ -94,7 +94,8 @@ public:
 	typedef typename Matrix::memory_space MemorySpace;
 	typedef typename cusp::coo_matrix<int, ValueType, cusp::host_memory> MatrixCOO;
 	typedef typename cusp::array1d<int, cusp::host_memory> VectorI;
-	typedef typename cusp::array1d_view<typename Vector::iterator> VectorView;
+	typedef typename cusp::array1d<ValueType, MemorySpace> Vector;
+	// typedef typename cusp::array1d_view<typename Vector::iterator> VectorView;
 
 	Solver(int             numPartitions,
 	       const Options&  opts);
@@ -108,19 +109,12 @@ public:
 
 	bool setup(const Matrix& A);
 
-	bool update(const Vector& entries);
-
-	bool update(VectorView& entries_view);
+	bool update(const Array& entries);
 
 	template <typename SpmvOperator>
 	bool solve(SpmvOperator&  spmv,
-	           const Vector&  b,
-	           Vector&        x);
-
-	template <typename SpmvOperator>
-	bool solve(SpmvOperator&	  spmv,
-	           VectorView&		  b_view,
-	           VectorView&        x_view);
+	           const Array&   b,
+	           Array&         x);
 
 	/**
 	 * This is the function to get the statistic for the solver,
@@ -201,9 +195,9 @@ Stats::Stats()
  * This is the constructor for the Solver class. It specifies the requested number
  * of partitions and the structure of solver options.
  */
-template <typename Matrix, typename Vector>
-Solver<Matrix, Vector>::Solver(int             numPartitions,
-                               const Options&  opts)
+template <typename Matrix, typename Array>
+Solver<Matrix, Array>::Solver(int             numPartitions,
+                              const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
 	m_precond(numPartitions, opts.performReorder, opts.applyScaling, opts.dropOffFraction, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
@@ -219,9 +213,9 @@ Solver<Matrix, Vector>::Solver(int             numPartitions,
  * the preconditioner based on the specified matrix A (which may be the system
  * matrix, or some approximation to it).
  */
-template <typename Matrix, typename Vector>
+template <typename Matrix, typename Array>
 bool
-Solver<Matrix, Vector>::setup(const Matrix& A)
+Solver<Matrix, Array>::setup(const Matrix& A)
 {
 	m_n = A.num_rows;
 	int nnz = A.num_entries;
@@ -354,6 +348,7 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 	return true;
 }
 
+#if 0
 template <typename Matrix, typename Vector>
 bool
 Solver<Matrix, Vector>::update(VectorView &entries_view)
@@ -361,6 +356,7 @@ Solver<Matrix, Vector>::update(VectorView &entries_view)
 	Vector entries(entries_view.begin(), entries_view.end());
 	return update(entries);
 }
+#endif
 
 /**
  * This function does an update to the banded matrix and off-diagonal matrices after
@@ -368,9 +364,9 @@ Solver<Matrix, Vector>::update(VectorView &entries_view)
  * is asked to be tracked. In case at least one of the conditions is not met, errors
  * are reported.
  */
-template <typename Matrix, typename Vector>
+template <typename Matrix, typename Array>
 bool
-Solver<Matrix, Vector>::update(const Vector& entries)
+Solver<Matrix, Array>::update(const Array& entries)
 {
 	// Check if this call to update() is legal.
 	if (!m_setupDone) {
@@ -390,8 +386,10 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 
 	int numComponents = m_precond_pointers.size();
 
-	if (numComponents <= 1)
-		m_precond_pointers[0] -> update(entries);
+	if (numComponents <= 1) {
+		Vector tmp_entries = entries;
+		m_precond_pointers[0] -> update(tmp_entries);
+	}
 	else {
 		cusp::array1d<ValueType, cusp::host_memory> h_entries = entries;
 		int nnz = h_entries.size();
@@ -433,40 +431,29 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 	return true;
 }
 
-template <typename Matrix, typename Vector>
-template <typename SpmvOperator>
-bool
-Solver<Matrix, Vector>::solve(SpmvOperator&     spmv,
-                              VectorView&		b_view,
-                              VectorView&       x_view)
-{
-	Vector b(b_view.begin(), b_view.end());
-	Vector x(x_view.size(), 0);
-
-	solve(spmv, b, x);
-	thrust::copy(x.begin(), x.end(), x_view.begin());
-
-	return m_monitor.converged();
-}
-
 /**
  * This function solves the system Ax=b, for given matrix A and right-handside
  * vector b.
  */
-template <typename Matrix, typename Vector>
+template <typename Matrix, typename Array>
 template <typename SpmvOperator>
 bool
-Solver<Matrix, Vector>::solve(SpmvOperator& spmv,
-                              const Vector& b,
-                              Vector&       x)
+Solver<Matrix, Array>::solve(SpmvOperator& spmv,
+                             const Array&  b,
+                             Array&        x)
 {
-	m_monitor.init(b);
+	Vector b_vector = b;
+	Vector x_vector = x;
+
+	m_monitor.init(b_vector);
 
 	CPUTimer timer;
 
 	timer.Start();
 
-	spike::bicgstab2(spmv, b, x, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+	spike::bicgstab2(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+	
+	thrust::copy(x_vector.begin(), x_vector.end(), x.begin());
 	timer.Stop();
 
 	m_stats.timeSolve = timer.getElapsed();
