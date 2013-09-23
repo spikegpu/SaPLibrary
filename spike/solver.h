@@ -94,6 +94,7 @@ public:
 	typedef typename Matrix::memory_space MemorySpace;
 	typedef typename cusp::coo_matrix<int, ValueType, cusp::host_memory> MatrixCOO;
 	typedef typename cusp::array1d<int, cusp::host_memory> VectorI;
+	typedef typename cusp::array1d_view<typename Vector::iterator> VectorView;
 
 	Solver(int             numPartitions,
 	       const Options&  opts);
@@ -109,10 +110,17 @@ public:
 
 	bool update(const Vector& entries);
 
+	bool update(VectorView& entries_view);
+
 	template <typename SpmvOperator>
 	bool solve(SpmvOperator&  spmv,
 	           const Vector&  b,
 	           Vector&        x);
+
+	template <typename SpmvOperator>
+	bool solve(SpmvOperator&	  spmv,
+	           VectorView&		  b_view,
+	           VectorView&        x_view);
 
 	/**
 	 * This is the function to get the statistic for the solver,
@@ -346,6 +354,14 @@ Solver<Matrix, Vector>::setup(const Matrix& A)
 	return true;
 }
 
+template <typename Matrix, typename Vector>
+bool
+Solver<Matrix, Vector>::update(VectorView &entries_view)
+{
+	Vector entries(entries_view.begin(), entries_view.end());
+	return update(entries);
+}
+
 /**
  * This function does an update to the banded matrix and off-diagonal matrices after
  * function setup has been called at least once and during setup, the reordering information
@@ -415,6 +431,22 @@ Solver<Matrix, Vector>::update(const Vector& entries)
 		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
 	}
 	return true;
+}
+
+template <typename Matrix, typename Vector>
+template <typename SpmvOperator>
+bool
+Solver<Matrix, Vector>::solve(SpmvOperator&     spmv,
+                              VectorView&		b_view,
+                              VectorView&       x_view)
+{
+	Vector b(b_view.begin(), b_view.end());
+	Vector x(x_view.size(), 0);
+
+	solve(spmv, b, x);
+	thrust::copy(x.begin(), x.end(), x_view.begin());
+
+	return m_monitor.converged();
 }
 
 /**

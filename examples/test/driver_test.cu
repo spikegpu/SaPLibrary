@@ -25,9 +25,10 @@ typedef double REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::array1d_view<Vector::iterator>			  VectorView;
 typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorHost;
 
-typedef typename spike::Solver<Matrix, Vector>       SpikeSolver;
+typedef typename spike::Solver<Matrix, Vector>		 SpikeSolver;
 typedef typename spike::SpmvCusp<Matrix, Vector>     SpmvFunctor;
 
 
@@ -124,7 +125,7 @@ int main(int argc, char** argv)
 	int            numPart;
 	bool           verbose;
 	spike::Options opts;
-	// opts.trackReordering = true;
+	opts.trackReordering = true;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, verbose, opts))
 		return 1;
@@ -153,7 +154,15 @@ int main(int argc, char** argv)
 	Vector       x(A.num_rows, 0);
 
 	mySolver.setup(A);
-	bool success = mySolver.solve(mySpmv, b, x);
+	cusp::blas::scal(A.values, 1.1);
+	cusp::blas::scal(b, 1.1);
+
+	VectorView A_values_view(A.values);
+	mySolver.update(A_values_view);
+
+	VectorView b_view(b);
+	VectorView x_view(x);
+	bool success = mySolver.solve(mySpmv, b_view, x_view);
 
 	// Write solution file and print solver statistics.
 	if (fileSol.length() > 0)
