@@ -85,8 +85,9 @@ int main(int argc, char** argv)
 	mySolver.solve(mySpmv, b1, x1);
 	mySolver.solve(mySpmv, b2, x2);
 
-	cusp::io::write_matrix_market_file(x1, "x1.mtx");
-	cusp::io::write_matrix_market_file(x2, "x2.mtx");
+	////cusp::io::write_matrix_market_file(x1, "x1.mtx");
+	////cusp::io::write_matrix_market_file(x2, "x2.mtx");
+	////cusp::io::write_matrix_market_file(x,  "x.mtx");
 
 	return 0;
 }
