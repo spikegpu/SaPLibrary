@@ -26,14 +26,13 @@ typedef double REAL;
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 typedef typename cusp::array1d<int, cusp::device_memory>          VectorI;
-typedef typename cusp::array1d_view<Vector::iterator>			  VectorView;
-typedef typename cusp::array1d_view<VectorI::iterator>			  VectorIView;
+typedef typename cusp::array1d_view<Vector::iterator>             VectorView;
+typedef typename cusp::array1d_view<VectorI::iterator>            VectorIView;
 typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorHost;
-typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, VectorView>
-																  MatrixView;
+typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, VectorView>  MatrixView;
 
-typedef typename spike::Solver<MatrixView, VectorView>			  SpikeSolver;
-typedef typename spike::SpmvCusp<MatrixView, VectorView>		  SpmvFunctor;
+typedef typename spike::Solver<MatrixView, VectorView>            SpikeSolver;
+typedef typename spike::SpmvCusp<MatrixView>                      SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------

@@ -17,10 +17,9 @@ typedef double REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
-typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorHost;
 
-typedef typename spike::Solver<Matrix, Vector>       SpikeSolver;
-typedef typename spike::SpmvCusp<Matrix, Vector>     SpmvFunctor;
+typedef typename spike::Solver<Matrix, Vector>                    SpikeSolver;
+typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
