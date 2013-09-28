@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <fstream>
+#include <cmath>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -144,6 +145,7 @@ int main(int argc, char** argv)
 
 	cusp::io::read_matrix_market_file(A, fileMat);
 
+
 	if (fileRhs.length() > 0)
 		cusp::io::read_matrix_market_file(b, fileRhs);
 	else
@@ -173,10 +175,9 @@ int main(int argc, char** argv)
 	if (fileSol.length() > 0)
 		cusp::io::write_matrix_market_file(x, fileSol);
 
-	PrintStats(success, mySolver, mySpmv);
-
 	// Calculate the actual residual and its norm.
 	if (verbose) {
+		PrintStats(success, mySolver, mySpmv);
 		Vector r(A.num_rows);
 		VectorView r_view(r);
 		mySpmv(x_view, r_view);
@@ -193,6 +194,56 @@ int main(int argc, char** argv)
 			cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
 			cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
 		}
+	} else {
+		spike::Stats stats = mySolver.getStats();
+		int i;
+		for (i = fileMat.size()-1; i>=0 && fileMat[i] != '/' && fileMat[i] != '\\'; i--);
+		i++;
+		// Name of matrix
+		cout << fileMat.substr(i) << ",";
+		// Dimension
+		cout << A.num_rows << ",";
+		// No. of non-zeros
+		cout << A.num_entries << ",";
+		// Half-bandwidth
+		cout << stats.bandwidth << ",";
+		// Solve the problem successfully
+		cout << success << ",";
+		
+		if (success) {
+			// Reason why cannot solve (for unsuccessful solving only)
+			cout << "N/A,";
+			// Number of partitions
+			cout << numPart << ",";
+			// Number of iterations to converge
+			cout << stats.numIterations << ",";
+			// Time to reorder
+			cout << stats.time_reorder << ",";
+			// Time to assemble banded and off-diagonal matrices on CPU
+			cout << stats.time_cpu_assemble << ",";
+			// Time for data transferring
+			cout << stats.time_transfer << ",";
+			// Time to extract all off-diagonal matrices on GPU
+			cout << stats.time_offDiags << ",";
+			// Time to assemble off-diagonal matrics on GPU (including the solution of multi-RHS)
+			cout << stats.time_assembly << ",";
+			// Time for banded LU and UL
+			cout << stats.time_bandLU + stats.time_bandUL << ",";
+			// Time for full LU on reduced matrices
+			cout << stats.time_fullLU << ",";
+			// Total time for setup
+			cout << stats.timeSetup << ",";
+			// Total time for Krylov solve
+			cout << stats.timeSolve << ",";
+			// Total amount of time
+			cout << stats.timeSetup + stats.timeSolve;
+		}
+		else if (isnan(cusp::blas::nrm1(x_view)))
+			cout << "Zero pivoting";
+		else
+			cout << "Not converged";
+		
+		cout << endl;
 	}
 
 	return 0;
