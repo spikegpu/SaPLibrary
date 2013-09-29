@@ -1283,6 +1283,9 @@ Precond<Vector>::partBandedLU_one()
 			////device::swBandLU<ValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
 	}
 
+	if (m_safeFactorization)
+		device::boostLastPivot<ValueType><<<1, 1>>>(dB, m_n, m_k, m_n, 0);
+
 	int gridX = m_n, gridY = 1;
 	kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
 	dim3 grids(gridX, gridY);
@@ -1461,6 +1464,9 @@ Precond<Vector>::partBandedLU_var()
 		else
 			device::var::bandLU<ValueType><<<m_numPartitions,  tmp_k * tmp_k>>>(dB, p_ks, p_BOffsets, partSize, remainder);
 	}
+
+	if (m_safeFactorization)
+		device::var::boostLastPivot<ValueType><<<m_numPartitions, 1>>>(dB, partSize, p_ks, p_BOffsets, partSize, remainder);
 
 	int gridX = partSize+1, gridY = 1;
 	kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
@@ -1666,6 +1672,7 @@ Precond<Vector>::partBandedBckSweep_const(Vector&  v)
 				blockX = BLOCK_SIZE;
 			}
 			dim3 grids(gridX, m_numPartitions);
+
 			device::preBck_sol_divide<ValueType, ValueType><<<grids, blockX>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 
 			if (m_k > 1024)

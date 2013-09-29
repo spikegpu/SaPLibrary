@@ -1381,9 +1381,21 @@ Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 		find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, success, irn);
 	}
 
+	for(int i=0; i<m_n; i++) {
+		if(rev_matched[i]) continue;
+		for(int j=0; j<m_n; j++) {
+			if (!matched[j]) {
+				matched[j] = true;
+				mc64RowPerm[j] = i;
+				break;
+			}
+		}
+	}
+
 	mc64RowScale.pop_back();
 	mc64ColScale.pop_back();
 	max_val_in_col.pop_back();
+
 	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), ExpOp<T>());
 	thrust::transform(
 			thrust::make_transform_iterator(mc64ColScale.begin(), ExpOp<T>()),
@@ -1408,9 +1420,13 @@ Graph<T>::get_csc_matrix(VectorI&  row_ptr,
                          Vector&   c_val,
                          Vector&   max_val_in_col)
 {
+	VectorB row_visited(m_n, 0);
+
 	cusp::blas::fill(c_val, LOC_INFINITY);
-	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
+	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
 		row_ptr[edgeIt->m_to]++;
+		row_visited[edgeIt->m_from] = true;
+	}
 
 	thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
@@ -1547,7 +1563,6 @@ Graph<T>::find_shortest_aug_path(int       init_node,
 			}
 			T d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
-				
 				if(!matched[cur_row]) {
 					lsap = d_new;
 					isap = cur_row;
@@ -1574,9 +1589,8 @@ Graph<T>::find_shortest_aug_path(int       init_node,
 			found = true;
 			break;
 		}
-		if(!found) {
+		if(!found)
 			break;
-		}
 
 		int tmp_idx = min_d.m_idx;
 		visited[tmp_idx] = true;
