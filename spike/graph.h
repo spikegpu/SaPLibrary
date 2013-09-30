@@ -1381,15 +1381,21 @@ Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 		find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, success, irn);
 	}
 
-	for(int i=0; i<m_n; i++) {
-		if(rev_matched[i]) continue;
-		for(int j=0; j<m_n; j++) {
-			if (!matched[j]) {
-				matched[j] = true;
-				mc64RowPerm[j] = i;
-				break;
-			}
-		}
+	{
+		VectorI     unmatched_rows, unmatched_cols;
+
+		for (int i=0; i<m_n; i++)
+			if (!matched[i])
+				unmatched_rows.push_back(i);
+
+		for (int i=0; i<m_n; i++)
+			if (!rev_matched[i])
+				unmatched_cols.push_back(i);
+		
+		int unmatched_count = unmatched_rows.size();
+
+		for (int i=0; i<unmatched_count; i++)
+			mc64RowPerm[unmatched_rows[i]] = unmatched_cols[i];
 	}
 
 	mc64RowScale.pop_back();
