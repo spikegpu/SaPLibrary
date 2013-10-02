@@ -129,7 +129,6 @@ int main(int argc, char** argv)
 	int            numPart;
 	bool           verbose;
 	spike::Options opts;
-	opts.trackReordering = true;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, verbose, opts))
 		return 1;
@@ -161,11 +160,11 @@ int main(int argc, char** argv)
 	Vector       x(A.num_rows, 0);
 
 	mySolver.setup(Aview);
-	cusp::blas::scal(A.values, 1.1);
-	cusp::blas::scal(b, 1.1);
+	// cusp::blas::scal(A.values, 1.1);
+	// cusp::blas::scal(b, 1.1);
 
 	VectorView A_values_view(A.values);
-	mySolver.update(A_values_view);
+	// mySolver.update(A_values_view);
 
 	VectorView b_view(b);
 	VectorView x_view(x);
@@ -276,7 +275,8 @@ void spikeSetDevice() {
 			}
 	}
 
-	std::cerr << "Use device: " << max_idx << endl;
+	// std::cerr << "Use device: " << max_idx << endl;
+	// cudaSetDevice(max_idx);
 	cudaSetDevice(max_idx);
 }
 
@@ -449,28 +449,30 @@ GetProblemSpecs(int             argc,
 		opts.factMethod = spike::LU_only;
 
 	// Print out the problem specifications.
-	cout << endl;
-	cout << "Matrix file: " << fileMat << endl;
-	if (fileRhs.length() > 0)
-		cout << "Rhs file:    " << fileRhs << endl;
-	if (fileSol.length() > 0)
-		cout << "Sol file:    " << fileSol << endl;
-	cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
-	cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
-	cout << "Tolerance: " << opts.tolerance << endl;
-	cout << "Max. iterations: " << opts.maxNumIterations << endl;
-	cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
-	cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
-	if (opts.dropOffFraction > 0)
-		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
-	else
-		cout << "No drop-off." << endl;
-	cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
-	cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
-	cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
-	cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
-	cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
-	cout << endl << endl;
+	if (verbose) {
+		cout << endl;
+		cout << "Matrix file: " << fileMat << endl;
+		if (fileRhs.length() > 0)
+			cout << "Rhs file:    " << fileRhs << endl;
+		if (fileSol.length() > 0)
+			cout << "Sol file:    " << fileSol << endl;
+		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
+		cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
+		cout << "Tolerance: " << opts.tolerance << endl;
+		cout << "Max. iterations: " << opts.maxNumIterations << endl;
+		cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
+		cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
+		if (opts.dropOffFraction > 0)
+			cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
+		else
+			cout << "No drop-off." << endl;
+		cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
+		cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
+		cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
+		cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
+		cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
+		cout << endl << endl;
+	}
 
 	return true;
 }
