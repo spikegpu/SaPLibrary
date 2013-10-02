@@ -1,11 +1,13 @@
 import os
 
-MATRIX_PATH = '/home/ali/CUDA_project/reordering/matrices/'
+MATRIX_PATH = '/home/ali/CUDA_project/reordering/matrices'
+EXEC_PATH = '/home/ali/CUDA_project/SpikeLibrary/SpikeLibrary/examples/RELEASE/test'
 EXEC_NAME = 'driver_test'
 SAFE_FACT = ''
+FILE_LIST_PATH = '/home/ali/CUDA_project/SpikeLibrary/SpikeLibrary/examples/test'
 #SAFE_FACT = '--safe-fact'
 
-f = open('file_list.txt', 'r')
+f = open('{0}/file_list.txt'.format(FILE_LIST_PATH), 'r')
 status=0
 
 mat_name = ''
@@ -17,5 +19,5 @@ for line in f:
 		status = 1
 	else:
 		num_part = line
-		os.system('./{0} -p={1} -m={2}{3} {4}'.format(EXEC_NAME, num_part.strip(), MATRIX_PATH, mat_name.strip(), SAFE_FACT))
+		os.system('{5}/{0} -p={1} -m={2}/{3} {4}'.format(EXEC_NAME, num_part.strip(), MATRIX_PATH, mat_name.strip(), SAFE_FACT, EXEC_PATH))
 		status = 0
