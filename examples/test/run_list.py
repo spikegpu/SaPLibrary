@@ -1,4 +1,5 @@
 import os
+import sys
 
 MATRIX_PATH = '/home/ali/CUDA_project/reordering/matrices'
 EXEC_PATH = '/home/ali/CUDA_project/SpikeLibrary/SpikeLibrary/examples/RELEASE/test'
@@ -7,11 +8,23 @@ SAFE_FACT = ''
 FILE_LIST_PATH = '/home/ali/CUDA_project/SpikeLibrary/SpikeLibrary/examples/test'
 #SAFE_FACT = '--safe-fact'
 
+
+length = len(sys.argv)
+if length > 1:
+	EXEC_PATH = sys.argv[1]
+
+if length > 2:
+	MATRIX_PATH = sys.argv[2]
+
+if length > 3:
+	FILE_LIST_PATH = sys.argv[3]
+
 f = open('{0}/file_list.txt'.format(FILE_LIST_PATH), 'r')
 status=0
 
 mat_name = ''
 num_part = ''
+
 
 for line in f:
 	if status == 0:
