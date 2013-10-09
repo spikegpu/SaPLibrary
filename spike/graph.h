@@ -153,10 +153,11 @@ public:
 	                   T   dropMin,
 	                   int numPartitions);
 
+	template <typename SingleVector>
 	void       assembleOffDiagMatrices(int        bandwidth,
 	                                   int        numPartitions,
-	                                   Vector&    WV_host,
-	                                   Vector&    offDiags_host,
+	                                   SingleVector&    WV_host,
+	                                   SingleVector&    offDiags_host,
 	                                   VectorI&   offDiagWidths_left,
 	                                   VectorI&   offDiagWidths_right,
 	                                   VectorI&   offDiagPerms_left,
@@ -171,18 +172,20 @@ public:
 	                                 VectorI&    secondPerm,
 	                                 VectorI&    first_rows);
 
+	template <typename SingleVector>
 	void       assembleBandedMatrix(int        bandwidth,
 	                                VectorI&   ks_col,
 	                                VectorI&   ks_row,
-	                                Vector&    B,
+	                                SingleVector&    B,
 	                                MatrixMap& typeMap,
 	                                MatrixMap& bandedMatMap);
 
+	template <typename SingleVector>
 	void       assembleBandedMatrix(int        bandwidth,
 	                                int        numPartitions,
 	                                VectorI&   ks_col,
 	                                VectorI&   ks_row,
-	                                Vector&    B,
+	                                SingleVector&    B,
 	                                VectorI&   ks,
 	                                VectorI&   BOffsets,
 	                                MatrixMap& typeMap,
@@ -290,11 +293,11 @@ Graph<T>::reorder(const MatrixCOO&  Acoo,
 	// Create the edges in the graph.
 	if (m_trackReordering) {
 		for (int i = 0; i < m_nnz; i++) {
-			m_edges.push_back(EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], Acoo.values[i]));
+			m_edges.push_back(EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 		}
 	} else {
 		for (int i = 0; i < m_nnz; i++)
-			m_edges.push_back(EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], Acoo.values[i]));
+			m_edges.push_back(EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 	}
 
 	// Apply mc64 algorithm.
@@ -603,11 +606,12 @@ Graph<T>::dropOffPost(T   frac,
 // off-diagonal matrices.
 // ----------------------------------------------------------------------------
 template <typename T>
+template <typename SingleVector>
 void
 Graph<T>::assembleOffDiagMatrices(int        bandwidth,
                                   int        numPartitions,
-                                  Vector&    WV_host,
-                                  Vector&    offDiags_host,
+                                  SingleVector&    WV_host,
+                                  SingleVector&    offDiags_host,
                                   VectorI&   offDiagWidths_left,
                                   VectorI&   offDiagWidths_right,
                                   VectorI&   offDiagPerms_left,
@@ -806,11 +810,12 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 // that has banded diagonal blocks of different bandwidths for each partition.
 // ----------------------------------------------------------------------------
 template <typename T>
+template <typename SingleVector>
 void
 Graph<T>::assembleBandedMatrix(int        bandwidth,
                                VectorI&   ks_col,
                                VectorI&   ks_row,
-                               Vector&    B,
+                               SingleVector&    B,
                                MatrixMap& typeMap,
                                MatrixMap& bandedMatMap)
 {
@@ -867,12 +872,13 @@ Graph<T>::assembleBandedMatrix(int        bandwidth,
 }
 
 template <typename T>
+template <typename SingleVector>
 void
 Graph<T>::assembleBandedMatrix(int        bandwidth,
                                int        numPartitions,
                                VectorI&   ks_col,
                                VectorI&   ks_row,
-                               Vector&    B,
+                               SingleVector&    B,
                                VectorI&   ks,
                                VectorI&   BOffsets,
                                MatrixMap& typeMap,

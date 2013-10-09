@@ -26,19 +26,20 @@ namespace spike {
 /**
  * This class encapsulates the truncated Spike preconditioner.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 class Precond {
 public:
 
 	typedef typename Vector::memory_space MemorySpace;
 	typedef typename Vector::value_type   ValueType;
+	typedef typename DoubleVector::value_type   DoubleValueType;
 
 	typedef typename cusp::array1d<int, MemorySpace>             VectorI;
 	typedef typename cusp::array1d<ValueType, cusp::host_memory> VectorH;
 	typedef typename cusp::array1d<int, MemorySpace>             MatrixMap;
-	typedef typename cusp::array1d<ValueType, MemorySpace>       MatrixMapF;
+	typedef typename cusp::array1d<DoubleValueType, MemorySpace>       MatrixMapF;
 	typedef typename cusp::array1d<int, cusp::host_memory>       MatrixMapH;
-	typedef typename cusp::array1d<ValueType, cusp::host_memory> MatrixMapFH;
+	typedef typename cusp::array1d<DoubleValueType, cusp::host_memory> MatrixMapFH;
 
 	Precond():m_setupDone(0) {};
 
@@ -79,8 +80,9 @@ public:
 
 	bool   setupDone() const              {return m_setupDone;}
 
-	void update(const Vector& entries);
-	void solve(Vector& v, Vector& z);
+	void update(const DoubleVector& entries);
+
+	void solve(DoubleVector& v, DoubleVector& z);
 
 private:
 	int                  m_numPartitions;
@@ -133,8 +135,8 @@ private:
 	VectorI        m_secondReordering;   // 2nd stage reverse reordering
 	VectorI        m_secondPerm;         // 2nd stage reordering
 
-	Vector         m_mc64RowScale;       // MC64 row scaling
-	Vector         m_mc64ColScale;       // MC64 col scaling
+	DoubleVector         m_mc64RowScale;       // MC64 row scaling
+	DoubleVector         m_mc64ColScale;       // MC64 col scaling
 
 	//// TODO: If we want to support mixed precision, the following
 	//// should be of a different type (in particular, the same type
@@ -149,7 +151,7 @@ private:
 
 	int            m_k_reorder;          // bandwidth after reordering
 
-	ValueType      m_dropOff_actual;     // actual dropOff fraction achieved
+	DoubleValueType      m_dropOff_actual;     // actual dropOff fraction achieved
 
 	GPUTimer       m_timer;
 	double         m_time_reorder;       // CPU time for matrix reordering
@@ -177,22 +179,20 @@ private:
 	void partBandedLU_var();
 	void partBandedUL(Vector& B);
 
-	void partBandedFwdSweep(Vector& v);
-	void partBandedFwdSweep_const(Vector& v);
-	void partBandedFwdSweep_var(Vector& v);
-
-	void partBandedBckSweep(Vector& v);
-	void partBandedBckSweep_const(Vector& v);
-	void partBandedBckSweep_var(Vector& v);
+	void partBandedFwdSweep(DoubleVector& v);
+	void partBandedFwdSweep_const(DoubleVector& v);
+	void partBandedFwdSweep_var(DoubleVector& v);
+	void partBandedBckSweep(DoubleVector& v);
+	void partBandedBckSweep_const(DoubleVector& v);
+	void partBandedBckSweep_var(DoubleVector& v);
 
 	void partFullLU();
 	void partFullLU_const();
 	void partFullLU_var();
 
-	void partFullFwdSweep(Vector& v);
-	void partFullBckSweep(Vector& v);
-
-	void purifyRHS(Vector& v, Vector& res);
+	void partFullFwdSweep(DoubleVector& v);
+	void partFullBckSweep(DoubleVector& v);
+	void purifyRHS(DoubleVector& v, DoubleVector& res);
 
 	void calculateSpikes(Vector& WV);
 	void calculateSpikes_const(Vector& WV);
@@ -207,22 +207,21 @@ private:
 
 	void copyLastPartition(Vector& B2);
 
-	void leftTrans(Vector &v, Vector &z);
-	void rightTrans(Vector &v, Vector &z);
+	void leftTrans(DoubleVector &v, DoubleVector &z);
+	void rightTrans(DoubleVector &v, DoubleVector &z);
+	void permute(DoubleVector& v, VectorI& perm, DoubleVector& w);
+	void permuteAndScale(DoubleVector& v, VectorI& perm, DoubleVector& scale, DoubleVector& w);
+	void scaleAndPermute(DoubleVector& v, VectorI& perm, DoubleVector& scale, DoubleVector& w);
 
-	void permute(Vector& v, VectorI& perm, Vector& w);
-	void permuteAndScale(Vector& v, VectorI& perm, Vector& scale, Vector& w);
-	void scaleAndPermute(Vector& v, VectorI& perm, Vector& scale, Vector& w);
 	void combinePermutation(VectorI &perm, VectorI &perm2, VectorI &finalPerm);
-
-	void getSRev(Vector& rhs, Vector& sol);
+	void getSRev(DoubleVector& rhs, DoubleVector& sol);
 };
 
 /**
  * This is the constructor for the Precond class.
  */
-template <typename Vector>
-Precond<Vector>::Precond(int                 numPart,
+template <typename Vector, typename DoubleVector>
+Precond<Vector, DoubleVector>::Precond(int                 numPart,
                          bool                reorder,
                          bool                scale,
                          ValueType           dropOff_frac,
@@ -259,8 +258,8 @@ Precond<Vector>::Precond(int                 numPart,
 /**
  * This is the copy constructor for the Precond class.
  */
-template <typename Vector>
-Precond<Vector>::Precond(const Precond<Vector> &prec):
+template <typename Vector, typename DoubleVector>
+Precond<Vector, DoubleVector>::Precond(const Precond<Vector, DoubleVector> &prec):
 	m_setupDone(false),
 	m_k_reorder(0),
 	m_dropOff_actual(0),
@@ -287,8 +286,8 @@ Precond<Vector>::Precond(const Precond<Vector> &prec):
 	m_trackReordering   = prec.m_trackReordering;
 }
 
-template <typename Vector>
-Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
+template <typename Vector, typename DoubleVector>
+Precond<Vector, DoubleVector>& Precond<Vector, DoubleVector>::operator=(const Precond<Vector,  DoubleVector> &prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
@@ -322,9 +321,9 @@ Precond<Vector>& Precond<Vector>::operator=(const Precond<Vector> &prec)
  * the solver has solved at least one system and during setup, the mapping is
  * tracked. Otherwise report error and exit.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::update(const Vector& entries)
+Precond<Vector, DoubleVector>::update(const DoubleVector& entries)
 {
 	// If setup function is not called at all, directly return from this function
 	if (!m_setupDone) {
@@ -345,8 +344,8 @@ Precond<Vector>::update(const Vector& entries)
 	cusp::blas::fill(m_B, 0);
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<ValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<DoubleValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<DoubleValueType>()),
 			m_bandedMatMap.begin(),
 			m_typeMap.begin(),
 			m_B.begin()
@@ -388,8 +387,8 @@ Precond<Vector>::update(const Vector& entries)
 	m_timer.Start();
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<ValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<DoubleValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<DoubleValueType>()),
 			m_offDiagMap.begin(),
 			m_typeMap.begin(),
 			m_offDiags.begin(),
@@ -397,8 +396,8 @@ Precond<Vector>::update(const Vector& entries)
 			);
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<ValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<DoubleValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<DoubleValueType>()),
 			m_WVMap.begin(),
 			m_typeMap.begin(),
 			mat_WV.begin(),
@@ -491,10 +490,10 @@ Precond<Vector>::update(const Vector& entries)
  * (3) LU factorization
  * (4) Get the reduced matrix
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 template <typename Matrix>
 void
-Precond<Vector>::setup(const Matrix&  A)
+Precond<Vector, DoubleVector>::setup(const Matrix&  A)
 {
 	m_n = A.num_rows;
 
@@ -620,20 +619,20 @@ Precond<Vector>::setup(const Matrix&  A)
  * This function solves the system Mz=v, for a specified vector v, where M is
  * the implicitly defined preconditioner matrix.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::solve(Vector&  v,
-                       Vector&  z)
+Precond<Vector, DoubleVector>::solve(DoubleVector&  v,
+                       DoubleVector&  z)
 {
 	if (m_reorder) {
 		leftTrans(v, z);
-		static Vector buffer;
+		static DoubleVector buffer;
 		buffer.resize(m_n);
 		getSRev(z, buffer);
 		rightTrans(buffer, z);
 	} else {
 		cusp::blas::copy(v, z);
-		Vector buffer = z;
+		DoubleVector buffer = z;
 		getSRev(buffer, z);
 	}
 }
@@ -641,13 +640,13 @@ Precond<Vector>::solve(Vector&  v,
 /**
  * This function gets a rough solution of the input RHS.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::getSRev(Vector&  rhs,
-                         Vector&  sol)
+Precond<Vector, DoubleVector>::getSRev(DoubleVector&  rhs,
+                         DoubleVector&  sol)
 {
 	if (m_k == 0) {
-		thrust::transform(rhs.begin(), rhs.end(), m_B.begin(), sol.begin(), thrust::divides<ValueType>());
+		thrust::transform(rhs.begin(), rhs.end(), m_B.begin(), sol.begin(), thrust::divides<DoubleValueType>());
 		return;
 	}
 
@@ -665,7 +664,7 @@ Precond<Vector>::getSRev(Vector&  rhs,
 			// Purify RHS
 			purifyRHS(rhs, sol);
 		} else {
-			static Vector buffer;
+			static DoubleVector buffer;
 			buffer.resize(m_n);
 			permute(rhs, m_secondReordering,buffer);
 			// Calculate modified RHS
@@ -694,10 +693,10 @@ Precond<Vector>::getSRev(Vector&  rhs,
  * scaling and permutation (or only the MC64 row permutation) after which we
  * apply the RCM row permutation.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::leftTrans(Vector&  v,
-                           Vector&  z)
+Precond<Vector, DoubleVector>::leftTrans(DoubleVector&  v,
+                           DoubleVector&  z)
 {
 	if (m_scale)
 		scaleAndPermute(v, m_optPerm, m_mc64RowScale, z);
@@ -709,10 +708,10 @@ Precond<Vector>::leftTrans(Vector&  v,
  * This function right transforms the system. We apply the RCM column 
  * permutation and, if needed, the MC64 column scaling.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::rightTrans(Vector&  v,
-                            Vector&  z)
+Precond<Vector, DoubleVector>::rightTrans(DoubleVector&  v,
+                            DoubleVector&  z)
 {
 	if (m_scale)
 		permuteAndScale(v, m_optReordering, m_mc64ColScale, z);
@@ -724,11 +723,11 @@ Precond<Vector>::rightTrans(Vector&  v,
  * This function transforms the input vector 'v' into the output vector 'w' by
  * applying the permutation 'perm'.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::permute(Vector&   v,
+Precond<Vector, DoubleVector>::permute(DoubleVector&   v,
                          VectorI&  perm,
-                         Vector&   w)
+                         DoubleVector&   w)
 {
 	m_timer.Start();
 	thrust::scatter(v.begin(), v.end(), perm.begin(), w.begin());
@@ -740,18 +739,18 @@ Precond<Vector>::permute(Vector&   v,
  * This function transforms the input vector 'v' into the output vector 'w' by
  * applying the permutation 'perm' followed by the scaling 'scale'.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::permuteAndScale(Vector&   v,
+Precond<Vector, DoubleVector>::permuteAndScale(DoubleVector&   v,
                                  VectorI&  perm,
-                                 Vector&   scale,
-                                 Vector&   w)
+                                 DoubleVector&   scale,
+                                 DoubleVector&   w)
 {
 	m_timer.Start();
 
 	thrust::scatter(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), thrust::make_permutation_iterator(scale.begin(), perm.begin()))), Multiplier<ValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), thrust::make_permutation_iterator(scale.end(), perm.end()))), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), thrust::make_permutation_iterator(scale.begin(), perm.begin()))), Multiplier<DoubleValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), thrust::make_permutation_iterator(scale.end(), perm.end()))), Multiplier<DoubleValueType>()),
 			perm.begin(),
 			w.begin()
 			);
@@ -764,17 +763,17 @@ Precond<Vector>::permuteAndScale(Vector&   v,
  * This function transforms the input vector 'v' into the output vector 'w' by
  * applying the scaling 'scale' followed by the permutation 'perm'.
  */ 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::scaleAndPermute(Vector&   v,
+Precond<Vector, DoubleVector>::scaleAndPermute(DoubleVector&   v,
                                  VectorI&  perm,
-                                 Vector&   scale,
-                                 Vector&   w)
+                                 DoubleVector&   scale,
+                                 DoubleVector&   w)
 {
 	m_timer.Start();
 	thrust::scatter(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), scale.begin())), Multiplier<ValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), scale.end())), Multiplier<ValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), scale.begin())), Multiplier<DoubleValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), scale.end())), Multiplier<DoubleValueType>()),
 			perm.begin(),
 			w.begin()
 			);
@@ -785,8 +784,8 @@ Precond<Vector>::scaleAndPermute(Vector&   v,
 /**
  * This function combines two permutations to one.
  */
-template <typename Vector>
-void Precond<Vector>::combinePermutation(VectorI&  perm,
+template <typename Vector, typename DoubleVector>
+void Precond<Vector, DoubleVector>::combinePermutation(VectorI&  perm,
                                          VectorI&  perm2,
                                          VectorI&  finalPerm)
 {
@@ -813,10 +812,10 @@ void Precond<Vector>::combinePermutation(VectorI&  perm,
  *   mc64ColScale
  *       row and column scaling factors obtained from the MC64 algorithm
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 template <typename Matrix>
 void
-Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
+Precond<Vector, DoubleVector>::transformToBandedMatrix(const Matrix&  A)
 {
 	CPUTimer reorder_timer, assemble_timer, transfer_timer;
 
@@ -831,17 +830,17 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
 	cusp::array1d<int, cusp::host_memory>        optReordering;
 	cusp::array1d<int, cusp::host_memory>        optPerm;
 	cusp::array1d<int, cusp::host_memory>        mc64RowPerm;
-	cusp::array1d<ValueType, cusp::host_memory>  mc64RowScale;
-	cusp::array1d<ValueType, cusp::host_memory>  mc64ColScale;
+	cusp::array1d<DoubleValueType, cusp::host_memory>  mc64RowScale;
+	cusp::array1d<DoubleValueType, cusp::host_memory>  mc64ColScale;
 	cusp::array1d<int, cusp::host_memory>        secondReorder;
 	cusp::array1d<int, cusp::host_memory>        secondPerm;
 
-	Graph<ValueType>  graph(m_trackReordering);
+	Graph<DoubleValueType>  graph(m_trackReordering);
 
 	cusp::array1d<int, cusp::host_memory>  offDiagPerms_left;
 	cusp::array1d<int, cusp::host_memory>  offDiagPerms_right;
 
-	const ValueType dropMin = 1.0/100;
+	const DoubleValueType dropMin = 1.0/100;
 
 	MatrixMapH      offDiagMap;
 	MatrixMapH      WVMap;
@@ -993,10 +992,10 @@ Precond<Vector>::transformToBandedMatrix(const Matrix&  A)
  * m_B which is stored column-wise, band after band, in a contiguous 1-D array.
  * It also sets m_k to be the half-bandwidth of m_B.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 template <typename Matrix>
 void
-Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
+Precond<Vector, DoubleVector>::convertToBandedMatrix(const Matrix&  A)
 {
 	// Convert matrix to COO format.
 	cusp::coo_matrix<int, ValueType, MemorySpace> Acoo = A;
@@ -1058,9 +1057,9 @@ Precond<Vector>::convertToBandedMatrix(const Matrix&  A)
  * it also initializes the specified WV matrix with the off-diagonal blocks
  * (this will be later processed to obtain the actual spike blocks in WV).
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::extractOffDiagonal(Vector&  mat_WV)
+Precond<Vector, DoubleVector>::extractOffDiagonal(Vector&  mat_WV)
 {
 	// If second-level reordering is enabled, the off-diagonal matrices are already in the host.
 	if (m_variableBandwidth) {
@@ -1099,9 +1098,9 @@ Precond<Vector>::extractOffDiagonal(Vector&  mat_WV)
  * R_i = [------+ -----]
  *       [  W   |  I_k ]
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partFullLU()
+Precond<Vector, DoubleVector>::partFullLU()
 {
 	if (!m_variableBandwidth)
 		partFullLU_const();
@@ -1109,9 +1108,9 @@ Precond<Vector>::partFullLU()
 		partFullLU_var();
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partFullLU_const()
+Precond<Vector, DoubleVector>::partFullLU_const()
 {
 	ValueType* d_R = thrust::raw_pointer_cast(&m_R[0]);
 	int        two_k = 2 * m_k;
@@ -1158,9 +1157,9 @@ Precond<Vector>::partFullLU_const()
 	}
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partFullLU_var()
+Precond<Vector, DoubleVector>::partFullLU_var()
 {
 	ValueType* d_R = thrust::raw_pointer_cast(&m_R[0]);
 	int*       p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
@@ -1224,9 +1223,9 @@ Precond<Vector>::partFullLU_var()
  * of the specified banded matrix B, on a per-partition basis, using the
  * "window sliding" method.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partBandedLU()
+Precond<Vector, DoubleVector>::partBandedLU()
 {
 	if (!m_variableBandwidth) {
 		if (m_numPartitions > 1)
@@ -1238,11 +1237,17 @@ Precond<Vector>::partBandedLU()
 		partBandedLU_var();
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partBandedLU_one()
+Precond<Vector, DoubleVector>::partBandedLU_one()
 {
 	ValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
+
+	if (m_ks_col_host.size() < m_n)
+		m_ks_col_host.resize(m_n, m_k);
+
+	if (m_ks_row_host.size() < m_n)
+		m_ks_row_host.resize(m_n, m_k);
 
 	if(m_k >= CRITICAL_THRESHOLD) {
 		int threadsNum = 0;
@@ -1295,9 +1300,9 @@ Precond<Vector>::partBandedLU_one()
 		device::bandLU_post_divide<ValueType><<<grids, m_k>>>(dB, m_k, m_n);
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partBandedLU_const()
+Precond<Vector, DoubleVector>::partBandedLU_const()
 {
 	ValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
 
@@ -1386,9 +1391,9 @@ Precond<Vector>::partBandedLU_const()
 }
 
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partBandedLU_var()
+Precond<Vector, DoubleVector>::partBandedLU_var()
 {
 	ValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
 	int *p_ks = thrust::raw_pointer_cast(&m_ks[0]);
@@ -1493,9 +1498,9 @@ Precond<Vector>::partBandedLU_var()
  * of the specified banded matrix B, on a per-partition basis, using the
  * "window sliding" method.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::partBandedUL(Vector& B)
+Precond<Vector, DoubleVector>::partBandedUL(Vector& B)
 {
 	int partSize  = m_n / m_numPartitions;
 	int remainder = m_n % m_numPartitions;
@@ -1572,9 +1577,9 @@ Precond<Vector>::partBandedUL(Vector& B)
  * This function performs the forward elimination sweep for the given banded
  * matrix B (assumed to encode the LU factors) and vector v.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partBandedFwdSweep(Vector&  v)
+Precond<Vector, DoubleVector>::partBandedFwdSweep(DoubleVector&  v)
 {
 	if (!m_variableBandwidth)
 		partBandedFwdSweep_const(v);
@@ -1582,39 +1587,39 @@ Precond<Vector>::partBandedFwdSweep(Vector&  v)
 		partBandedFwdSweep_var(v);
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partBandedFwdSweep_const(Vector&  v)
+Precond<Vector, DoubleVector>::partBandedFwdSweep_const(DoubleVector&  v)
 {
 	ValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
-	ValueType* p_v = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
 
 	if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
 		if (m_k > 1024)
-			device::forwardElimL_general<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::forwardElimL_general<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else if (m_k > 32)
-			device::forwardElimL_g32<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::forwardElimL_g32<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else
-			device::forwardElimL<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::forwardElimL<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 	} else {
 		if (m_k > 1024)
-			device::forwardElimL_LU_UL_general<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::forwardElimL_LU_UL_general<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else if (m_k > 32)
-			device::forwardElimL_LU_UL_g32<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::forwardElimL_LU_UL_g32<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else
-			device::forwardElimL_LU_UL<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::forwardElimL_LU_UL<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 	}
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partBandedFwdSweep_var(Vector&  v)
+Precond<Vector, DoubleVector>::partBandedFwdSweep_var(DoubleVector&  v)
 {
 	ValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
-	ValueType* p_v = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
 	int* p_ks = thrust::raw_pointer_cast(&m_ks[0]);
 	int tmp_k = cusp::blas::nrmmax(m_ks);
@@ -1624,11 +1629,11 @@ Precond<Vector>::partBandedFwdSweep_var(Vector&  v)
 	int remainder  = m_n % m_numPartitions;
 
 	if (tmp_k > 1024)
-		device::var::fwdElim_sol<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		device::var::fwdElim_sol<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 	else if (tmp_k > 32)
-		device::var::fwdElim_sol_medium<ValueType, ValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		device::var::fwdElim_sol_medium<ValueType, DoubleValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 	else
-		device::var::fwdElim_sol_narrow<ValueType, ValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		device::var::fwdElim_sol_narrow<ValueType, DoubleValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 }
 
 /*! \brief This function will call either Precond::partBandedBckSweep_const()
@@ -1637,9 +1642,9 @@ Precond<Vector>::partBandedFwdSweep_var(Vector&  v)
  * This function performs the backward substitution sweep for the given banded
  * matrix B (assumed to encode the LU factors) and vector v.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partBandedBckSweep(Vector&  v)
+Precond<Vector, DoubleVector>::partBandedBckSweep(DoubleVector&  v)
 {
 	if (!m_variableBandwidth)
 		partBandedBckSweep_const(v);
@@ -1647,12 +1652,12 @@ Precond<Vector>::partBandedBckSweep(Vector&  v)
 		partBandedBckSweep_var(v);
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partBandedBckSweep_const(Vector&  v)
+Precond<Vector, DoubleVector>::partBandedBckSweep_const(DoubleVector&  v)
 {
 	ValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
-	ValueType* p_v = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
@@ -1660,11 +1665,11 @@ Precond<Vector>::partBandedBckSweep_const(Vector&  v)
 	if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
 		if (m_numPartitions > 1) {
 			if (m_k > 1024)
-				device::backwardElimU_general<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				device::backwardElimU_general<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 			else if (m_k > 32)
-				device::backwardElimU_g32<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				device::backwardElimU_g32<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 			else
-				device::backwardElimU<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				device::backwardElimU<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		} else {
 			int gridX = 1, blockX = m_n;
 			if (blockX > BLOCK_SIZE) {
@@ -1673,31 +1678,31 @@ Precond<Vector>::partBandedBckSweep_const(Vector&  v)
 			}
 			dim3 grids(gridX, m_numPartitions);
 
-			device::preBck_sol_divide<ValueType, ValueType><<<grids, blockX>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::preBck_sol_divide<ValueType, DoubleValueType><<<grids, blockX>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 
 			if (m_k > 1024)
-				device::bckElim_sol<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				device::bckElim_sol<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 			else if (m_k > 32)
-				device::bckElim_sol_medium<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				device::bckElim_sol_medium<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 			else
-				device::bckElim_sol_narrow<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				device::bckElim_sol_narrow<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		}
 	} else {
 		if (m_k > 1024)
-			device::backwardElimU_LU_UL_general<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::backwardElimU_LU_UL_general<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else if (m_k > 32)
-			device::backwardElimU_LU_UL_g32<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::backwardElimU_LU_UL_g32<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else
-			device::backwardElimU_LU_UL<ValueType, ValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::backwardElimU_LU_UL<ValueType, DoubleValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 	}
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partBandedBckSweep_var(Vector&  v)
+Precond<Vector, DoubleVector>::partBandedBckSweep_var(DoubleVector&  v)
 {
 	ValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
-	ValueType* p_v = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
 	int* p_ks = thrust::raw_pointer_cast(&m_ks[0]);
 	int tmp_k = cusp::blas::nrmmax(m_ks);
@@ -1709,26 +1714,26 @@ Precond<Vector>::partBandedBckSweep_var(Vector&  v)
 	int gridX = 1, blockX = partSize + 1;
 	kernelConfigAdjust(blockX, gridX, BLOCK_SIZE);
 	dim3 grids(gridX, m_numPartitions);
-	device::var::preBck_sol_divide<ValueType, ValueType><<<grids, blockX>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	device::var::preBck_sol_divide<ValueType, DoubleValueType><<<grids, blockX>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 
 	if (tmp_k > 1024)
-		device::var::bckElim_sol<ValueType, ValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		device::var::bckElim_sol<ValueType, DoubleValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 	else if (tmp_k > 32) 
-		device::var::bckElim_sol_medium<ValueType, ValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		device::var::bckElim_sol_medium<ValueType, DoubleValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 	else
-		device::var::bckElim_sol_narrow<ValueType, ValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		device::var::bckElim_sol_narrow<ValueType, DoubleValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
 }
 
 /**
  * This function performs the forward elimination sweep for the given full
  * matrix R (assumed to encode the LU factors) and vector v.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partFullFwdSweep(Vector&  v)
+Precond<Vector, DoubleVector>::partFullFwdSweep(DoubleVector&  v)
 {
 	ValueType* p_R = thrust::raw_pointer_cast(&m_R[0]);
-	ValueType* p_v = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
@@ -1737,17 +1742,17 @@ Precond<Vector>::partFullFwdSweep(Vector&  v)
 
 	if (!m_variableBandwidth) {
 		if (m_k > 512)
-			device::forwardElimLNormal_g512<ValueType, ValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
+			device::forwardElimLNormal_g512<ValueType, DoubleValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
-			device::forwardElimLNormal<ValueType, ValueType><<<grids, 2*m_k-1>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
+			device::forwardElimLNormal<ValueType, DoubleValueType><<<grids, 2*m_k-1>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 	} else {
 		int* p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
 		int* p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
 
 		if (m_k > 512)
-			device::var::fwdElim_full<ValueType, ValueType><<<grids, 512>>>(m_n, p_spike_ks,  p_ROffsets, p_R, p_v, partSize, remainder);
+			device::var::fwdElim_full<ValueType, DoubleValueType><<<grids, 512>>>(m_n, p_spike_ks,  p_ROffsets, p_R, p_v, partSize, remainder);
 		else
-			device::var::fwdElim_full_narrow<ValueType, ValueType><<<grids, m_k>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
+			device::var::fwdElim_full_narrow<ValueType, DoubleValueType><<<grids, m_k>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
 	}
 }
 
@@ -1756,12 +1761,13 @@ Precond<Vector>::partFullFwdSweep(Vector&  v)
  * This function performs the backward substitution sweep for the given full
  * matrix R (assumed to encode the LU factors) and vector v.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::partFullBckSweep(Vector&  v)
+Precond<Vector, DoubleVector>::partFullBckSweep(DoubleVector&  v)
 {
+	typedef typename DoubleVector::value_type DoubleValueType;
 	ValueType* p_R = thrust::raw_pointer_cast(&m_R[0]);
-	ValueType* p_v = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
@@ -1770,20 +1776,20 @@ Precond<Vector>::partFullBckSweep(Vector&  v)
 
 	if (!m_variableBandwidth) {
 		if (m_k > 512)
-			device::backwardElimUNormal_g512<ValueType, ValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
+			device::backwardElimUNormal_g512<ValueType, DoubleValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
-			device::backwardElimUNormal<ValueType, ValueType><<<grids, 2*m_k-1>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
+			device::backwardElimUNormal<ValueType, DoubleValueType><<<grids, 2*m_k-1>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 	} else {
 		int* p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
 		int* p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
 
 		if (m_k > 512) {
-			device::var::preBck_full_divide<ValueType, ValueType><<<m_numPartitions-1, 512>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
-			device::var::bckElim_full<ValueType, ValueType><<<grids, 512>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
+			device::var::preBck_full_divide<ValueType, DoubleValueType><<<m_numPartitions-1, 512>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
+			device::var::bckElim_full<ValueType, DoubleValueType><<<grids, 512>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
 		}
 		else {
-			device::var::preBck_full_divide_narrow<ValueType, ValueType><<<m_numPartitions-1, m_k>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
-			device::var::bckElim_full_narrow<ValueType, ValueType><<<grids, 2*m_k-1>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
+			device::var::preBck_full_divide_narrow<ValueType, DoubleValueType><<<m_numPartitions-1, m_k>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
+			device::var::bckElim_full_narrow<ValueType, DoubleValueType><<<grids, 2*m_k-1>>>(m_n, p_spike_ks, p_ROffsets, p_R, p_v, partSize, remainder);
 		}
 	}
 }
@@ -1793,14 +1799,14 @@ Precond<Vector>::partFullBckSweep(Vector&  v)
  * inner product between the off-diagonal blocks of the original matrix
  * and the vector 'v'. The result is stored in the output vector 'res'.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void 
-Precond<Vector>::purifyRHS(Vector&  v,
-                           Vector&  res)
+Precond<Vector, DoubleVector>::purifyRHS(DoubleVector&  v,
+                           DoubleVector&  res)
 {
 	ValueType* p_offDiags = thrust::raw_pointer_cast(&m_offDiags[0]);
-	ValueType* p_v        = thrust::raw_pointer_cast(&v[0]);
-	ValueType* p_res      = thrust::raw_pointer_cast(&res[0]);
+	DoubleValueType* p_v        = thrust::raw_pointer_cast(&v[0]);
+	DoubleValueType* p_res      = thrust::raw_pointer_cast(&res[0]);
 
 	int partSize   = m_n / m_numPartitions;
 	int remainder  = m_n % m_numPartitions;
@@ -1809,25 +1815,25 @@ Precond<Vector>::purifyRHS(Vector&  v,
 
 	if (!m_variableBandwidth) {
 		if (m_k > 256)
-			device::innerProductBCX_g256<ValueType, ValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_g256<ValueType, DoubleValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
 		else if (m_k > 64)
-			device::innerProductBCX_g64<ValueType, ValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_g64<ValueType, DoubleValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
 		else if (m_k > 32)
-			device::innerProductBCX_g32<ValueType, ValueType><<<grids, 64>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_g32<ValueType, DoubleValueType><<<grids, 64>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
 		else
-			device::innerProductBCX<ValueType, ValueType><<<grids, 32>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
+			device::innerProductBCX<ValueType, DoubleValueType><<<grids, 32>>>(p_offDiags, p_v, p_res, m_n, m_k, partSize, m_numPartitions, remainder);
 	} else {
 		int* p_WVOffsets = thrust::raw_pointer_cast(&m_WVOffsets[0]);
 		int* p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
 		
 		if (m_k > 256)
-			device::innerProductBCX_var_bandwidth_g256<ValueType, ValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_var_bandwidth_g256<ValueType, DoubleValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
 		else if (m_k > 64)
-			device::innerProductBCX_var_bandwidth_g64<ValueType, ValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_var_bandwidth_g64<ValueType, DoubleValueType><<<grids, 256>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
 		else if (m_k > 32)
-			device::innerProductBCX_var_bandwidth_g32<ValueType, ValueType><<<grids, 64>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_var_bandwidth_g32<ValueType, DoubleValueType><<<grids, 64>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
 		else
-			device::innerProductBCX_var_bandwidth<ValueType, ValueType><<<grids, 32>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
+			device::innerProductBCX_var_bandwidth<ValueType, DoubleValueType><<<grids, 32>>>(p_offDiags, p_v, p_res, m_n, p_spike_ks, p_WVOffsets, partSize, m_numPartitions, remainder);
 	}
 }
 
@@ -1836,9 +1842,9 @@ Precond<Vector>::purifyRHS(Vector&  v,
  *
  * This function calculates the spike blocks in the LU_only case.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::calculateSpikes(Vector&  WV)
+Precond<Vector, DoubleVector>::calculateSpikes(Vector&  WV)
 {
 	if (!m_variableBandwidth)
 		calculateSpikes_const(WV);
@@ -1851,9 +1857,9 @@ Precond<Vector>::calculateSpikes(Vector&  WV)
 	}
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::calculateSpikes_var_old(Vector&  WV)
+Precond<Vector, DoubleVector>::calculateSpikes_var_old(Vector&  WV)
 {
 	ValueType* p_WV = thrust::raw_pointer_cast(&WV[0]);
 
@@ -2048,9 +2054,9 @@ Precond<Vector>::calculateSpikes_var_old(Vector&  WV)
 		}
 	}
 }
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::calculateSpikes_const(Vector&  WV)
+Precond<Vector, DoubleVector>::calculateSpikes_const(Vector&  WV)
 {
 	ValueType* p_WV = thrust::raw_pointer_cast(&WV[0]);
 
@@ -2137,9 +2143,9 @@ Precond<Vector>::calculateSpikes_const(Vector&  WV)
 	}
 }
 
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::calculateSpikes_var(Vector&  WV)
+Precond<Vector, DoubleVector>::calculateSpikes_var(Vector&  WV)
 {
 	ValueType* p_WV = thrust::raw_pointer_cast(&WV[0]);
 
@@ -2243,9 +2249,9 @@ Precond<Vector>::calculateSpikes_var(Vector&  WV)
  * This function adjust the number of threads used for kernels which can take
  * any number of threads.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 int
-Precond<Vector>::adjustNumThreads(int inNumThreads) {
+Precond<Vector, DoubleVector>::adjustNumThreads(int inNumThreads) {
 	int prev = 0, cur;
 	for (int i=0; i<16; i++) {
 		cur = (i+1) << 5;
@@ -2263,9 +2269,9 @@ Precond<Vector>::adjustNumThreads(int inNumThreads) {
 /**
  * This function calculates the spike blocks in the LU_UL case.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::calculateSpikes(Vector&  B2,
+Precond<Vector, DoubleVector>::calculateSpikes(Vector&  B2,
                                  Vector&  WV)
 {
 	int  two_k     = 2 * m_k;
@@ -2325,9 +2331,9 @@ Precond<Vector>::calculateSpikes(Vector&  B2,
 /**
  * This function assembles the truncated Spike reduced matrix R.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::assembleReducedMat(Vector&  WV)
+Precond<Vector, DoubleVector>::assembleReducedMat(Vector&  WV)
 {
 	ValueType* p_WV = thrust::raw_pointer_cast(&WV[0]);
 	ValueType* p_R  = thrust::raw_pointer_cast(&m_R[0]);
@@ -2359,9 +2365,9 @@ Precond<Vector>::assembleReducedMat(Vector&  WV)
  * This function copies the last partition from B2, which contains the UL results,
  * to m_B.
  */
-template <typename Vector>
+template <typename Vector, typename DoubleVector>
 void
-Precond<Vector>::copyLastPartition(Vector &B2) {
+Precond<Vector, DoubleVector>::copyLastPartition(Vector &B2) {
 	thrust::copy(B2.begin()+(2*m_k+1) * (m_n - m_n / m_numPartitions), B2.end(), m_B.begin()+(2*m_k+1) * (m_n - m_n / m_numPartitions) );
 }
 

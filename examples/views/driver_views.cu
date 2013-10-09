@@ -28,13 +28,18 @@
 // -----------------------------------------------------------------------------
 // Typedefs
 // -----------------------------------------------------------------------------
+typedef float  SINGLEREAL;
 typedef double REAL;
 
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
-typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::csr_matrix<int, SINGLEREAL, cusp::device_memory> Matrix;
+typedef typename cusp::array1d<SINGLEREAL, cusp::device_memory>         Vector;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> DoubleMatrix;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         DoubleVector;
+typedef typename Vector::view									  VectorView;
+typedef typename DoubleVector::view								  DoubleVectorView;
 
-typedef typename spike::Solver<Matrix, Vector::view>              SpikeSolver;
-typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
+typedef typename spike::Solver<Matrix, VectorView, DoubleMatrix, DoubleVectorView>              SpikeSolver;
+typedef typename spike::SpmvCusp<DoubleMatrix>												    SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
@@ -54,29 +59,30 @@ int main(int argc, char** argv)
 	// Get matrix
 	Matrix A;
 	cusp::io::read_matrix_market_file(A, filename);
+	DoubleMatrix doubleA = A;
 
 	size_t n = A.num_rows;
 
 	// Create the extended RHS vector and two views into it.
 	// Fill the first half with 1s and the second half with 2s.
-	Vector        b(2 * n);
-	Vector::view  b1(b.begin(), b.begin() + n);
-	Vector::view  b2(b.begin() + n, b.end());
+	DoubleVector        b(2 * n);
+	DoubleVectorView    b1(b.begin(), b.begin() + n);
+	DoubleVectorView    b2(b.begin() + n, b.end());
 
 	cusp::blas::fill(b1, 1);
 	cusp::blas::fill(b2, 2);
 
 	// Create the extended solution vector, initialized to 0, and
 	// two views into it.
-	Vector        x(2 * n, 0);
-	Vector::view  x1(x.begin(), x.begin() + n);
-	Vector::view  x2(x.begin() + n, x.end());
+	DoubleVector        x(2 * n, 0);
+	DoubleVectorView  x1(x.begin(), x.begin() + n);
+	DoubleVectorView  x2(x.begin() + n, x.end());
 
 	// Create the SPIKE Solver object and the SPMV functor and perform the
 	// solver setup.
 	spike::Options  opts;
 	SpikeSolver     mySolver(num_part, opts);
-	SpmvFunctor     mySpmv(A);
+	SpmvFunctor     mySpmv(doubleA);
 
 	mySolver.setup(A);
 

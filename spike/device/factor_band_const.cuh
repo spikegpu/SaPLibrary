@@ -7,8 +7,8 @@
 #define FACTOR_BAND_CONST_H
 
 #include <cuda.h>
-#define BURST_VALUE 1e-7
-#define BURST_NEW_VALUE 1e-4
+#define BURST_VALUE ((T)(1e-7))
+#define BURST_NEW_VALUE ((T)(1e-4))
 
 
 namespace spike {

@@ -14,12 +14,15 @@
 // -----------------------------------------------------------------------------
 // Typedefs
 // -----------------------------------------------------------------------------
+typedef float  SINGLEREAL;
 typedef double REAL;
 
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
-typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> DoubleMatrix;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         DoubleVector;
+typedef typename cusp::csr_matrix<int, SINGLEREAL, cusp::device_memory> Matrix;
+typedef typename cusp::array1d<SINGLEREAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Matrix, Vector> SpikeSolver;
+typedef typename spike::Solver<Matrix, Vector, DoubleMatrix, DoubleVector> SpikeSolver;
 
 
 // -----------------------------------------------------------------------------
@@ -77,13 +80,13 @@ CSimpleOptA::SOption g_options[] = {
 // -----------------------------------------------------------------------------
 class CustomSpmv {
 public:
-	CustomSpmv(Matrix& A) : m_A(A) {}
+	CustomSpmv(DoubleMatrix& A) : m_A(A) {}
 
-	void operator()(const Vector& v,
-	                Vector&       Av) {cusp::multiply(m_A, v, Av);}
+	void operator()(const DoubleVector& v,
+	                DoubleVector&       Av) {cusp::multiply(m_A, v, Av);}
 
 private:
-	Matrix&      m_A;
+	DoubleMatrix&      m_A;
 };
 
 
@@ -124,10 +127,11 @@ int main(int argc, char** argv)
 	// Get matrix and rhs.
 	Matrix A;
 	cusp::io::read_matrix_market_file(A, fileMat);
+	DoubleMatrix doubleA = A;
 
 	// Create the SPIKE Solver object and the custom SPMV functor.
 	SpikeSolver mySolver(numPart, opts);
-	CustomSpmv  mySpmv(A);
+	CustomSpmv  mySpmv(doubleA);
 
 	// Perform the solver setup.
 	mySolver.setup(A);
@@ -135,15 +139,15 @@ int main(int argc, char** argv)
 	// Solve the linear system A*x = b for two different RHS.
 	// In each case, set the initial guess to 0.
 	{
-		Vector b(A.num_rows, 1.0);
-		Vector x(A.num_rows, 0.0);
+		DoubleVector b(A.num_rows, 1.0);
+		DoubleVector x(A.num_rows, 0.0);
 		mySolver.solve(mySpmv, b, x);
 		////cusp::io::write_matrix_market_file(x, "x1.mtx");
 	}
 
 	{
-		Vector b(A.num_rows, 2.0);
-		Vector x(A.num_rows, 0.0);
+		DoubleVector b(A.num_rows, 2.0);
+		DoubleVector x(A.num_rows, 0.0);
 		mySolver.solve(mySpmv, b, x);
 		////cusp::io::write_matrix_market_file(x, "x2.mtx");
 	}
@@ -154,15 +158,15 @@ int main(int argc, char** argv)
 	mySolver.update(A.values);
 
 	{
-		Vector b(A.num_rows, 1.0);
-		Vector x(A.num_rows, 0.0);
+		DoubleVector b(A.num_rows, 1.0);
+		DoubleVector x(A.num_rows, 0.0);
 		mySolver.solve(mySpmv, b, x);
 		////cusp::io::write_matrix_market_file(x, "y1.mtx");
 	}
 
 	{
-		Vector b(A.num_rows, 2.0);
-		Vector x(A.num_rows, 0.0);
+		DoubleVector b(A.num_rows, 2.0);
+		DoubleVector x(A.num_rows, 0.0);
 		mySolver.solve(mySpmv, b, x);
 		////cusp::io::write_matrix_market_file(x, "y2.mtx");
 	}

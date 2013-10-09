@@ -22,18 +22,24 @@
 // -----------------------------------------------------------------------------
 // Typedefs
 // -----------------------------------------------------------------------------
+typedef double SINGLEREAL;
 typedef double REAL;
 
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
-typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::csr_matrix<int, SINGLEREAL, cusp::device_memory> Matrix;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> DoubleMatrix;
+typedef typename cusp::array1d<SINGLEREAL, cusp::device_memory>         Vector;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         DoubleVector;
 typedef typename cusp::array1d<int, cusp::device_memory>          VectorI;
 typedef typename cusp::array1d_view<Vector::iterator>             VectorView;
+typedef typename cusp::array1d_view<DoubleVector::iterator>       DoubleVectorView;
 typedef typename cusp::array1d_view<VectorI::iterator>            VectorIView;
-typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorHost;
+typedef typename cusp::array1d<SINGLEREAL, cusp::host_memory>           VectorHost;
+typedef typename cusp::array1d<REAL, cusp::host_memory>           DoubleVectorHost;
 typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, VectorView>  MatrixView;
+typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, DoubleVectorView>  DoubleMatrixView;
 
-typedef typename spike::Solver<MatrixView, VectorView>            SpikeSolver;
-typedef typename spike::SpmvCusp<MatrixView>                      SpmvFunctor;
+typedef typename spike::Solver<MatrixView, VectorView, DoubleMatrixView, DoubleVectorView>            SpikeSolver;
+typedef typename spike::SpmvCusp<DoubleMatrixView>                SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
@@ -111,7 +117,7 @@ bool GetProblemSpecs(int             argc,
                      int&            numPart,
                      bool&           verbose,
                      spike::Options& opts);
-void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
+void GetRhsVector(const DoubleMatrix& A, DoubleVector& b, DoubleVector& x_target);
 void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv);
@@ -138,17 +144,20 @@ int main(int argc, char** argv)
 
 	// Get matrix and rhs.
 	Matrix A;
-	Vector b;
-	Vector x_target;
-	Vector delta_x_target;
+	DoubleVector b;
+	DoubleVector x_target;
+	DoubleVector delta_x_target;
 
 	cusp::io::read_matrix_market_file(A, fileMat);
+
+	DoubleMatrix doubleA = A;
+	DoubleMatrixView doubleAview(doubleA);
 
 
 	if (fileRhs.length() > 0)
 		cusp::io::read_matrix_market_file(b, fileRhs);
 	else
-		GetRhsVector(A, b, x_target);
+		GetRhsVector(doubleA, b, x_target);
 
 	MatrixView   Aview(A);
 
@@ -156,8 +165,8 @@ int main(int argc, char** argv)
 	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
 	SpikeSolver  mySolver(numPart, opts);
-	SpmvFunctor  mySpmv(Aview);
-	Vector       x(A.num_rows, 0);
+	SpmvFunctor  mySpmv(doubleAview);
+	DoubleVector       x(A.num_rows, 0);
 
 	mySolver.setup(Aview);
 	// cusp::blas::scal(A.values, 1.1);
@@ -166,8 +175,8 @@ int main(int argc, char** argv)
 	VectorView A_values_view(A.values);
 	// mySolver.update(A_values_view);
 
-	VectorView b_view(b);
-	VectorView x_view(x);
+	DoubleVectorView b_view(b);
+	DoubleVectorView x_view(x);
 	bool success = mySolver.solve(mySpmv, b_view, x_view);
 
 	// Write solution file and print solver statistics.
@@ -177,8 +186,8 @@ int main(int argc, char** argv)
 	// Calculate the actual residual and its norm.
 	if (verbose) {
 		PrintStats(success, mySolver, mySpmv);
-		Vector r(A.num_rows);
-		VectorView r_view(r);
+		DoubleVector r(A.num_rows);
+		DoubleVectorView r_view(r);
 		mySpmv(x_view, r_view);
 		cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
 		cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
@@ -289,7 +298,7 @@ void spikeSetDevice() {
 // for a known "solution" vector x.
 // -------------------------------------------------------------------
 void
-GetRhsVector(const Matrix& A, Vector& b, Vector& x_target)
+GetRhsVector(const DoubleMatrix& A, DoubleVector& b, DoubleVector& x_target)
 {
 	// Create a desired solution vector (on the host), then copy it
 	// to the device.
@@ -297,7 +306,7 @@ GetRhsVector(const Matrix& A, Vector& b, Vector& x_target)
 	REAL    dt = 1.0/(N-1);
 	REAL    max_val = 100.0;
 
-	VectorHost xh(N);
+	DoubleVectorHost xh(N);
 
 	for (int i = 0; i < N; i++) {
 		REAL t = i *dt;

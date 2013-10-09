@@ -27,15 +27,15 @@ struct IsEqual
 };
 
 
-template <typename Vector>
+template <typename Vector, typename SingleVector>
 void precondSolveWrapper(Vector&                                                           rhs,
                          Vector&                                                           sol,
-                         std::vector<Precond<Vector> *>&                                   precond_pointers,
+                         std::vector<Precond<SingleVector, Vector> *>&                     precond_pointers,
                          cusp::array1d<int, typename Vector::memory_space>&                compIndices,
                          cusp::array1d<int, typename Vector::memory_space>&                comp_perms,
                          std::vector<cusp::array1d<int, typename Vector::memory_space> >&  comp_reorderings)
 {
-	typedef typename Vector::value_type   ValueType;
+	// typedef typename Vector::value_type   ValueType;
 
 	int numComponents = comp_reorderings.size();
 
@@ -57,12 +57,12 @@ void precondSolveWrapper(Vector&                                                
 //
 // This function implements a preconditioned BiCGStab(l) Krylov method.
 // ----------------------------------------------------------------------------
-template <typename SpmvOperator, typename Vector, int L>
+template <typename SpmvOperator, typename Vector, typename SingleVector, int L>
 void bicgstabl(SpmvOperator&                                         spmv,
                const Vector&                                         b,
                Vector&                                               x,
                Monitor<Vector>&                                      monitor,
-               std::vector<Precond<Vector> *>&                       precond_pointers,
+               std::vector<Precond<SingleVector, Vector> *>&         precond_pointers,
                cusp::array1d<int, cusp::host_memory>&                compIndices,
                cusp::array1d<int, cusp::host_memory>&                comp_perms,
                std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
@@ -250,30 +250,30 @@ void bicgstabl(SpmvOperator&                                         spmv,
 // ----------------------------------------------------------------------------
 // Specializations of the generic BiCGStab(L) function.
 // ----------------------------------------------------------------------------
-template <typename SpmvOperator, typename Vector>
+template <typename SpmvOperator, typename Vector, typename SingleVector>
 void bicgstab2(SpmvOperator&                                         spmv,
                const Vector&                                         b,
                Vector&                                               x,
                Monitor<Vector>&                                      monitor,
-               std::vector<Precond<Vector>*>&                        precond_pointers,
+               std::vector<Precond<SingleVector, Vector>*>&          precond_pointers,
                cusp::array1d<int, cusp::host_memory>&                compIndices,
                cusp::array1d<int, cusp::host_memory>&                comp_perms,
                std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
 {
-	bicgstabl<SpmvOperator, Vector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+	bicgstabl<SpmvOperator, Vector, SingleVector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
 
-template <typename SpmvOperator, typename Vector>
+template <typename SpmvOperator, typename Vector, typename SingleVector>
 void bicgstab4(SpmvOperator&                                         spmv,
                const Vector&                                         b,
                Vector&                                               x,
                Monitor<Vector>&                                      monitor,
-               std::vector<Precond<Vector>*>&                        precond_pointers,
+               std::vector<Precond<SingleVector, Vector>*>&          precond_pointers,
                cusp::array1d<int, cusp::host_memory>&                compIndices,
                cusp::array1d<int, cusp::host_memory>&                comp_perms,
                std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
 {
-	bicgstabl<SpmvOperator, Vector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+	bicgstabl<SpmvOperator, Vector, SingleVector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
 
 
