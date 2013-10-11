@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cmath>
+#include <stdlib.h>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -122,6 +123,21 @@ void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv);
 
+class OutputItem
+{
+public:
+	OutputItem(std::ostream &o): m_o(o) {}
+
+	template <typename T>
+	void operator() (T item) {
+		m_o << "<td style=\"border-style: inset;\">\n";
+		m_o << "<p>" << item << "</p>\n";
+		m_o << "</td>\n";
+	}
+private:
+	std::ostream &m_o;
+};
+
 
 // -----------------------------------------------------------------------------
 // MAIN
@@ -207,51 +223,55 @@ int main(int argc, char** argv)
 		int i;
 		for (i = fileMat.size()-1; i>=0 && fileMat[i] != '/' && fileMat[i] != '\\'; i--);
 		i++;
+
+		OutputItem outputItem(cout);
+
+		cout << "<tr valign=top>" << endl;
 		// Name of matrix
-		cout << fileMat.substr(i) << ",";
+		outputItem( fileMat.substr(i));
 		// Dimension
-		cout << A.num_rows << ",";
+		outputItem( A.num_rows);
 		// No. of non-zeros
-		cout << A.num_entries << ",";
+		outputItem( A.num_entries);
 		// Half-bandwidth
-		cout << stats.bandwidth << ",";
+		outputItem( stats.bandwidth);
 		// Solve the problem successfully
-		cout << success << ",";
+		outputItem( success);
 		
 		if (success) {
 			// Reason why cannot solve (for unsuccessful solving only)
-			cout << "N/A,";
+			outputItem ("N/A");
 			// Number of partitions
-			cout << numPart << ",";
+			outputItem( numPart);
 			// Number of iterations to converge
-			cout << stats.numIterations << ",";
+			outputItem( stats.numIterations);
 			// Time to reorder
-			cout << stats.time_reorder << ",";
+			outputItem( stats.time_reorder);
 			// Time to assemble banded and off-diagonal matrices on CPU
-			cout << stats.time_cpu_assemble << ",";
+			outputItem( stats.time_cpu_assemble);
 			// Time for data transferring
-			cout << stats.time_transfer << ",";
+			outputItem( stats.time_transfer);
 			// Time to extract all off-diagonal matrices on GPU
-			cout << stats.time_offDiags << ",";
+			outputItem( stats.time_offDiags);
 			// Time to assemble off-diagonal matrics on GPU (including the solution of multi-RHS)
-			cout << stats.time_assembly << ",";
+			outputItem( stats.time_assembly);
 			// Time for banded LU and UL
-			cout << stats.time_bandLU + stats.time_bandUL << ",";
+			outputItem( stats.time_bandLU + stats.time_bandUL);
 			// Time for full LU on reduced matrices
-			cout << stats.time_fullLU << ",";
+			outputItem( stats.time_fullLU);
 			// Total time for setup
-			cout << stats.timeSetup << ",";
+			outputItem( stats.timeSetup);
 			// Total time for Krylov solve
-			cout << stats.timeSolve << ",";
+			outputItem( stats.timeSolve);
 			// Total amount of time
-			cout << stats.timeSetup + stats.timeSolve;
+			outputItem( stats.timeSetup + stats.timeSolve);
 		}
 		else if (isnan(cusp::blas::nrm1(x_view)))
-			cout << "Zero pivoting";
+			outputItem ( "Zero pivoting");
 		else
-			cout << "Not converged";
-		
-		cout << endl;
+			outputItem ( "Not converged");
+
+		cout << "</tr>" << endl;
 	}
 
 	return 0;
@@ -595,3 +615,4 @@ void PrintStats(bool               success,
 		 << endl;
 	cout << endl;
 }
+
