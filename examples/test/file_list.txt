@@ -10,6 +10,8 @@ af23560.mtx
 8
 apache1.mtx
 8
+bauru5727.mtx
+1
 bayor01.mtx
 1
 bcircuit.mtx
@@ -47,6 +49,12 @@ gridgena.mtx
 ibm_matrix_2.mtx
 1
 jan99jac120.mtx
+1
+juba40k.mtx
+1
+k1_san.mtx
+1
+laminar_duct3D.mtx
 1
 lhr10c.mtx
 1
