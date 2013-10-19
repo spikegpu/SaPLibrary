@@ -14,7 +14,7 @@ namespace device {
 namespace var {
 
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -59,7 +59,7 @@ bandLU(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -118,7 +118,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU_g32(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -183,7 +183,7 @@ bandLU_g32(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -369,7 +369,7 @@ bandLU_post_divide_per_partition_general(T *dA, int k, int offset, int partSize)
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -386,7 +386,7 @@ fullLU_div(T *dA, int *ks, int *offsets, int cur_row)
 	dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div_safe(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -403,7 +403,7 @@ fullLU_div_safe(T *dA, int *ks, int *offsets, int cur_row)
 	dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div_general(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -423,7 +423,7 @@ fullLU_div_general(T *dA, int *ks, int *offsets, int cur_row)
 		dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div_safe_general(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -443,7 +443,7 @@ fullLU_div_safe_general(T *dA, int *ks, int *offsets, int cur_row)
 		dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -457,7 +457,7 @@ fullLU_sub(T *dA, int *ks, int *offsets, int cur_row)
 	dA[partition_size*r + c+offset] -= dA[partition_size*r + cur_row+offset] * dA[partition_size*cur_row + c+offset];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub_general(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -474,7 +474,7 @@ fullLU_sub_general(T *dA, int *ks, int *offsets, int cur_row)
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub_spec(T *dA, int *ks, int *offsets)
 {
@@ -490,7 +490,7 @@ fullLU_sub_spec(T *dA, int *ks, int *offsets)
 	dA[partition_size*r+c+offset] = tmp;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub_spec_general(T *dA, int *ks, int *offsets)
 {
@@ -509,7 +509,7 @@ fullLU_sub_spec_general(T *dA, int *ks, int *offsets)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_post_divide(T *dA, int *ks, int *offsets) {
 	int k = ks[blockIdx.y];
@@ -520,7 +520,7 @@ fullLU_post_divide(T *dA, int *ks, int *offsets) {
 	dA[offset + (k<<1)*(blockIdx.x+k+1) + threadIdx.x + k] /= dA[offset + (k<<1)*(threadIdx.x+k) + threadIdx.x + k];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_post_divide_general(T *dA, int *ks, int *offsets) {
 		int k = ks[blockIdx.y];
@@ -532,7 +532,7 @@ fullLU_post_divide_general(T *dA, int *ks, int *offsets) {
 		dA[offset + (k<<1)*(blockIdx.x+k+1) + tid + k] /= dA[offset + (k<<1)*(tid+k) + tid + k];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 boostLastPivot(T *dA, int start_row, int *ks, int *offsets, int partition_size, int rest_num)
 {

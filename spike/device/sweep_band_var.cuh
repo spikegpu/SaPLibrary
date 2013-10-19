@@ -13,13 +13,14 @@ namespace spike {
 namespace device {
 namespace var {
 
+
 // ----------------------------------------------------------------------------
 // Kernels for forward and backward substitution using the LU decomposition of
 // the truncated SPIKE reduced matrix.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_full_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+fwdElim_full_narrow(int N, int *ks, int *offsets, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int bidx = blockIdx.x;
 	int k = ks[bidx];
@@ -28,7 +29,7 @@ fwdElim_full_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_pa
 	int offset = offsets[bidx];
 
 	if(bidx + 1 <= b_rest_num) {
-		REAL2 tmp = dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)+tid];
+		T tmp = dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)+tid];
 		for(int i=0; i<k; i++) {
 			 tmp -= dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)-k+i] * dA[i*partition_size + k+tid+offset];
 		}
@@ -40,7 +41,7 @@ fwdElim_full_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_pa
 			__syncthreads();
 		}
 	} else {
-		REAL2 tmp = dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num+tid];
+		T tmp = dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num+tid];
 		for(int i=0; i<k; i++) {
 			 tmp -= dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num-k+i] * dA[i*partition_size + k+tid+offset];
 		}
@@ -54,9 +55,9 @@ fwdElim_full_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_pa
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_full(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+fwdElim_full(int N, int *ks, int *offsets, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int k = ks[bidx];
@@ -67,7 +68,7 @@ fwdElim_full(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition
 
 	if(bidx + 1 <= b_rest_num) {
 		for (int ttid = tid+k; ttid <= it_last; ttid += blockDim.x) {
-			REAL2 tmp = dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)+ttid-k];
+			T tmp = dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)+ttid-k];
 			for(int i=0; i<k; i++) 
 				tmp -= dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)-k+i] * dA[i*partition_size + ttid+offset];
 			dB[blockIdx.y*N+(bidx+1)*(b_partition_size+1)+ttid-k] = tmp;
@@ -83,7 +84,7 @@ fwdElim_full(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition
 		}
 	} else {
 		for (int ttid = tid+k; ttid <= it_last; ttid += blockDim.x) {
-			REAL2 tmp = dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num+ttid-k];
+			T tmp = dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num+ttid-k];
 			for(int i=0; i<k; i++)
 				tmp -= dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num-k+i] * dA[i*partition_size + ttid+offset];
 			dB[blockIdx.y*N+(bidx+1)*b_partition_size+b_rest_num+ttid-k] = tmp;
@@ -100,9 +101,9 @@ fwdElim_full(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_full_divide_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+preBck_full_divide_narrow(int N, int *ks, int *offsets, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int k = ks[blockIdx.x];
 	int offset = offsets[blockIdx.x];
@@ -113,9 +114,9 @@ preBck_full_divide_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, in
 		dB[(blockIdx.x + 1) * b_partition_size + b_rest_num + threadIdx.x] /= dA[offset + (threadIdx.x+k)*(k<<1) + (threadIdx.x+k)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_full_divide(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+preBck_full_divide(int N, int *ks, int *offsets, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int k = ks[blockIdx.x];
 	int offset = offsets[blockIdx.x];
@@ -129,9 +130,9 @@ preBck_full_divide(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_par
 			dB[(blockIdx.x + 1) * b_partition_size + b_rest_num + tid] /= dA[offset + (tid+k)*(k<<1) + (tid+k)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_full_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+bckElim_full_narrow(int N, int *ks, int *offsets, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int k = ks[bidx];
@@ -155,9 +156,9 @@ bckElim_full_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_pa
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_full(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+bckElim_full(int N, int *ks, int *offsets, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int k = ks[bidx];
@@ -193,9 +194,9 @@ bckElim_full(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int b_partition
 // ----------------------------------------------------------------------------
 // Kernels for forward and backward substitution 
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_sol(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+fwdElim_sol(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int k = ks[blockIdx.x];
@@ -213,7 +214,7 @@ fwdElim_sol(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_si
 	int it_last = k;
 
 	for(int i=first_row; i<last_row-k; i++) {
-		REAL2 tmp = dB[bidy*N+i];
+		T tmp = dB[bidy*N+i];
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidy*N+i+ttid+1] -= tmp * dA[offset + k + ttid + 1];
 		offset += (k<<1)+1;
@@ -223,7 +224,7 @@ fwdElim_sol(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_si
 		if(tid >= last_row-i-1) return;
 		if(it_last > last_row-i-1)
 			it_last = last_row-i-1;
-		REAL2 tmp = dB[bidy*N+i];
+		T tmp = dB[bidy*N+i];
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidy*N+i+ttid+1] -= tmp * dA[offset + k + ttid + 1];
 		offset += (k<<1)+1;
@@ -231,9 +232,9 @@ fwdElim_sol(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_si
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_sol_medium(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+fwdElim_sol_medium(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k = ks[bidx];
@@ -262,9 +263,9 @@ fwdElim_sol_medium(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int parti
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_sol_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+fwdElim_sol_narrow(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k = ks[bidx];
@@ -288,9 +289,9 @@ fwdElim_sol_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int parti
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_sol(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+bckElim_sol(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int k = ks[blockIdx.x];
@@ -328,9 +329,9 @@ bckElim_sol(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_si
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_sol_medium(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+bckElim_sol_medium(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y * N;
 	int k = ks[bidx];
@@ -363,9 +364,9 @@ bckElim_sol_medium(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int parti
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_sol_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+bckElim_sol_narrow(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k = ks[bidx];
@@ -396,9 +397,9 @@ bckElim_sol_narrow(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int parti
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_sol_divide(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+preBck_sol_divide(int N, int *ks, int *offsets, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int k = ks[blockIdx.y];
 	int first_row = blockIdx.y*partition_size;
@@ -417,36 +418,36 @@ preBck_sol_divide(int N, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partit
 	dB[first_row + idx] /= dA[pivotIdx + idx * ((k<<1)+1)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __device__ void
-fwdElim_offDiag_large_tiled(REAL1 *dA, REAL2 *dB, int idx, int k, int g_k, int r, int first_row, int last_row, int offset, REAL1 *a_elements) {
+fwdElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int first_row, int last_row, int offset, T *a_elements) {
 
 	int step = blockDim.x;
 	if ((blockIdx.x+1)*blockDim.x > r)
 		step = r - blockIdx.x * blockDim.x;
 
 	int i;
-	REAL2 tmp0;
-	REAL2 tmp1;
-	REAL2 tmp2;
-	REAL2 tmp3;
-	REAL2 tmp4;
-	REAL2 tmp5;
-	REAL2 tmp6;
-	REAL2 tmp7;
-	REAL2 tmp8;
-	REAL2 tmp9;
-	REAL2 tmp10;
-	REAL2 tmp11;
-	REAL2 tmp12;
-	REAL2 tmp13;
-	REAL2 tmp14;
-	REAL2 tmp15;
-	REAL2 tmp16;
-	REAL2 tmp17;
-	REAL2 tmp18;
-	REAL2 tmp19;
-	REAL2 tmp20;
+	T tmp0;
+	T tmp1;
+	T tmp2;
+	T tmp3;
+	T tmp4;
+	T tmp5;
+	T tmp6;
+	T tmp7;
+	T tmp8;
+	T tmp9;
+	T tmp10;
+	T tmp11;
+	T tmp12;
+	T tmp13;
+	T tmp14;
+	T tmp15;
+	T tmp16;
+	T tmp17;
+	T tmp18;
+	T tmp19;
+	T tmp20;
 	
 	for (i=0; first_row + 20 * (i+1) < last_row; i++) 
 	{
@@ -1841,35 +1842,35 @@ fwdElim_offDiag_large_tiled(REAL1 *dA, REAL2 *dB, int idx, int k, int g_k, int r
 	dB[g_k * row_to_start + idx] = tmp19;
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __device__ void
-bckElim_offDiag_large_tiled(REAL1 *dA, REAL2 *dB, int idx, int k, int g_k, int r, int first_row, int last_row, int offset, REAL1 *a_elements) {
+bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int first_row, int last_row, int offset, T *a_elements) {
 	int step = blockDim.x;
 	if ((blockIdx.x+1)*blockDim.x > r)
 		step = r - blockIdx.x * blockDim.x;
 
 	int i;
-	REAL2 tmp0;
-	REAL2 tmp1;
-	REAL2 tmp2;
-	REAL2 tmp3;
-	REAL2 tmp4;
-	REAL2 tmp5;
-	REAL2 tmp6;
-	REAL2 tmp7;
-	REAL2 tmp8;
-	REAL2 tmp9;
-	REAL2 tmp10;
-	REAL2 tmp11;
-	REAL2 tmp12;
-	REAL2 tmp13;
-	REAL2 tmp14;
-	REAL2 tmp15;
-	REAL2 tmp16;
-	REAL2 tmp17;
-	REAL2 tmp18;
-	REAL2 tmp19;
-	REAL2 tmp20;
+	T tmp0;
+	T tmp1;
+	T tmp2;
+	T tmp3;
+	T tmp4;
+	T tmp5;
+	T tmp6;
+	T tmp7;
+	T tmp8;
+	T tmp9;
+	T tmp10;
+	T tmp11;
+	T tmp12;
+	T tmp13;
+	T tmp14;
+	T tmp15;
+	T tmp16;
+	T tmp17;
+	T tmp18;
+	T tmp19;
+	T tmp20;
 	
 	for (i=0; last_row - 1 -  20 * (i+1) >= first_row; i++) 
 	{
@@ -3141,11 +3142,11 @@ bckElim_offDiag_large_tiled(REAL1 *dA, REAL2 *dB, int idx, int k, int g_k, int r
 	dB[g_k * row_to_start + idx] = tmp19;
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows)
+fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows)
 {
-	__shared__ REAL1 a_elements[512];
+	__shared__ T a_elements[512];
 
 	int k, offset, first_row, last_row, idx, bidy = blockIdx.y;
 
@@ -3184,11 +3185,11 @@ fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, REAL1 *dA, 
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows)
+bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows)
 {
-	__shared__ REAL1 a_elements[512];
+	__shared__ T a_elements[512];
 
 	int k, offset, first_row, last_row, idx, bidy = blockIdx.y;
 
@@ -3232,16 +3233,16 @@ bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, REAL1 *dA, 
 // ----------------------------------------------------------------------------
 // Forward/backward substitution kernels for calculating the right spikes.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_rightSpike_per_partition(int N, int k, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+fwdElim_rightSpike_per_partition(int N, int k, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x * N;
 	if (tid >= k) return;
 	int it_last = k;
 
 	for(int i=first_row; i<last_row-k; i++) {
-		REAL2 tmp = dB[bidx+i];
+		T tmp = dB[bidx+i];
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidx+i+ttid+1] -= tmp * dA[pivotIdx + ttid + 1];
 		pivotIdx += (k<<1)+1;
@@ -3250,7 +3251,7 @@ fwdElim_rightSpike_per_partition(int N, int k, int pivotIdx, REAL1 *dA, REAL2 *d
 	for(int i=(first_row > last_row-k ? first_row : (last_row - k)); i<last_row-1; i++) {
 		if(tid >= last_row-i-1) return;
 		it_last --;
-		REAL2 tmp = dB[bidx+i];
+		T tmp = dB[bidx+i];
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidx+i+ttid+1] -= tmp * dA[pivotIdx + ttid + 1];
 		pivotIdx += (k<<1)+1;
@@ -3258,18 +3259,18 @@ fwdElim_rightSpike_per_partition(int N, int k, int pivotIdx, REAL1 *dA, REAL2 *d
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_rightSpike_divide_per_partition(int N, int k, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+preBck_rightSpike_divide_per_partition(int N, int k, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (first_row + idx >= last_row) return;
 	dB[blockIdx.y * N + first_row + idx] /= dA[pivotIdx + idx * ((k<<1)+1)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_offDiag_divide_per_partition(int g_k, int k, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+preBck_offDiag_divide_per_partition(int g_k, int k, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (idx >= g_k) return;
@@ -3278,9 +3279,9 @@ preBck_offDiag_divide_per_partition(int g_k, int k, int pivotIdx, REAL1 *dA, REA
 	dB[(row_idx+first_row) * g_k +  idx] /= dA[pivotIdx + row_idx * ((k<<1)+1)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_offDiag_divide(int N, int g_k, int *ks, int *offsets, REAL1 *dA, REAL2 *dB, int partSize, int remainder) {
+preBck_offDiag_divide(int N, int g_k, int *ks, int *offsets, T *dA, T *dB, int partSize, int remainder) {
 	int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (idx >= g_k)
 		return;
@@ -3301,9 +3302,9 @@ preBck_offDiag_divide(int N, int g_k, int *ks, int *offsets, REAL1 *dA, REAL2 *d
 	dB[row_idx * g_k + idx] /= dA[pivotIdx];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_rightSpike_per_partition(int N, int k, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+bckElim_rightSpike_per_partition(int N, int k, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x * N;
 	if (tid >= k) return;
@@ -3330,9 +3331,9 @@ bckElim_rightSpike_per_partition(int N, int k, int pivotIdx, REAL1 *dA, REAL2 *d
 // ----------------------------------------------------------------------------
 // Forward/backward substitution kernels for calculating the left spikes.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-fwdElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+fwdElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int tid = threadIdx.x, bidx = (blockIdx.x+bid_delta) * N;
 	if (tid >= k) return;
@@ -3340,7 +3341,7 @@ fwdElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, REAL1
 	int it_last = k;
 
 	for(int i=first_row; i<last_row-k; i++) {
-		REAL2 tmp = dB[bidx+i];
+		T tmp = dB[bidx+i];
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidx+i+ttid+1] -= tmp * dA[pivotIdx + ttid + 1];
 		pivotIdx += (k<<1)+1;
@@ -3350,7 +3351,7 @@ fwdElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, REAL1
 		if(tid >= last_row-i-1) return;
 		if(it_last > last_row-i-1)
 			it_last = last_row-i-1;
-		REAL2 tmp = dB[bidx+i];
+		T tmp = dB[bidx+i];
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidx+i+ttid+1] -= tmp * dA[pivotIdx + ttid + 1];
 		pivotIdx += (k<<1)+1;
@@ -3358,18 +3359,18 @@ fwdElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, REAL1
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_leftSpike_divide_per_partition(int N, int k, int bid_delta, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+preBck_leftSpike_divide_per_partition(int N, int k, int bid_delta, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (first_row + idx >= last_row) return;
 	dB[(blockIdx.y+bid_delta) * N + first_row + idx] /= dA[pivotIdx + idx * ((k<<1)+1)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, REAL1 *dA, REAL2 *dB, int first_row, int last_row)
+bckElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, T *dA, T *dB, int first_row, int last_row)
 {
 	int tid = threadIdx.x, bidx = (blockIdx.x+bid_delta) * N;
 	if (tid >= k) return;
