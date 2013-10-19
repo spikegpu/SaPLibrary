@@ -13,16 +13,14 @@
 // -----------------------------------------------------------------------------
 // Typedefs
 // -----------------------------------------------------------------------------
-typedef float  SINGLEREAL;
 typedef double REAL;
+typedef float  PREC_REAL;
 
-typedef typename cusp::csr_matrix<int, SINGLEREAL, cusp::device_memory> Matrix;
-typedef typename cusp::array1d<SINGLEREAL, cusp::device_memory>         Vector;
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory>	    DoubleMatrix;
-typedef typename cusp::array1d<REAL, cusp::device_memory>               DoubleVector;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Matrix, Vector, DoubleMatrix, DoubleVector>  SpikeSolver;
-typedef typename spike::SpmvCusp<DoubleMatrix>                              SpmvFunctor;
+typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
+typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
@@ -122,10 +120,9 @@ int main(int argc, char** argv)
 
 	// Get matrix and rhs.
 	Matrix A;
-	DoubleVector b;
+	Vector b;
 
 	cusp::io::read_matrix_market_file(A, fileMat);
-	DoubleMatrix doubleA = A;
 
 	if (fileRhs.length() > 0)
 		cusp::io::read_matrix_market_file(b, fileRhs);
@@ -136,8 +133,8 @@ int main(int argc, char** argv)
 	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
 	SpikeSolver  mySolver(numPart, opts);
-	SpmvFunctor  mySpmv(doubleA);
-	DoubleVector x(A.num_rows, 0);
+	SpmvFunctor  mySpmv(A);
+	Vector x(A.num_rows, 0);
 
 	mySolver.setup(A);
 	bool success = mySolver.solve(mySpmv, b, x);

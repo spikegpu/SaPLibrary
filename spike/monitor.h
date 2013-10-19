@@ -15,11 +15,11 @@ namespace spike {
 //
 // This class encapsulates...
 // ----------------------------------------------------------------------------
-template <typename Vector>
+template <typename SolverVector>
 class Monitor
 {
 public:
-	typedef typename Vector::value_type   ValueType;
+	typedef typename SolverVector::value_type  SolverValueType;
 
 	enum State {
 		Continue,
@@ -27,42 +27,42 @@ public:
 		Failed
 	};
 
-	Monitor(const int          maxIterations,
-	        const ValueType    tolerance);
+	Monitor(const int              maxIterations,
+	        const SolverValueType  tolerance);
 	~Monitor() {}
 
-	void init(const Vector& rhs);
+	void init(const SolverVector& rhs);
 
-	bool done(const Vector& r);
+	bool done(const SolverVector& r);
 
 	void increment(float incr) {m_iterations += incr;}
 
-	bool         converged() const          {return m_state == Converged;}
-	int          getMaxIterations() const   {return m_maxIterations;}
-	float        getNumIterations() const   {return m_iterations;}
-	ValueType    getTolerance() const       {return m_tolerance;}
-	ValueType    getRHSNorm() const         {return m_rhsNorm;}
-	ValueType    getResidualNorm() const    {return m_rNorm;}
-	ValueType    getRelResidualNorm() const {return m_rNorm / m_rhsNorm;}
+	bool             converged() const          {return m_state == Converged;}
+	int              getMaxIterations() const   {return m_maxIterations;}
+	float            getNumIterations() const   {return m_iterations;}
+	SolverValueType  getTolerance() const       {return m_tolerance;}
+	SolverValueType  getRHSNorm() const         {return m_rhsNorm;}
+	SolverValueType  getResidualNorm() const    {return m_rNorm;}
+	SolverValueType  getRelResidualNorm() const {return m_rNorm / m_rhsNorm;}
 
 private:
-	State          m_state;
-	int            m_maxIterations;
-	float          m_iterations;
+	State            m_state;
+	int              m_maxIterations;
+	float            m_iterations;
 	
-	ValueType      m_tolerance;
-	ValueType      m_rhsNorm;
-	ValueType      m_rNorm;
+	SolverValueType  m_tolerance;
+	SolverValueType  m_rhsNorm;
+	SolverValueType  m_rNorm;
 };
 
 
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
-template <typename Vector>
+template <typename SolverVector>
 inline
-Monitor<Vector>::Monitor(const int          maxIterations,
-                         const ValueType    tolerance)
-:	m_rNorm(std::numeric_limits<ValueType>::max()),
+Monitor<SolverVector>::Monitor(const int              maxIterations,
+                               const SolverValueType  tolerance)
+:	m_rNorm(std::numeric_limits<SolverValueType>::max()),
 	m_maxIterations(maxIterations),
 	m_tolerance(tolerance),
 	m_iterations(0),
@@ -73,9 +73,9 @@ Monitor<Vector>::Monitor(const int          maxIterations,
 
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
-template <typename Vector>
+template <typename SolverVector>
 inline void
-Monitor<Vector>::init(const Vector& rhs)
+Monitor<SolverVector>::init(const SolverVector& rhs)
 {
 	m_rhsNorm = cusp::blas::nrm2(rhs);
 	m_iterations = 0;
@@ -84,9 +84,9 @@ Monitor<Vector>::init(const Vector& rhs)
 
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
-template <typename Vector>
+template <typename SolverVector>
 inline bool
-Monitor<Vector>::done(const Vector& r)
+Monitor<SolverVector>::done(const SolverVector& r)
 {
 	m_rNorm = cusp::blas::nrm2(r);
 
