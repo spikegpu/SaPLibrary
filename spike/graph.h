@@ -25,44 +25,41 @@
 namespace spike {
 
 
-template <typename T>
 class Dijkstra
 {
 public:
 	Dijkstra() {}
-	Dijkstra(int idx, T val) : m_idx(idx), m_val(val) {}
+	Dijkstra(int idx, double val) : m_idx(idx), m_val(val) {}
 
-	friend bool operator<(const Dijkstra &a, const Dijkstra &b) {
+	friend bool operator<(const Dijkstra& a, const Dijkstra& b) {
 		return a.m_val > b.m_val;
 	}
 
-	friend bool operator>(const Dijkstra &a, const Dijkstra &b) {
+	friend bool operator>(const Dijkstra& a, const Dijkstra& b) {
 		return a.m_val < b.m_val;
 	}
 
-	int  m_idx;
-	T    m_val;
+	int       m_idx;
+	double    m_val;
 };
 
 
 
 // ----------------------------------------------------------------------------
-// NodeT
+// Node
 //
 // This class encapsulates a graph node.
 // ----------------------------------------------------------------------------
-template <typename T>
-class NodeT 
+class Node 
 {
 public:
-	NodeT(int idx, int degree)
-		: m_idx(idx), m_degree(degree) {}
+	Node(int idx, int degree) : m_idx(idx), m_degree(degree) {}
 
-	friend bool operator>(const NodeT& a, const NodeT& b) {
+	friend bool operator>(const Node& a, const Node& b) {
 		return a.m_degree < b.m_degree;
 	}
 
-	friend bool operator<(const NodeT& a, const NodeT& b) {
+	friend bool operator<(const Node& a, const Node& b) {
 		return a.m_degree > b.m_degree;
 	}
 
@@ -82,8 +79,7 @@ class EdgeT
 {
 public:
 	EdgeT() {}
-	EdgeT(int from, int to, T val)
-		: m_from(from), m_to(to), m_val(val)
+	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val)
 	{}
 
 	EdgeT(int ori_idx, int from, int to, T val)
@@ -114,12 +110,13 @@ class Graph
 public:
 	typedef typename cusp::coo_matrix<int, T, cusp::host_memory> MatrixCoo;
 	typedef typename cusp::array1d<T, cusp::host_memory>         Vector;
+	typedef typename cusp::array1d<double, cusp::host_memory>    DoubleVector;
 	typedef typename cusp::array1d<int, cusp::host_memory>       IntVector;
 	typedef typename cusp::array1d<bool, cusp::host_memory>      BoolVector;
 	typedef Vector                                               MatrixMapF;
 	typedef IntVector                                            MatrixMap;
 
-	typedef NodeT<T>              NodeType;
+	typedef Node                  NodeType;
 	typedef EdgeT<T>              EdgeType;
 	typedef std::vector<NodeType> NodeVector;
 	typedef std::vector<EdgeType> EdgeVector;
@@ -203,11 +200,11 @@ private:
 
 	BoolVector    m_exists;
 
-	bool       MC64(bool         scale,
-	                IntVector&   mc64RowPerm,
-	                Vector&      mc64RowScale,
-	                Vector&      mc64ColScale,
-	                MatrixMapF&  scaleMap);
+	bool       MC64(bool           scale,
+	                IntVector&     mc64RowPerm,
+	                DoubleVector&  mc64RowScale,
+	                DoubleVector&  mc64ColScale,
+	                MatrixMapF&    scaleMap);
 
 	int        RCM(EdgeVector&  edges,
 	               IntVector&   optReordering,
@@ -225,29 +222,38 @@ private:
 	                         IntVector&         degrees,
 	                         std::vector<int>*  in_out_graph);
 
-	static const T LOC_INFINITY;
+	static const double LOC_INFINITY;
 
 	// Functions used in MC64
-	void       find_minimum_match(IntVector&  mc64RowPerm,
-	                              Vector&   mc64RowScale,
-	                              Vector&   mc64ColScale);
-	void       init_reduced_cval(IntVector& row_ptr,
-	                             IntVector& rows,
-	                             Vector& c_val, Vector& u_val, Vector& v_val,
-	                             IntVector& match_nodes, IntVector& rev_match_nodes,
-	                             IntVector& matched, IntVector& rev_matched);
-	void       find_shortest_aug_path(int init_node,
+	void       find_minimum_match(IntVector&     mc64RowPerm,
+	                              DoubleVector&  mc64RowScale,
+	                              DoubleVector&  mc64ColScale);
+	void       init_reduced_cval(IntVector&     row_ptr,
+	                             IntVector&     rows,
+	                             DoubleVector&  c_val, 
+	                             DoubleVector&  u_val,
+	                             DoubleVector&  v_val,
+	                             IntVector&     match_nodes,
+	                             IntVector&     rev_match_nodes,
+	                             IntVector&     matched,
+	                             IntVector&     rev_matched);
+	bool       find_shortest_aug_path(int init_node,
 	                                  IntVector& matched, IntVector& rev_matched, 
 	                                  IntVector& match_nodes, IntVector& rev_match_nodes,
 	                                  IntVector& row_ptr, IntVector& rows, IntVector& prev,
-	                                  Vector& u_val, Vector& v_val, Vector& c_val,
-	                                  bool& success, IntVector& irn);
-	void       get_csc_matrix(IntVector& row_ptr, IntVector& rows, Vector& c_val, Vector& max_val_in_col);
+	                                  DoubleVector& u_val,
+	                                  DoubleVector& v_val,
+	                                  DoubleVector& c_val,
+	                                  IntVector&    irn);
+	void       get_csc_matrix(IntVector&     row_ptr,
+	                          IntVector&     rows, 
+	                          DoubleVector&  c_val,
+	                          DoubleVector&  max_val_in_col);
 };
 
 
 template <typename T>
-const T Graph<T>::LOC_INFINITY = 1e37;
+const double Graph<T>::LOC_INFINITY = 1e37;
 
 
 // ----------------------------------------------------------------------------
@@ -296,11 +302,19 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 			m_edges.push_back(EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 	}
 
-	// Apply mc64 algorithm.
+	// Apply mc64 algorithm. Note that we must ensure we always work with
+	// double precision scale vectors.
+	//
+	// TODO:  how can we check if the precision of Vector is already
+	//        double, so that we can save extra copies.
 	if (m_trackReordering)
 		scaleMap.resize(m_nnz);
 
-	MC64(scale, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap);
+	DoubleVector  mc64RowScaleD;
+	DoubleVector  mc64ColScaleD;
+	MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+	mc64RowScale = mc64RowScaleD;
+	mc64ColScale = mc64ColScaleD;
 
 	// Apply reverse Cuthill-McKee algorithm.
 	// int bandwidth = RCM(m_edges, optReordering, optPerm);
@@ -975,30 +989,30 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::MC64(bool         scale,
-               IntVector&   mc64RowPerm,
-               Vector&      mc64RowScale,
-               Vector&      mc64ColScale,
-               MatrixMapF&  scaleMap)
+Graph<T>::MC64(bool           scale,
+               IntVector&     mc64RowPerm,
+               DoubleVector&  mc64RowScale,
+               DoubleVector&  mc64ColScale,
+               MatrixMapF&    scaleMap)
 {
 	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
 
 	if (scale) {
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
-			int from = iter -> m_from;
-			int to   = iter -> m_to;
-			T scaleFact = mc64RowScale[from] * mc64ColScale[to];
+			int from = iter->m_from;
+			int to   = iter->m_to;
+			double scaleFact = mc64RowScale[from] * mc64ColScale[to];
 			if (m_trackReordering)
-				scaleMap[iter -> m_ori_idx] = scaleFact;
-			iter -> m_val *= scaleFact;
-			iter -> m_from = mc64RowPerm[from];
+				scaleMap[iter->m_ori_idx] = (T)scaleFact;
+			iter->m_val *= scaleFact;
+			iter->m_from = mc64RowPerm[from];
 		}
 	} else {
 		if (m_trackReordering)
 			cusp::blas::fill(scaleMap, 1.0);
 
 		for(EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++)
-			iter -> m_from = mc64RowPerm[iter -> m_from];
+			iter->m_from = mc64RowPerm[iter->m_from];
 	}
 
 	return true;
@@ -1349,9 +1363,9 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-Graph<T>::find_minimum_match(IntVector&  mc64RowPerm,
-                             Vector&     mc64RowScale,
-                             Vector&     mc64ColScale)
+Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
+                             DoubleVector&  mc64RowScale,
+                             DoubleVector&  mc64ColScale)
 {
 	// Allocate space for the output vectors.
 	mc64RowPerm.resize(m_n, 0);
@@ -1359,14 +1373,14 @@ Graph<T>::find_minimum_match(IntVector&  mc64RowPerm,
 	mc64ColScale.resize(m_n + 1, 0);
 
 	// Allocate space for temporary vectors.
-	IntVector  row_ptr(m_n + 1, 0);
-	IntVector  rows(m_nnz);
-	IntVector  rev_match_nodes(m_nnz);
-	Vector     c_val(m_nnz);
-	Vector     max_val_in_col(m_n + 1, 0);
-	IntVector  prev(m_n + 1);
-	IntVector  matched(m_n + 1, 0);
-	IntVector  rev_matched(m_n + 1, 0);
+	IntVector     row_ptr(m_n + 1, 0);
+	IntVector     rows(m_nnz);
+	IntVector     rev_match_nodes(m_nnz);
+	DoubleVector  c_val(m_nnz);
+	DoubleVector  max_val_in_col(m_n + 1, 0);
+	IntVector     prev(m_n + 1);
+	IntVector     matched(m_n + 1, 0);
+	IntVector     rev_matched(m_n + 1, 0);
 
 	get_csc_matrix(row_ptr, rows, c_val, max_val_in_col);
 	init_reduced_cval(row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowPerm, rev_match_nodes, matched, rev_matched);
@@ -1374,8 +1388,7 @@ Graph<T>::find_minimum_match(IntVector&  mc64RowPerm,
 	IntVector  irn(m_n);
 	for(int i=0; i<m_n; i++) {
 		if(rev_matched[i]) continue;
-		bool success = false;
-		find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, success, irn);
+		bool success = find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
 	}
 
 	{
@@ -1417,10 +1430,10 @@ Graph<T>::find_minimum_match(IntVector&  mc64RowPerm,
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-Graph<T>::get_csc_matrix(IntVector&  row_ptr,
-                         IntVector&  rows,
-                         Vector&     c_val,
-                         Vector&     max_val_in_col)
+Graph<T>::get_csc_matrix(IntVector&     row_ptr,
+                         IntVector&     rows,
+                         DoubleVector&  c_val,
+                         DoubleVector&  max_val_in_col)
 {
 	BoolVector row_visited(m_n, 0);
 
@@ -1433,8 +1446,9 @@ Graph<T>::get_csc_matrix(IntVector&  row_ptr,
 	thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
-		int from = edgeIt -> m_from, to = edgeIt -> m_to;
-		T tmp_val = fabs(edgeIt -> m_val);
+		int from = edgeIt->m_from;
+		int to = edgeIt->m_to;
+		double tmp_val = fabs(edgeIt->m_val);
 		rows[row_ptr[to]++] = from;
 		if (max_val_in_col[to] < tmp_val)
 			max_val_in_col[to] = tmp_val;
@@ -1454,15 +1468,15 @@ Graph<T>::get_csc_matrix(IntVector&  row_ptr,
 // ----------------------------------------------------------------------------
 template <typename T>
 void 
-Graph<T>::init_reduced_cval(IntVector&  row_ptr,
-                            IntVector&  rows,
-                            Vector&     c_val,
-                            Vector&     u_val,
-                            Vector&     v_val,
-                            IntVector&  match_nodes,
-                            IntVector&  rev_match_nodes,
-                            IntVector&  matched,
-                            IntVector&  rev_matched) 
+Graph<T>::init_reduced_cval(IntVector&     row_ptr,
+                            IntVector&     rows,
+                            DoubleVector&  c_val,
+                            DoubleVector&  u_val,
+                            DoubleVector&  v_val,
+                            IntVector&     match_nodes,
+                            IntVector&     rev_match_nodes,
+                            IntVector&     matched,
+                            IntVector&     rev_matched) 
 {
 	int i;
 	int j;
@@ -1486,7 +1500,7 @@ Graph<T>::init_reduced_cval(IntVector&  row_ptr,
 		for(j = start_idx; j < end_idx; j++) {
 			if (c_val[j] > LOC_INFINITY / 2.0) continue;
 			int row = rows[j];
-			T tmp_val = c_val[j] - u_val[row];
+			double tmp_val = c_val[j] - u_val[row];
 			if(v_val[i] > tmp_val) {
 				v_val[i] = tmp_val;
 				min_idx = j;
@@ -1518,30 +1532,29 @@ Graph<T>::init_reduced_cval(IntVector&  row_ptr,
 // augmenting path and applying it.
 // ----------------------------------------------------------------------------
 template<typename T>
-void
-Graph<T>::find_shortest_aug_path(int         init_node,
-                                 IntVector&  matched,
-                                 IntVector&  rev_matched,
-                                 IntVector&  match_nodes,
-                                 IntVector&  rev_match_nodes,
-                                 IntVector&  row_ptr,
-                                 IntVector&  rows,
-                                 IntVector&  prev,
-                                 Vector&     u_val,
-                                 Vector&     v_val,
-                                 Vector&     c_val,
-                                 bool&       success,
-                                 IntVector&  irn)
+bool
+Graph<T>::find_shortest_aug_path(int            init_node,
+                                 IntVector&     matched,
+                                 IntVector&     rev_matched,
+                                 IntVector&     match_nodes,
+                                 IntVector&     rev_match_nodes,
+                                 IntVector&     row_ptr,
+                                 IntVector&     rows,
+                                 IntVector&     prev,
+                                 DoubleVector&  u_val,
+                                 DoubleVector&  v_val,
+                                 DoubleVector&  c_val,
+                                 IntVector&     irn)
 {
-	success = false;
+	bool success = false;
 
 	static IntVector B(m_n+1, 0);
 	int b_cnt = 0;
 	static BoolVector inB(m_n+1, 0);
 
-	std::priority_queue<Dijkstra<T> > Q;
-	T lsp = 0.0;
-	T lsap = LOC_INFINITY;
+	std::priority_queue<Dijkstra> Q;
+	double lsp = 0.0;
+	double lsap = LOC_INFINITY;
 	int cur_node = init_node;
 
 	int i;
@@ -1560,12 +1573,12 @@ Graph<T>::find_shortest_aug_path(int         init_node,
 			int cur_row = rows[i];
 			if(inB[cur_row]) continue;
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
-			T reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
+			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
 			if (reduced_cval + 1e-10 < 0) {
 				fprintf(stderr, "Hmmmmmmmm... reduced_val = %g\n", reduced_cval);
 				exit(-1);
 			}
-			T d_new = lsp + reduced_cval;
+			double d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
 				if(!matched[cur_row]) {
 					lsap = d_new;
@@ -1576,13 +1589,13 @@ Graph<T>::find_shortest_aug_path(int         init_node,
 				} else if (d_new < d_vals[cur_row]){
 					d_vals[cur_row] = d_new;
 					prev[match_nodes[cur_row]] = cur_node;
-					Q.push(Dijkstra<T>(cur_row, d_new));
+					Q.push(Dijkstra(cur_row, d_new));
 					irn[cur_row] = i;
 				}
 			}
 		}
 
-		Dijkstra<T> min_d;
+		Dijkstra min_d;
 		bool found = false;
 
 		while(!Q.empty()) {
@@ -1647,11 +1660,13 @@ Graph<T>::find_shortest_aug_path(int         init_node,
 		}
 
 		while(!Q.empty()) {
-			Dijkstra<T> tmpD = Q.top();
+			Dijkstra tmpD = Q.top();
 			Q.pop();
 			d_vals[tmpD.m_idx] = LOC_INFINITY;
 		}
 	}
+
+	return success;
 }
 
 
