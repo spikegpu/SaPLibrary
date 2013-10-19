@@ -1563,7 +1563,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 	int ksap = -1;
 	prev[init_node] = -1;
 
-	static Vector d_vals(m_n+1, LOC_INFINITY);
+	static DoubleVector d_vals(m_n+1, LOC_INFINITY);
 	static BoolVector visited(m_n+1, 0);
 
 	while(1) {
