@@ -6,22 +6,22 @@ namespace spike {
 namespace device {
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_g256(REAL1 *d_spike,
-                     REAL2 *dB,
-                     REAL2 *dB_final,
-                     int   N,
-                     int   k,
-                     int   b_partition_size,
-                     int   b_partition_num,
-                     int   b_rest_num)
+innerProductBCX_g256(T*  d_spike,
+                     T*  dB,
+                     T*  dB_final,
+                     int N,
+                     int k,
+                     int b_partition_size,
+                     int b_partition_num,
+                     int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 shared_inner[260];
-	volatile __shared__ REAL2 shared_inner2[260];
+	volatile __shared__ T shared_inner[260];
+	volatile __shared__ T shared_inner2[260];
 
 	shared_inner[tid] = 0;
 	shared_inner2[tid] = 0;
@@ -45,7 +45,7 @@ innerProductBCX_g256(REAL1 *d_spike,
 	if(tid >= 64)
 		return;
 
-	REAL2 sum = shared_inner[tid], sum2 = shared_inner2[tid];
+	T sum = shared_inner[tid], sum2 = shared_inner2[tid];
 	for(int i=tid+64; i<numThreads; i+=64) {
 		sum += shared_inner[i];
 		sum2 += shared_inner2[i];
@@ -84,24 +84,24 @@ innerProductBCX_g256(REAL1 *d_spike,
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_g64(REAL1 *d_spike,
-                    REAL2 *dB,
-                    REAL2 *dB_final,
-                    int   N,
-                    int   k,
-                    int   b_partition_size,
-                    int   b_partition_num,
-                    int   b_rest_num)
+innerProductBCX_g64(T*  d_spike,
+                    T*  dB,
+                    T*  dB_final,
+                    int N,
+                    int k,
+                    int b_partition_size,
+                    int b_partition_num,
+                    int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 sharedB[256];
-	volatile __shared__ REAL2 sharedB2[256];
-	volatile __shared__ REAL2 shared_inner[256];
-	volatile __shared__ REAL2 shared_inner2[256];
+	volatile __shared__ T sharedB[256];
+	volatile __shared__ T sharedB2[256];
+	volatile __shared__ T shared_inner[256];
+	volatile __shared__ T shared_inner2[256];
 
 	sharedB[tid] = 0;
 	sharedB2[tid] = 0;
@@ -126,7 +126,7 @@ innerProductBCX_g64(REAL1 *d_spike,
 	if(tid >= 64)
 		return;
 
-	REAL2 sum = shared_inner[tid], sum2 = shared_inner2[tid];
+	T sum = shared_inner[tid], sum2 = shared_inner2[tid];
 	for(int i=tid+64; i<k; i+=64) {
 		sum += shared_inner[i];
 		sum2 += shared_inner2[i];
@@ -165,24 +165,24 @@ innerProductBCX_g64(REAL1 *d_spike,
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_g32(REAL1 *d_spike,
-                    REAL2 *dB,
-                    REAL2 *dB_final,
-                    int   N,
-                    int   k,
-                    int   b_partition_size,
-                    int   b_partition_num,
-                    int   b_rest_num) 
+innerProductBCX_g32(T*  d_spike,
+                    T*  dB,
+                    T*  dB_final,
+                    int N,
+                    int k,
+                    int b_partition_size,
+                    int b_partition_num,
+                    int b_rest_num) 
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 sharedB[100];
-	volatile __shared__ REAL2 sharedB2[100];
-	volatile __shared__ REAL2 shared_inner[100];
-	volatile __shared__ REAL2 shared_inner2[100];
+	volatile __shared__ T sharedB[100];
+	volatile __shared__ T sharedB2[100];
+	volatile __shared__ T shared_inner[100];
+	volatile __shared__ T shared_inner2[100];
 
 	sharedB[tid] = 0;
 	sharedB2[tid] = 0;
@@ -233,24 +233,24 @@ innerProductBCX_g32(REAL1 *d_spike,
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX(REAL1 *d_spike,
-                REAL2 *dB,
-                REAL2 *dB_final,
-                int   N,
-                int   k,
-                int   b_partition_size,
-                int   b_partition_num,
-                int   b_rest_num)
+innerProductBCX(T*  d_spike,
+                T*  dB,
+                T*  dB_final,
+                int N,
+                int k,
+                int b_partition_size,
+                int b_partition_num,
+                int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 sharedB[60];
-	volatile __shared__ REAL2 sharedB2[60];
-	volatile __shared__ REAL2 shared_inner[60];
-	volatile __shared__ REAL2 shared_inner2[60];
+	volatile __shared__ T sharedB[60];
+	volatile __shared__ T sharedB2[60];
+	volatile __shared__ T shared_inner[60];
+	volatile __shared__ T shared_inner2[60];
 
 	sharedB[tid] = 0;
 	sharedB2[tid] = 0;
@@ -292,17 +292,17 @@ innerProductBCX(REAL1 *d_spike,
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_var_bandwidth_g256(REAL1 *d_spike,
-                     REAL2 *dB,
-                     REAL2 *dB_final,
-                     int   N,
-                     int   *ks,
-					 int   *offsets,
-                     int   b_partition_size,
-                     int   b_partition_num,
-                     int   b_rest_num)
+innerProductBCX_var_bandwidth_g256(T* d_spike,
+                                   T*   dB,
+                                   T*   dB_final,
+                                   int  N,
+                                   int* ks,
+                                   int* offsets,
+                                   int  b_partition_size,
+                                   int  b_partition_num,
+                                   int  b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int k = ks[bidy];
@@ -311,8 +311,8 @@ innerProductBCX_var_bandwidth_g256(REAL1 *d_spike,
 	int offset2 = offsets[bidy]+k*k;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 shared_inner[260];
-	volatile __shared__ REAL2 shared_inner2[260];
+	volatile __shared__ T shared_inner[260];
+	volatile __shared__ T shared_inner2[260];
 
 	shared_inner[tid] = 0;
 	shared_inner2[tid] = 0;
@@ -336,7 +336,7 @@ innerProductBCX_var_bandwidth_g256(REAL1 *d_spike,
 	if(tid >= 64)
 		return;
 
-	REAL2 sum = shared_inner[tid], sum2 = shared_inner2[tid];
+	T sum = shared_inner[tid], sum2 = shared_inner2[tid];
 	for(int i=tid+64; i<numThreads; i+=64) {
 		sum += shared_inner[i];
 		sum2 += shared_inner2[i];
@@ -375,17 +375,17 @@ innerProductBCX_var_bandwidth_g256(REAL1 *d_spike,
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_var_bandwidth_g64(REAL1 *d_spike,
-                    REAL2 *dB,
-                    REAL2 *dB_final,
-                    int   N,
-                    int   *ks,
-					int   *offsets,
-                    int   b_partition_size,
-                    int   b_partition_num,
-                    int   b_rest_num)
+innerProductBCX_var_bandwidth_g64(T*   d_spike,
+                                  T*   dB,
+                                  T*   dB_final,
+                                  int  N,
+                                  int* ks,
+                                  int* offsets,
+                                  int  b_partition_size,
+                                  int  b_partition_num,
+                                  int  b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int k = ks[bidy];
@@ -394,10 +394,10 @@ innerProductBCX_var_bandwidth_g64(REAL1 *d_spike,
 	int offset2 = offsets[bidy]+k*k;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 sharedB[256];
-	volatile __shared__ REAL2 sharedB2[256];
-	volatile __shared__ REAL2 shared_inner[256];
-	volatile __shared__ REAL2 shared_inner2[256];
+	volatile __shared__ T sharedB[256];
+	volatile __shared__ T sharedB2[256];
+	volatile __shared__ T shared_inner[256];
+	volatile __shared__ T shared_inner2[256];
 
 	sharedB[tid] = 0;
 	sharedB2[tid] = 0;
@@ -422,7 +422,7 @@ innerProductBCX_var_bandwidth_g64(REAL1 *d_spike,
 	if(tid >= 64)
 		return;
 
-	REAL2 sum = shared_inner[tid], sum2 = shared_inner2[tid];
+	T sum = shared_inner[tid], sum2 = shared_inner2[tid];
 	for(int i=tid+64; i<k; i+=64) {
 		sum += shared_inner[i];
 		sum2 += shared_inner2[i];
@@ -461,17 +461,17 @@ innerProductBCX_var_bandwidth_g64(REAL1 *d_spike,
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_var_bandwidth_g32(REAL1 *d_spike,
-                    REAL2 *dB,
-                    REAL2 *dB_final,
-                    int   N,
-                    int   *ks,
-                    int   *offsets,
-                    int   b_partition_size,
-                    int   b_partition_num,
-                    int   b_rest_num) 
+innerProductBCX_var_bandwidth_g32(T*   d_spike,
+                                  T*   dB,
+                                  T*   dB_final,
+                                  int  N,
+                                  int* ks,
+                                  int* offsets,
+                                  int  b_partition_size,
+                                  int  b_partition_num,
+                                  int  b_rest_num) 
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int k = ks[bidy];
@@ -480,10 +480,10 @@ innerProductBCX_var_bandwidth_g32(REAL1 *d_spike,
 	int offset2 = offsets[bidy] + k*k;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 sharedB[100];
-	volatile __shared__ REAL2 sharedB2[100];
-	volatile __shared__ REAL2 shared_inner[100];
-	volatile __shared__ REAL2 shared_inner2[100];
+	volatile __shared__ T sharedB[100];
+	volatile __shared__ T sharedB2[100];
+	volatile __shared__ T shared_inner[100];
+	volatile __shared__ T shared_inner2[100];
 
 	sharedB[tid] = 0;
 	sharedB2[tid] = 0;
@@ -534,17 +534,17 @@ innerProductBCX_var_bandwidth_g32(REAL1 *d_spike,
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-innerProductBCX_var_bandwidth(REAL1 *d_spike,
-                REAL2 *dB,
-                REAL2 *dB_final,
-                int   N,
-                int   *ks,
-                int   *offsets,
-                int   b_partition_size,
-                int   b_partition_num,
-                int   b_rest_num)
+innerProductBCX_var_bandwidth(T*   d_spike,
+                              T*   dB,
+                              T*   dB_final,
+                              int  N,
+                              int* ks,
+                              int* offsets,
+                              int  b_partition_size,
+                              int  b_partition_num,
+                              int  b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y, bidz = blockIdx.z;
 	int k = ks[bidy];
@@ -553,10 +553,10 @@ innerProductBCX_var_bandwidth(REAL1 *d_spike,
 	int offset2 = offsets[bidy] + k*k;
 	int idx = tid + bidx*k;
 
-	volatile __shared__ REAL2 sharedB[60];
-	volatile __shared__ REAL2 sharedB2[60];
-	volatile __shared__ REAL2 shared_inner[60];
-	volatile __shared__ REAL2 shared_inner2[60];
+	volatile __shared__ T sharedB[60];
+	volatile __shared__ T sharedB2[60];
+	volatile __shared__ T shared_inner[60];
+	volatile __shared__ T shared_inner2[60];
 
 	sharedB[tid] = 0;
 	sharedB2[tid] = 0;

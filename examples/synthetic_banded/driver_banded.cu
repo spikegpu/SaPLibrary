@@ -22,25 +22,17 @@
 // -----------------------------------------------------------------------------
 // Typedefs
 // -----------------------------------------------------------------------------
-typedef float  SINGLEREAL;
 typedef double REAL;
+typedef float  PREC_REAL;
 
-typedef typename cusp::csr_matrix<int, SINGLEREAL, cusp::device_memory> Matrix;
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> DoubleMatrix;
-typedef typename cusp::array1d<SINGLEREAL, cusp::device_memory>         Vector;
-typedef typename cusp::array1d<REAL, cusp::device_memory>         DoubleVector;
-typedef typename cusp::array1d<int, cusp::device_memory>          VectorI;
-typedef typename cusp::array1d_view<Vector::iterator>             VectorView;
-typedef typename cusp::array1d_view<DoubleVector::iterator>       DoubleVectorView;
-typedef typename cusp::array1d_view<VectorI::iterator>            VectorIView;
-typedef typename cusp::coo_matrix<int, SINGLEREAL, cusp::host_memory>   MatrixHost;
-typedef typename cusp::array1d<SINGLEREAL, cusp::host_memory>     VectorHost;
-typedef typename cusp::array1d<REAL, cusp::host_memory>           DoubleVectorHost;
-typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, VectorView>  MatrixView;
-typedef typename cusp::csr_matrix_view<VectorIView, VectorIView, DoubleVectorView>  DoubleMatrixView;
+typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
+typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<MatrixView, VectorView, DoubleMatrixView, DoubleVectorView>            SpikeSolver;
-typedef typename spike::SpmvCusp<DoubleMatrixView>                SpmvFunctor;
+typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
+typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
+
+typedef typename cusp::coo_matrix<int, REAL, cusp::host_memory>   MatrixCooH;
+typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorH;
 
 
 // -----------------------------------------------------------------------------
@@ -58,13 +50,11 @@ using std::vector;
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
-      OPT_NO_REORDERING, OPT_NO_SCALING,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, 
-      OPT_BAND, OPT_MATFILE, OPT_RHSFILE, 
-      OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
-      OPT_KRYLOV, OPT_SAFE_FACT,
-      OPT_CONST_BAND, OPT_SINGLE_COMP};
+      OPT_BAND,
+      OPT_OUTFILE, OPT_PRECOND,
+      OPT_SAFE_FACT};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -82,20 +72,10 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
 	{ OPT_BAND,          "-b",                   SO_MULTI   },
 	{ OPT_BAND,          "--banded-synthetic",   SO_MULTI   },
-	{ OPT_RHSFILE,       "-r",                   SO_REQ_CMB },
-	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
-	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
-	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
-	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
-	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
 	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
-	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
-	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
-	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
 	{ OPT_HELP,          "-?",                   SO_NONE    },
@@ -112,18 +92,16 @@ void ShowUsage();
 void spikeSetDevice();
 bool GetProblemSpecs(int             argc, 
                      char**          argv,
-					 int&			 N,
-					 int&			 k,
-					 REAL&			 d,
-                     string&         fileRhs,
+                     int&            N,
+                     int&            k,
+                     REAL&           d,
                      string&         fileSol,
                      int&            numPart,
                      bool&           verbose,
                      spike::Options& opts);
 
-void GenerateBandedMatrix(int N, int k, REAL d, MatrixHost& Ah);
 void GetBandedMatrix(int N, int k, REAL d, Matrix& A);
-void GetRhsVector(const DoubleMatrix& A, DoubleVector& b, DoubleVector& x_target);
+void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
 void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv);
@@ -135,14 +113,14 @@ void PrintStats(bool               success,
 int main(int argc, char** argv) 
 {
 	// Set up the problem to be solved.
-	int			   pN;
-	int			   pk;
-	REAL		   pd;
-	string         fileRhs;
+	int            pN;
+	int            pk;
+	REAL           pd;
 	string         fileSol;
 	int            numPart;
 	bool           verbose;
 	spike::Options opts;
+
 	opts.trackReordering = false;
 	opts.singleComponent = true;
 	opts.variableBandwidth = false;
@@ -150,7 +128,7 @@ int main(int argc, char** argv)
 	opts.performReorder = false;
 	opts.applyScaling = false;
 
-	if (!GetProblemSpecs(argc, argv, pN, pk, pd, fileRhs, fileSol, numPart, verbose, opts))
+	if (!GetProblemSpecs(argc, argv, pN, pk, pd, fileSol, numPart, verbose, opts))
 		return 1;
 
 	// Get the device with most available memory.
@@ -158,37 +136,23 @@ int main(int argc, char** argv)
 
 	// Get matrix and rhs.
 	Matrix A;
-	DoubleVector b;
-	DoubleVector x_target;
-	DoubleVector delta_x_target;
+	Vector b;
+	Vector x_target;
+	Vector delta_x_target;
 
 	GetBandedMatrix(pN, pk, pd, A);
-
-	DoubleMatrix doubleA = A;
-	DoubleMatrixView doubleAview(doubleA);
-
-
-	if (fileRhs.length() > 0)
-		cusp::io::read_matrix_market_file(b, fileRhs);
-	else
-		GetRhsVector(doubleA, b, x_target);
-
-	MatrixView   Aview(A);
+	GetRhsVector(A, b, x_target);
 
 	// Create the SPIKE Solver object and the SPMV functor. Perform the solver
 	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
 	SpikeSolver  mySolver(numPart, opts);
-	SpmvFunctor  mySpmv(doubleAview);
-	DoubleVector x(A.num_rows, 0);
+	SpmvFunctor  mySpmv(A);
+	Vector x(A.num_rows, 0);
 
-	mySolver.setup(Aview);
+	mySolver.setup(A);
 
-	VectorView A_values_view(A.values);
-
-	DoubleVectorView b_view(b);
-	DoubleVectorView x_view(x);
-	bool success = mySolver.solve(mySpmv, b_view, x_view);
+	bool success = mySolver.solve(mySpmv, b, x);
 
 	// Write solution file and print solver statistics.
 	if (fileSol.length() > 0)
@@ -197,22 +161,16 @@ int main(int argc, char** argv)
 	// Calculate the actual residual and its norm.
 	if (verbose) {
 		PrintStats(success, mySolver, mySpmv);
-		DoubleVector r(A.num_rows);
-		DoubleVectorView r_view(r);
-		mySpmv(x_view, r_view);
+
+		Vector r(A.num_rows);
+		mySpmv(x, r);
 		cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
 		cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
 		cout << "|b|            = " << cusp::blas::nrm2(b) << endl;	
-
-		// If we have used a generated RHS, print the difference
-		// between the target solution and the obtained solution.
-		//    x_target <- x_target - x
-		if (fileRhs.length() == 0) {
-			cout << "|x_target|     = " << cusp::blas::nrm2(x_target) << endl;
-			delta_x_target.resize(A.num_rows);
-			cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
-			cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
-		}
+		cout << "|x_target|     = " << cusp::blas::nrm2(x_target) << endl;
+		delta_x_target.resize(A.num_rows);
+		cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
+		cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
 	} else {
 		spike::Stats stats = mySolver.getStats();
 		printf("%d,%d,%d,%g,%g\n", success, pN, pk, pd, stats.timeSetup + stats.timeSolve);
@@ -262,7 +220,7 @@ void spikeSetDevice() {
 // for a known "solution" vector x.
 // -------------------------------------------------------------------
 void
-GetRhsVector(const DoubleMatrix& A, DoubleVector& b, DoubleVector& x_target)
+GetRhsVector(const Matrix& A, Vector& b, Vector& x_target)
 {
 	// Create a desired solution vector (on the host), then copy it
 	// to the device.
@@ -270,7 +228,7 @@ GetRhsVector(const DoubleMatrix& A, DoubleVector& b, DoubleVector& x_target)
 	REAL    dt = 1.0/(N-1);
 	REAL    max_val = 100.0;
 
-	DoubleVectorHost xh(N);
+	VectorH xh(N);
 
 	for (int i = 0; i < N; i++) {
 		REAL t = i *dt;
@@ -294,10 +252,9 @@ GetRhsVector(const DoubleMatrix& A, DoubleVector& b, DoubleVector& x_target)
 bool
 GetProblemSpecs(int             argc, 
                 char**          argv,
-				int&			N,
-				int&			k,
-				REAL&			d,
-                string&         fileRhs,
+                int&            N,
+                int&            k,
+                REAL&           d,
                 string&         fileSol,
                 int&            numPart,
                 bool&           verbose,
@@ -335,12 +292,6 @@ GetProblemSpecs(int             argc,
 			case OPT_DROPOFF_FRAC:
 				opts.dropOffFraction = atof(args.OptionArg());
 				break;
-			case OPT_NO_REORDERING:
-				opts.performReorder = false;
-				break;
-			case OPT_NO_SCALING:
-				opts.applyScaling = false;
-				break;
 			case OPT_BAND:
 				{
 					char **mArgs = args.MultiArg(3);
@@ -353,26 +304,11 @@ GetProblemSpecs(int             argc,
 
 					break;
 				}
-			case OPT_RHSFILE:
-				fileRhs = args.OptionArg();
-				break;
 			case OPT_OUTFILE:
 				fileSol = args.OptionArg();
 				break;
 			case OPT_VERBOSE:
 				verbose = true;
-				break;
-			case OPT_FACTORIZATION:
-				{
-					string fact = args.OptionArg();
-					std::transform(fact.begin(), fact.end(), fact.begin(), ::toupper);
-					if (fact == "0" || fact == "LU_UL")
-						opts.factMethod = spike::LU_UL;
-					else if (fact == "1" || fact == "LU_LU")
-						opts.factMethod = spike::LU_only;
-					else
-						return false;
-				}
 				break;
 			case OPT_PRECOND:
 				{
@@ -386,26 +322,8 @@ GetProblemSpecs(int             argc,
 						return false;
 				}
 				break;
-			case OPT_KRYLOV:
-				{
-					string kry = args.OptionArg();
-					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
-					if (kry == "0" || kry == "BICGSTAB")
-						opts.solverType = spike::BiCGStab;
-					else if (kry == "1" || kry == "BICGSTAB2")
-						opts.solverType = spike::BiCGStab2;
-					else
-						return false;
-				}
-				break;
-			case OPT_SINGLE_COMP:
-				opts.singleComponent = true;
-				break;
 			case OPT_SAFE_FACT:
 				opts.safeFactorization = true;
-				break;
-			case OPT_CONST_BAND:
-				opts.variableBandwidth = false;
 				break;
 		}
 	}
@@ -429,8 +347,6 @@ GetProblemSpecs(int             argc,
 	if (verbose) {
 		cout << endl;
 		cout << "Problem size: " << N << " "<<k <<" "<<d<<endl;
-		if (fileRhs.length() > 0)
-			cout << "Rhs file:    " << fileRhs << endl;
 		if (fileSol.length() > 0)
 			cout << "Sol file:    " << fileSol << endl;
 		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
@@ -438,16 +354,12 @@ GetProblemSpecs(int             argc,
 		cout << "Tolerance: " << opts.tolerance << endl;
 		cout << "Max. iterations: " << opts.maxNumIterations << endl;
 		cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
-		cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
+		cout << "Factorization method: LU - UL" << endl;
 		if (opts.dropOffFraction > 0)
 			cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
 		else
 			cout << "No drop-off." << endl;
-		cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
-		cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
-		cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
 		cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
-		cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
 		cout << endl << endl;
 	}
 
@@ -467,10 +379,6 @@ void ShowUsage()
 	cout << " -p=NUM_PARTITIONS" << endl;
 	cout << " --num-partitions=NUM_PARTITIONS" << endl;
 	cout << "        Specify the number of partitions (default 1)." << endl;
-	cout << " --no-reordering" << endl;
-	cout << "        Do not perform reordering." << endl;
-	cout << " --no-scaling" << endl;
-	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;
 	cout << " --tolerance=TOLERANCE" << endl;
 	cout << "        Use TOLERANCE for BiCGStab stopping criteria (default 1e-6)." << endl;
@@ -485,29 +393,11 @@ void ShowUsage()
 	cout << " --banded-synthetic SIZE BW DD" << endl;
 	cout << "        Use a synthetic banded matrix of size SIZE, half-bandwidth BW," << endl;
 	cout << "        and degree of diagonal dominance DD." << endl;
-	cout << " -r=RHSFILE" << endl;
-	cout << " --rhs-file=RHSFILE" << endl;
-	cout << "        Read the right-handside vector from the file RHSFILE (MatrixMarket format)." << endl;
-	cout << "        Only used if '-m' is specified." << endl;
 	cout << " -o=OUTFILE" << endl;
 	cout << " --output-file=OUTFILE" << endl;
 	cout << "        Write the solution to the file OUTFILE (MatrixMarket format)." << endl;
-	cout << " --single-component" << endl;
-	cout << "        Do not break the problem into several components." << endl;
-	cout << " -k=METHOD" << endl;
-	cout << " --krylov-method=METHOD" << endl;
-	cout << "        Specify the iterative Krylov solver:" << endl;
-	cout << "        METHOD=0 or METHOD=bicgstab      use BiCGStab" << endl;
-	cout << "        METHOD=1 or METHOD=bicgstab2     use BiCGStab(2). This is the default." << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
-	cout << " --const-band" << endl;
-	cout << "        Force using the constant-bandwidth method." << endl; 
-	cout << " -f=METHOD" << endl;
-	cout << " --factorization-method=METHOD" << endl;
-	cout << "        Specify the factorization type used to assemble the reduced matrix" << endl;
-	cout << "        METHOD=0 or METHOD=lu_ul                for both applying LU and UL." << endl;
-	cout << "        METHOD=1 or METHOD=lu_lu                for applying a complete LU. This is the default." << endl;
 	cout << " --precond-method=METHOD" << endl;
 	cout << "        Specify the preconditioner to be used" << endl;
 	cout << "        METHOD=0 or METHOD=SPIKE                for using SPIKE preconditioner.  This is the default." << endl;
@@ -517,17 +407,24 @@ void ShowUsage()
 	cout << endl;
 }
 
+
 // -------------------------------------------------------------------
-// GenerateBandedMatrix()
+// GetBandedMatrix()
 //
-// This utility function generates a banded matrix in COO format
-// stored on the host.  It is assumed that the provided matrix has
-// been properly sized.
-// It is used by both GetBandedMatrix() and GetSparseMatrix().
+// This function generates a banded matrix of specified size, half
+// bandwidth, and degree of diagonal dominance. The matrix is first
+// generated on a local COO matrix on the host and is then copied to
+// the output matrix. We use random elements in the range [-10, 10]
+// and adjust the diagonal elements to satisfy the required degree of
+// diagonal dominance.
 // -------------------------------------------------------------------
 void
-GenerateBandedMatrix(int N, int k, REAL d, MatrixHost& Ah)
+GetBandedMatrix(int N, int k, REAL d, Matrix& A)
 {
+	// Generate the banded matrix (in COO format) on the host.
+	int     num_entries = (2 * k + 1) * N - k * (k + 1);
+	MatrixCooH Ah(N, N, num_entries);
+
 	int iiz = 0;
 	for (int ir = 0; ir < N; ir++) {
 		int left = MAX(0, ir - k);
@@ -549,26 +446,9 @@ GenerateBandedMatrix(int N, int k, REAL d, MatrixHost& Ah)
 		}
 		Ah.values[diag_iiz] = d * row_sum;
 	}
-}
 
-
-// -------------------------------------------------------------------
-// GetBandedMatrix()
-//
-// This function generates a banded matrix of specified size, half
-// bandwidth, and degree of diagonal dominance. The matrix is first
-// generated on a local COO matrix on the host and is then copied to
-// the output matrix. We use random elements in the range [-10, 10]
-// and adjust the diagonal elements to satisfy the required degree of
-// diagonal dominance.
-// -------------------------------------------------------------------
-void
-GetBandedMatrix(int N, int k, REAL d, Matrix& A)
-{
-	int     num_entries = (2 * k + 1) * N - k * (k + 1);
-	MatrixHost Ah(N, N, num_entries);
-
-	GenerateBandedMatrix(N, k, d, Ah);
+	// Copy the matrix from host to device, while also converting it 
+	// from COO to CSR format.
 	A = Ah;
 
 	////cusp::io::write_matrix_market_file(Ah, "A.mtx");
@@ -593,7 +473,6 @@ void PrintStats(bool               success,
 	cout << "Residual norm        = " << stats.residualNorm << endl;
 	cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
 	cout << endl;
-	cout << "Bandwidth after reordering = " << stats.bandwidthReorder << endl;
 	cout << "Bandwidth                  = " << stats.bandwidth << endl;
 	cout << "Actual drop-off fraction   = " << stats.actualDropOff << endl;
 	cout << endl;

@@ -13,37 +13,38 @@
 
 namespace spike {
 
+typedef typename cusp::array1d<int,  cusp::host_memory>  IntVectorH;
+
+
 template <typename T>
 struct IsEqual
 {
 	T m_val;
-	IsEqual(T val = 0):m_val(val) {}
+	IsEqual(T val = 0) : m_val(val) {}
 
 	__host__ __device__
-	bool operator() (const T &val)
+	bool operator() (const T& val)
 	{
 		return m_val == val;
 	}
 };
 
 
-template <typename Vector, typename SingleVector>
-void precondSolveWrapper(Vector&                                                           rhs,
-                         Vector&                                                           sol,
-                         std::vector<Precond<SingleVector, Vector> *>&                     precond_pointers,
-                         cusp::array1d<int, typename Vector::memory_space>&                compIndices,
-                         cusp::array1d<int, typename Vector::memory_space>&                comp_perms,
-                         std::vector<cusp::array1d<int, typename Vector::memory_space> >&  comp_reorderings)
+template <typename SolverVector, typename PrecVector, typename IntVector>
+void precondSolveWrapper(SolverVector&                       rhs,
+                         SolverVector&                       sol,
+                         std::vector<Precond<PrecVector>*>&  precond_pointers,
+                         IntVector&                          compIndices,
+                         IntVector&                          comp_perms,
+                         std::vector<IntVector>&             comp_reorderings)
 {
-	// typedef typename Vector::value_type   ValueType;
-
 	int numComponents = comp_reorderings.size();
 
-	for (int i=0; i<numComponents; i++) {
+	for (int i = 0; i < numComponents; i++) {
 		int loc_n = comp_reorderings[i].size();
 
-		Vector buffer_rhs(loc_n);
-		Vector buffer_sol(loc_n);
+		PrecVector buffer_rhs(loc_n);
+		PrecVector buffer_sol(loc_n);
 
 		thrust::scatter_if(rhs.begin(), rhs.end(), comp_perms.begin(), compIndices.begin(), buffer_rhs.begin(), IsEqual<int>(i));
 		precond_pointers[i]->solve(buffer_rhs, buffer_sol);
@@ -57,57 +58,61 @@ void precondSolveWrapper(Vector&                                                
 //
 // This function implements a preconditioned BiCGStab(l) Krylov method.
 // ----------------------------------------------------------------------------
-template <typename SpmvOperator, typename Vector, typename SingleVector, int L>
-void bicgstabl(SpmvOperator&                                         spmv,
-               const Vector&                                         b,
-               Vector&                                               x,
-               Monitor<Vector>&                                      monitor,
-               std::vector<Precond<SingleVector, Vector> *>&         precond_pointers,
-               cusp::array1d<int, cusp::host_memory>&                compIndices,
-               cusp::array1d<int, cusp::host_memory>&                comp_perms,
-               std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
+template <typename SpmvOperator, typename SolverVector, typename PrecVector, int L>
+void bicgstabl(SpmvOperator&                       spmv,
+               const SolverVector&                 b,
+               SolverVector&                       x,
+               Monitor<SolverVector>&              monitor,
+               std::vector<Precond<PrecVector>*>&  precond_pointers,
+               IntVectorH&                         compIndices,
+               IntVectorH&                         comp_perms,
+               std::vector<IntVectorH>&            comp_reorderings)
 {
-	typedef typename Vector::value_type   ValueType;
-	typedef typename Vector::memory_space MemorySpace;
+	typedef typename SolverVector::value_type   SolverValueType;
+	typedef typename SolverVector::memory_space MemorySpace;
 
+	typedef typename cusp::array1d<int, MemorySpace>  IntVector;
 
 	// Allocate workspace
-	int   n = b.size();
+	int  n = b.size();
 
-	ValueType rou0 = ValueType(1);
-	ValueType alpha = ValueType(0);
-	ValueType omega = ValueType(1);
-	ValueType rou1;
+	SolverValueType rou0  = SolverValueType(1);
+	SolverValueType alpha = SolverValueType(0);
+	SolverValueType omega = SolverValueType(1);
+	SolverValueType rou1;
 
-	Vector r0(n);
-	Vector r(n);
-	Vector u(n,0);
-	Vector xx(n);
-	Vector Pv(n);
+	SolverVector r0(n);
+	SolverVector r(n);
+	SolverVector u(n,0);
+	SolverVector xx(n);
+	SolverVector Pv(n);
 
-	cusp::array1d<int, MemorySpace> loc_compIndices = compIndices;
-	cusp::array1d<int, MemorySpace> loc_comp_perms = comp_perms;
-	std::vector<cusp::array1d<int, MemorySpace> > loc_comp_reorderings;
+	IntVector              loc_compIndices = compIndices;
+	IntVector              loc_comp_perms = comp_perms;
+	std::vector<IntVector> loc_comp_reorderings;
 
 	int numComponents = comp_reorderings.size();
-	for (int i=0; i < numComponents; i++)
+
+	for (int i = 0; i < numComponents; i++)
 		loc_comp_reorderings.push_back(comp_reorderings[i]);
 
-	std::vector<Vector> rr(L+1), uu(L+1);
+	std::vector<SolverVector> rr(L+1);
+	std::vector<SolverVector> uu(L+1);
+
 	for(int k = 0; k <= L; k++) {
 		rr[k].resize(n, 0);
 		uu[k].resize(n, 0);
 	}
 
-	ValueType tao[L+1][L+1];
-	ValueType gamma[L+2];
-	ValueType gamma_prime[L+2];
-	ValueType gamma_primeprime[L+2];
-	ValueType sigma[L+2];
+	SolverValueType tao[L+1][L+1];
+	SolverValueType gamma[L+2];
+	SolverValueType gamma_prime[L+2];
+	SolverValueType gamma_primeprime[L+2];
+	SolverValueType sigma[L+2];
 
 	// r0 <- b - A * x
 	spmv(x, r0);
-	cusp::blas::axpby(b, r0, r0, ValueType(1), ValueType(-1));
+	cusp::blas::axpby(b, r0, r0, SolverValueType(1), SolverValueType(-1));
 
 	// r <- r0
 	cusp::blas::copy(r0, r);
@@ -115,11 +120,9 @@ void bicgstabl(SpmvOperator&                                         spmv,
 	// uu(0) <- u
 	// rr(0) <- r
 	// xx <- x
-	thrust::copy(
-			thrust::make_zip_iterator(thrust::make_tuple(u.begin(), x.begin(), r.begin())), 
-			thrust::make_zip_iterator(thrust::make_tuple(u.end(), x.end(), r.end())), 
-			thrust::make_zip_iterator(thrust::make_tuple(uu[0].begin(), xx.begin(), rr[0].begin()))
-			);
+	thrust::copy(thrust::make_zip_iterator(thrust::make_tuple(u.begin(), x.begin(), r.begin())), 
+	             thrust::make_zip_iterator(thrust::make_tuple(u.end(), x.end(), r.end())), 
+	             thrust::make_zip_iterator(thrust::make_tuple(uu[0].begin(), xx.begin(), rr[0].begin())));
 
 	while(!monitor.done(r)) {
 
@@ -134,12 +137,12 @@ void bicgstabl(SpmvOperator&                                         spmv,
 			if(rou0 == 0)
 				return;
 
-			ValueType beta = alpha * rou1 / rou0;
+			SolverValueType beta = alpha * rou1 / rou0;
 			rou0 = rou1;
 
 			for(int i = 0; i <= j; i++) {
 				// uu(i) = rr(i) - beta * uu(i)
-				cusp::blas::axpby(rr[i], uu[i], uu[i], ValueType(1), -beta);
+				cusp::blas::axpby(rr[i], uu[i], uu[i], SolverValueType(1), -beta);
 			}
 
 			// uu(j+1) <- A * P^(-1) * uu(j);
@@ -148,7 +151,7 @@ void bicgstabl(SpmvOperator&                                         spmv,
 			spmv(Pv, uu[j+1]);
 
 			// gamma <- uu(j+1) . r0;
-			ValueType gamma = cusp::blas::dotc(uu[j+1], r0);
+			SolverValueType gamma = cusp::blas::dotc(uu[j+1], r0);
 			if(gamma == 0)
 				return;
 
@@ -156,7 +159,7 @@ void bicgstabl(SpmvOperator&                                         spmv,
 
 			for(int i = 0; i <= j; i++) {
 				// rr(i) <- rr(i) - alpha * uu(i+1)
-				cusp::blas::axpy(uu[i+1], rr[i], ValueType(-alpha));
+				cusp::blas::axpy(uu[i+1], rr[i], SolverValueType(-alpha));
 			}
 
 			// rr(j+1) = A * P^(-1) * rr(j)
@@ -236,11 +239,9 @@ void bicgstabl(SpmvOperator&                                         spmv,
 		// u <- uu(0)
 		// x <- xx
 		// r <- rr(0)
-		thrust::copy(
-				thrust::make_zip_iterator(thrust::make_tuple(uu[0].begin(), xx.begin(), rr[0].begin())), 
-				thrust::make_zip_iterator(thrust::make_tuple(uu[0].end(), xx.end(), rr[0].end())), 
-				thrust::make_zip_iterator(thrust::make_tuple(u.begin(), x.begin(), r.begin()))
-				);
+		thrust::copy(thrust::make_zip_iterator(thrust::make_tuple(uu[0].begin(), xx.begin(), rr[0].begin())), 
+		             thrust::make_zip_iterator(thrust::make_tuple(uu[0].end(), xx.end(), rr[0].end())), 
+		             thrust::make_zip_iterator(thrust::make_tuple(u.begin(), x.begin(), r.begin())));
 
 		monitor.increment(0.25f);
 	}
@@ -250,30 +251,30 @@ void bicgstabl(SpmvOperator&                                         spmv,
 // ----------------------------------------------------------------------------
 // Specializations of the generic BiCGStab(L) function.
 // ----------------------------------------------------------------------------
-template <typename SpmvOperator, typename Vector, typename SingleVector>
-void bicgstab2(SpmvOperator&                                         spmv,
-               const Vector&                                         b,
-               Vector&                                               x,
-               Monitor<Vector>&                                      monitor,
-               std::vector<Precond<SingleVector, Vector>*>&          precond_pointers,
-               cusp::array1d<int, cusp::host_memory>&                compIndices,
-               cusp::array1d<int, cusp::host_memory>&                comp_perms,
-               std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
+template <typename SpmvOperator, typename SolverVector, typename PrecVector>
+void bicgstab2(SpmvOperator&                       spmv,
+               const SolverVector&                 b,
+               SolverVector&                       x,
+               Monitor<SolverVector>&              monitor,
+               std::vector<Precond<PrecVector>*>&  precond_pointers,
+               IntVectorH&                         compIndices,
+               IntVectorH&                         comp_perms,
+               std::vector<IntVectorH>&            comp_reorderings)
 {
-	bicgstabl<SpmvOperator, Vector, SingleVector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+	bicgstabl<SpmvOperator, SolverVector, PrecVector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
 
-template <typename SpmvOperator, typename Vector, typename SingleVector>
-void bicgstab4(SpmvOperator&                                         spmv,
-               const Vector&                                         b,
-               Vector&                                               x,
-               Monitor<Vector>&                                      monitor,
-               std::vector<Precond<SingleVector, Vector>*>&          precond_pointers,
-               cusp::array1d<int, cusp::host_memory>&                compIndices,
-               cusp::array1d<int, cusp::host_memory>&                comp_perms,
-               std::vector<cusp::array1d<int, cusp::host_memory> >&  comp_reorderings)
+template <typename SpmvOperator, typename SolverVector, typename PrecVector>
+void bicgstab4(SpmvOperator&                       spmv,
+               const SolverVector&                 b,
+               SolverVector&                       x,
+               Monitor<SolverVector>&              monitor,
+               std::vector<Precond<PrecVector>*>&  precond_pointers,
+               IntVectorH&                         compIndices,
+               IntVectorH&                         comp_perms,
+               std::vector<IntVectorH>&            comp_reorderings)
 {
-	bicgstabl<SpmvOperator, Vector, SingleVector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+	bicgstabl<SpmvOperator, SolverVector, PrecVector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
 
 

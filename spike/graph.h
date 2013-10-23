@@ -25,44 +25,41 @@
 namespace spike {
 
 
-template<typename T>
 class Dijkstra
 {
 public:
 	Dijkstra() {}
-	Dijkstra(int idx, T val) : m_idx(idx), m_val(val) {}
+	Dijkstra(int idx, double val) : m_idx(idx), m_val(val) {}
 
-	friend bool operator<(const Dijkstra &a, const Dijkstra &b) {
+	friend bool operator<(const Dijkstra& a, const Dijkstra& b) {
 		return a.m_val > b.m_val;
 	}
 
-	friend bool operator>(const Dijkstra &a, const Dijkstra &b) {
+	friend bool operator>(const Dijkstra& a, const Dijkstra& b) {
 		return a.m_val < b.m_val;
 	}
 
-	int  m_idx;
-	T    m_val;
+	int       m_idx;
+	double    m_val;
 };
 
 
 
 // ----------------------------------------------------------------------------
-// NodeT
+// Node
 //
 // This class encapsulates a graph node.
 // ----------------------------------------------------------------------------
-template <typename T>
-class NodeT 
+class Node 
 {
 public:
-	NodeT(int idx, int degree)
-		: m_idx(idx), m_degree(degree) {}
+	Node(int idx, int degree) : m_idx(idx), m_degree(degree) {}
 
-	friend bool operator>(const NodeT& a, const NodeT& b) {
+	friend bool operator>(const Node& a, const Node& b) {
 		return a.m_degree < b.m_degree;
 	}
 
-	friend bool operator<(const NodeT& a, const NodeT& b) {
+	friend bool operator<(const Node& a, const Node& b) {
 		return a.m_degree > b.m_degree;
 	}
 
@@ -82,8 +79,7 @@ class EdgeT
 {
 public:
 	EdgeT() {}
-	EdgeT(int from, int to, T val)
-		: m_from(from), m_to(to), m_val(val)
+	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val)
 	{}
 
 	EdgeT(int ori_idx, int from, int to, T val)
@@ -112,84 +108,81 @@ template <typename T>
 class Graph
 {
 public:
-	typedef typename cusp::coo_matrix<int, T, cusp::host_memory> MatrixCOO;
+	typedef typename cusp::coo_matrix<int, T, cusp::host_memory> MatrixCoo;
 	typedef typename cusp::array1d<T, cusp::host_memory>         Vector;
-	typedef typename cusp::array1d<int, cusp::host_memory>       VectorI;
-	typedef typename cusp::array1d<bool, cusp::host_memory>      VectorB;
+	typedef typename cusp::array1d<double, cusp::host_memory>    DoubleVector;
+	typedef typename cusp::array1d<int, cusp::host_memory>       IntVector;
+	typedef typename cusp::array1d<bool, cusp::host_memory>      BoolVector;
+	typedef Vector                                               MatrixMapF;
+	typedef IntVector                                            MatrixMap;
 
-	typedef NodeT<T>              NodeType;
+	typedef Node                  NodeType;
 	typedef EdgeT<T>              EdgeType;
 	typedef std::vector<NodeType> NodeVector;
 	typedef std::vector<EdgeType> EdgeVector;
 
-	typedef typename EdgeVector::iterator EdgeIterator;
+	typedef typename EdgeVector::iterator         EdgeIterator;
 	typedef typename EdgeVector::reverse_iterator EdgeRevIterator;
 
-	typedef typename cusp::array1d<int, cusp::host_memory>		 MatrixMap;
-	typedef typename cusp::array1d<T, cusp::host_memory>		 MatrixMapF;
+	Graph(bool trackReordering = false);
 
-	Graph(bool		trackReordering = false);
+	double     getTimeMC64() const     {return m_timeMC64;}
+	double     getTimeRCM() const      {return m_timeRCM;}
+	double     getTimeDropoff() const  {return m_timeDropoff;}
 
-	double  getTimeMC64() const     {return m_timeMC64;}
-	double  getTimeRCM() const      {return m_timeRCM;}
-	double  getTimeDropoff() const  {return m_timeDropoff;}
-
-	int        reorder(const MatrixCOO& Acoo,
+	int        reorder(const MatrixCoo& Acoo,
 	                   bool             scale,
-	                   VectorI&         optReordering,
-	                   VectorI&         optPerm,
-	                   VectorI&         mc64RowPerm,
+	                   IntVector&       optReordering,
+	                   IntVector&       optPerm,
+	                   IntVector&       mc64RowPerm,
 	                   Vector&          mc64RowScale,
 	                   Vector&          mc64ColScale,
 	                   MatrixMapF&      scaleMap);
 
-	int        dropOff(T   frac,
-	                   T&  frac_actual);
-	int        dropOff(T   frac,
-	                   T&  frac_actual,
-	                   T   dropMin);
-	void	   dropOffPost(T   frac,
-	                   T&  frac_actual,
-	                   T   dropMin,
-	                   int numPartitions);
+	int        dropOff(double   frac,
+	                   double&  frac_actual);
+	int        dropOff(double   frac,
+	                   double&  frac_actual,
+	                   double   dropMin);
+	void	   dropOffPost(double   frac,
+	                       double&  frac_actual,
+	                       double   dropMin,
+	                       int      numPartitions);
 
-	template <typename SingleVector>
-	void       assembleOffDiagMatrices(int        bandwidth,
-	                                   int        numPartitions,
-	                                   SingleVector&    WV_host,
-	                                   SingleVector&    offDiags_host,
-	                                   VectorI&   offDiagWidths_left,
-	                                   VectorI&   offDiagWidths_right,
-	                                   VectorI&   offDiagPerms_left,
-	                                   VectorI&   offDiagPerms_right,
-	                                   MatrixMap& typeMap,
-	                                   MatrixMap& offDiagMap,
-	                                   MatrixMap& WVMap);
+	void       assembleOffDiagMatrices(int         bandwidth,
+	                                   int         numPartitions,
+	                                   Vector&     WV_host,
+	                                   Vector&     offDiags_host,
+	                                   IntVector&  offDiagWidths_left,
+	                                   IntVector&  offDiagWidths_right,
+	                                   IntVector&  offDiagPerms_left,
+	                                   IntVector&  offDiagPerms_right,
+	                                   MatrixMap&  typeMap,
+	                                   MatrixMap&  offDiagMap,
+	                                   MatrixMap&  WVMap);
 
 	void       secondLevelReordering(int         bandwidth,
 	                                 int         numPartitions,
-	                                 VectorI&    secondReorder,
-	                                 VectorI&    secondPerm,
-	                                 VectorI&    first_rows);
+	                                 IntVector&  secondReorder,
+	                                 IntVector&  secondPerm,
+	                                 IntVector&  first_rows);
 
-	template <typename SingleVector>
-	void       assembleBandedMatrix(int        bandwidth,
-	                                VectorI&   ks_col,
-	                                VectorI&   ks_row,
-	                                SingleVector&    B,
-	                                MatrixMap& typeMap,
-	                                MatrixMap& bandedMatMap);
+	void       assembleBandedMatrix(int         bandwidth,
+	                                IntVector&  ks_col,
+	                                IntVector&  ks_row,
+	                                Vector&     B,
+	                                MatrixMap&  typeMap,
+	                                MatrixMap&  bandedMatMap);
 
-	template <typename SingleVector>
-	void       assembleBandedMatrix(int        bandwidth,
-	                                int        numPartitions,
-	                                VectorI&   ks_col,
-	                                VectorI&   ks_row,
-	                                SingleVector&    B,
-	                                VectorI&   ks,
-	                                VectorI&   BOffsets,
-	                                MatrixMap& typeMap,
-	                                MatrixMap& bandedMatMap);
+	void       assembleBandedMatrix(int         bandwidth,
+	                                int         numPartitions,
+	                                IntVector&  ks_col,
+	                                IntVector&  ks_row,
+	                                Vector&     B,
+	                                IntVector&  ks,
+	                                IntVector&  BOffsets,
+	                                MatrixMap&  typeMap,
+	                                MatrixMap&  bandedMatMap);
 
 private:
 	int           m_n;
@@ -205,53 +198,62 @@ private:
 	double        m_timeRCM;
 	double        m_timeDropoff;
 
-	VectorB       m_exists;
+	BoolVector    m_exists;
 
-	bool       MC64(bool        scale,
-	                VectorI&    mc64RowPerm,
-	                Vector&     mc64RowScale,
-	                Vector&     mc64ColScale,
-	                MatrixMapF& scaleMap);
+	bool       MC64(bool           scale,
+	                IntVector&     mc64RowPerm,
+	                DoubleVector&  mc64RowScale,
+	                DoubleVector&  mc64ColScale,
+	                MatrixMapF&    scaleMap);
 
 	int        RCM(EdgeVector&  edges,
-	               VectorI&     optReordering,
-	               VectorI&     optPerm);
+	               IntVector&   optReordering,
+	               IntVector&   optPerm);
 
 	bool       partitionedRCM(EdgeIterator&  begin,
 	                          EdgeIterator&  end,
 	                          int            node_begin,
 	                          int            node_end,
-	                          VectorI&       optReordering,
-	                          VectorI&       optPerm);
+	                          IntVector&     optReordering,
+	                          IntVector&     optPerm);
 
 	void       buildTopology(EdgeIterator&      begin,
 	                         EdgeIterator&      end,
-	                         VectorI&           degrees,
+	                         IntVector&         degrees,
 	                         std::vector<int>*  in_out_graph);
 
-	static const T LOC_INFINITY;
+	static const double LOC_INFINITY;
 
 	// Functions used in MC64
-	void       find_minimum_match(VectorI&  mc64RowPerm,
-	                              Vector&   mc64RowScale,
-	                              Vector&   mc64ColScale);
-	void       init_reduced_cval(VectorI& row_ptr,
-	                             VectorI& rows,
-	                             Vector& c_val, Vector& u_val, Vector& v_val, 
-	                             VectorI& match_nodes, VectorI& rev_match_nodes,
-	                             VectorI& matched, VectorI& rev_matched);
-	void       find_shortest_aug_path(int init_node,
-	                                  VectorI& matched, VectorI& rev_matched, 
-	                                  VectorI& match_nodes, VectorI& rev_match_nodes,
-	                                  VectorI& row_ptr, VectorI& rows, VectorI& prev, 
-	                                  Vector& u_val, Vector& v_val, Vector& c_val, 
-	                                  bool& success, VectorI& irn);
-	void       get_csc_matrix(VectorI& row_ptr, VectorI& rows, Vector& c_val, Vector& max_val_in_col);
+	void       find_minimum_match(IntVector&     mc64RowPerm,
+	                              DoubleVector&  mc64RowScale,
+	                              DoubleVector&  mc64ColScale);
+	void       init_reduced_cval(IntVector&     row_ptr,
+	                             IntVector&     rows,
+	                             DoubleVector&  c_val, 
+	                             DoubleVector&  u_val,
+	                             DoubleVector&  v_val,
+	                             IntVector&     match_nodes,
+	                             IntVector&     rev_match_nodes,
+	                             IntVector&     matched,
+	                             IntVector&     rev_matched);
+	bool       find_shortest_aug_path(int init_node,
+	                                  IntVector& matched, IntVector& rev_matched, 
+	                                  IntVector& match_nodes, IntVector& rev_match_nodes,
+	                                  IntVector& row_ptr, IntVector& rows, IntVector& prev,
+	                                  DoubleVector& u_val,
+	                                  DoubleVector& v_val,
+	                                  DoubleVector& c_val,
+	                                  IntVector&    irn);
+	void       get_csc_matrix(IntVector&     row_ptr,
+	                          IntVector&     rows, 
+	                          DoubleVector&  c_val,
+	                          DoubleVector&  max_val_in_col);
 };
 
 
 template <typename T>
-const T Graph<T>::LOC_INFINITY = 1e37;
+const double Graph<T>::LOC_INFINITY = 1e37;
 
 
 // ----------------------------------------------------------------------------
@@ -278,11 +280,11 @@ Graph<T>::Graph(bool trackReordering)
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::reorder(const MatrixCOO&  Acoo,
+Graph<T>::reorder(const MatrixCoo&  Acoo,
                   bool              scale,
-                  VectorI&          optReordering,
-                  VectorI&          optPerm,
-                  VectorI&          mc64RowPerm,
+                  IntVector&        optReordering,
+                  IntVector&        optPerm,
+                  IntVector&        mc64RowPerm,
                   Vector&           mc64RowScale,
                   Vector&           mc64ColScale,
                   MatrixMapF&       scaleMap)
@@ -300,11 +302,19 @@ Graph<T>::reorder(const MatrixCOO&  Acoo,
 			m_edges.push_back(EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 	}
 
-	// Apply mc64 algorithm.
+	// Apply mc64 algorithm. Note that we must ensure we always work with
+	// double precision scale vectors.
+	//
+	// TODO:  how can we check if the precision of Vector is already
+	//        double, so that we can save extra copies.
 	if (m_trackReordering)
 		scaleMap.resize(m_nnz);
 
-	MC64(scale, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap);
+	DoubleVector  mc64RowScaleD;
+	DoubleVector  mc64ColScaleD;
+	MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+	mc64RowScale = mc64RowScaleD;
+	mc64ColScale = mc64ColScaleD;
 
 	// Apply reverse Cuthill-McKee algorithm.
 	// int bandwidth = RCM(m_edges, optReordering, optPerm);
@@ -347,7 +357,7 @@ struct EdgeAccumulator {
 template <typename T>
 struct BandwidthAchiever : public thrust::unary_function<EdgeT<T>, int>{
 	__host__ __device__
-	int operator() (const EdgeT<T> &a) {
+	int operator() (const EdgeT<T>& a) {
 		int delta = a.m_from - a.m_to;
 		return (delta < 0 ? -delta : delta);
 	}
@@ -355,10 +365,10 @@ struct BandwidthAchiever : public thrust::unary_function<EdgeT<T>, int>{
 
 template <typename T>
 struct BandwidthAchiever2 : public thrust::unary_function<EdgeT<T>, int>{
-	int *m_perm;
-	BandwidthAchiever2(int *perm): m_perm(perm) {}
+	int* m_perm;
+	BandwidthAchiever2(int* perm): m_perm(perm) {}
 	__host__ __device__
-	int operator() (const EdgeT<T> &a) {
+	int operator() (const EdgeT<T>& a) {
 		int delta = m_perm[a.m_from] - m_perm[a.m_to];
 		return (delta < 0 ? -delta : delta);
 	}
@@ -367,10 +377,10 @@ struct BandwidthAchiever2 : public thrust::unary_function<EdgeT<T>, int>{
 template <typename T>
 struct PermApplier
 {
-	int *m_perm;
-	PermApplier(int *perm): m_perm(perm) {}
+	int* m_perm;
+	PermApplier(int* perm): m_perm(perm) {}
 	__host__ __device__
-	void operator() (EdgeT<T> &a) {
+	void operator() (EdgeT<T>& a) {
 		a.m_from = m_perm[a.m_from];
 		a.m_to = m_perm[a.m_to];
 	}
@@ -391,8 +401,8 @@ struct PermApplier
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::dropOff(T   frac,
-                  T&  frac_actual)
+Graph<T>::dropOff(double   frac,
+                  double&  frac_actual)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -456,9 +466,9 @@ Graph<T>::dropOff(T   frac,
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::dropOff(T   frac,
-                  T&  frac_actual,
-                  T   dropMin)
+Graph<T>::dropOff(double   frac,
+                  double&  frac_actual,
+                  double   dropMin)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -532,10 +542,10 @@ Graph<T>::dropOff(T   frac,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-Graph<T>::dropOffPost(T   frac,
-                      T&  frac_actual,
-                      T   dropMin,
-                      int numPartitions)
+Graph<T>::dropOffPost(double   frac,
+                      double&  frac_actual,
+                      double   dropMin,
+                      int      numPartitions)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -606,19 +616,18 @@ Graph<T>::dropOffPost(T   frac,
 // off-diagonal matrices.
 // ----------------------------------------------------------------------------
 template <typename T>
-template <typename SingleVector>
 void
-Graph<T>::assembleOffDiagMatrices(int        bandwidth,
-                                  int        numPartitions,
-                                  SingleVector&    WV_host,
-                                  SingleVector&    offDiags_host,
-                                  VectorI&   offDiagWidths_left,
-                                  VectorI&   offDiagWidths_right,
-                                  VectorI&   offDiagPerms_left,
-                                  VectorI&   offDiagPerms_right,
-                                  MatrixMap& typeMap,
-                                  MatrixMap& offDiagMap,
-                                  MatrixMap& WVMap)
+Graph<T>::assembleOffDiagMatrices(int         bandwidth,
+                                  int         numPartitions,
+                                  Vector&     WV_host,
+                                  Vector&     offDiags_host,
+                                  IntVector&  offDiagWidths_left,
+                                  IntVector&  offDiagWidths_right,
+                                  IntVector&  offDiagPerms_left,
+                                  IntVector&  offDiagPerms_right,
+                                  MatrixMap&  typeMap,
+                                  MatrixMap&  offDiagMap,
+                                  MatrixMap&  WVMap)
 {
 	if (WV_host.size() != 2*bandwidth*bandwidth*(numPartitions-1)) {
 		WV_host.resize(2*bandwidth*bandwidth*(numPartitions-1), 0);
@@ -636,8 +645,8 @@ Graph<T>::assembleOffDiagMatrices(int        bandwidth,
 	offDiagPerms_left.resize((numPartitions-1) * bandwidth, -1);
 	offDiagPerms_right.resize((numPartitions-1) * bandwidth, -1);
 
-	VectorI offDiagReorderings_left((numPartitions-1) * bandwidth, -1);
-	VectorI offDiagReorderings_right((numPartitions-1) * bandwidth, -1);
+	IntVector offDiagReorderings_left((numPartitions-1) * bandwidth, -1);
+	IntVector offDiagReorderings_right((numPartitions-1) * bandwidth, -1);
 
 	EdgeIterator first = m_first;
 
@@ -697,7 +706,7 @@ Graph<T>::assembleOffDiagMatrices(int        bandwidth,
 
 				offDiags_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol)] = WV_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth] = it->m_val;
 
-			} else {						// W/C Matrix
+			} else {                          // W/C Matrix
 				int partStartRow = partSize * curPartNum2;
 				if (curPartNum2 < remainder)
 					partStartRow += curPartNum2;
@@ -740,9 +749,9 @@ template <typename T>
 void
 Graph<T>::secondLevelReordering(int       bandwidth,
                                 int       numPartitions,
-                                VectorI&  secondReorder,
-                                VectorI&  secondPerm,
-                                VectorI&  first_rows)
+                                IntVector&  secondReorder,
+                                IntVector&  secondPerm,
+                                IntVector&  first_rows)
 {
 	{
 		secondPerm.resize(m_n);
@@ -810,14 +819,13 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 // that has banded diagonal blocks of different bandwidths for each partition.
 // ----------------------------------------------------------------------------
 template <typename T>
-template <typename SingleVector>
 void
-Graph<T>::assembleBandedMatrix(int        bandwidth,
-                               VectorI&   ks_col,
-                               VectorI&   ks_row,
-                               SingleVector&    B,
-                               MatrixMap& typeMap,
-                               MatrixMap& bandedMatMap)
+Graph<T>::assembleBandedMatrix(int         bandwidth,
+                               IntVector&  ks_col,
+                               IntVector&  ks_row,
+                               Vector&     B,
+                               MatrixMap&  typeMap,
+                               MatrixMap&  bandedMatMap)
 {
 	// Drop all edges from begin() to 'first'; i.e., keep all edges from
 	// 'first' to end().
@@ -872,17 +880,16 @@ Graph<T>::assembleBandedMatrix(int        bandwidth,
 }
 
 template <typename T>
-template <typename SingleVector>
 void
-Graph<T>::assembleBandedMatrix(int        bandwidth,
-                               int        numPartitions,
-                               VectorI&   ks_col,
-                               VectorI&   ks_row,
-                               SingleVector&    B,
-                               VectorI&   ks,
-                               VectorI&   BOffsets,
-                               MatrixMap& typeMap,
-                               MatrixMap& bandedMatMap)
+Graph<T>::assembleBandedMatrix(int         bandwidth,
+                               int         numPartitions,
+                               IntVector&  ks_col,
+                               IntVector&  ks_row,
+                               Vector&     B,
+                               IntVector&  ks,
+                               IntVector&  BOffsets,
+                               MatrixMap&  typeMap,
+                               MatrixMap&  bandedMatMap)
 {
 	ks.resize(numPartitions);
 	BOffsets.resize(numPartitions);
@@ -982,30 +989,30 @@ Graph<T>::assembleBandedMatrix(int        bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::MC64(bool        scale,
-               VectorI&    mc64RowPerm,
-               Vector&     mc64RowScale,
-               Vector&     mc64ColScale,
-               MatrixMapF& scaleMap)
+Graph<T>::MC64(bool           scale,
+               IntVector&     mc64RowPerm,
+               DoubleVector&  mc64RowScale,
+               DoubleVector&  mc64ColScale,
+               MatrixMapF&    scaleMap)
 {
 	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
 
 	if (scale) {
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
-			int from = iter -> m_from;
-			int to   = iter -> m_to;
-			T scaleFact = mc64RowScale[from] * mc64ColScale[to];
+			int from = iter->m_from;
+			int to   = iter->m_to;
+			double scaleFact = mc64RowScale[from] * mc64ColScale[to];
 			if (m_trackReordering)
-				scaleMap[iter -> m_ori_idx] = scaleFact;
-			iter -> m_val *= scaleFact;
-			iter -> m_from = mc64RowPerm[from];
+				scaleMap[iter->m_ori_idx] = (T)scaleFact;
+			iter->m_val *= scaleFact;
+			iter->m_from = mc64RowPerm[from];
 		}
 	} else {
 		if (m_trackReordering)
 			cusp::blas::fill(scaleMap, 1.0);
 
 		for(EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++)
-			iter -> m_from = mc64RowPerm[iter -> m_from];
+			iter->m_from = mc64RowPerm[iter->m_from];
 	}
 
 	return true;
@@ -1022,16 +1029,16 @@ Graph<T>::MC64(bool        scale,
 template <typename T>
 int
 Graph<T>::RCM(EdgeVector&  edges,
-              VectorI&     optReordering,
-              VectorI&     optPerm)
+              IntVector&   optReordering,
+              IntVector&   optPerm)
 {
 	optReordering.resize(m_n);
 	optPerm.resize(m_n);
 
 	int nnz = edges.size();
 
-	VectorI	tmp_reordering(m_n);
-	VectorI degrees(m_n, 0);
+	IntVector	tmp_reordering(m_n);
+	IntVector degrees(m_n, 0);
 
 	thrust::sequence(optReordering.begin(), optReordering.end());
 
@@ -1050,7 +1057,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 	CPUTimer timer;
 	timer.Start();
 
-	VectorB tried(m_n, 0);
+	BoolVector tried(m_n, 0);
 	tried[0] = true;
 
 	int last_tried = 0;
@@ -1061,7 +1068,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 		std::priority_queue<NodeType> pq;
 
 		int tmp_node;
-		VectorB pushed(m_n, 0);
+		BoolVector pushed(m_n, 0);
 
 		int left_cnt = m_n;
 		int j = 0, last = 0;
@@ -1156,12 +1163,12 @@ Graph<T>::RCM(EdgeVector&  edges,
 	m_timeRCM = timer.getElapsed();
 
 	thrust::scatter(thrust::make_counting_iterator(0), 
-					thrust::make_counting_iterator(m_n),
-					optReordering.begin(),
-					optPerm.begin());
+	                thrust::make_counting_iterator(m_n),
+	                optReordering.begin(),
+	                optPerm.begin());
 
 	{
-		int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
+		int* perm_array = thrust::raw_pointer_cast(&optPerm[0]);
 		thrust::for_each(edges.begin(), edges.end(), PermApplier<T>(perm_array));
 	}
 
@@ -1182,13 +1189,13 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
                          EdgeIterator&  end,
                          int            node_begin,
                          int            node_end,
-                         VectorI&       optReordering,
-                         VectorI&       optPerm)
+                         IntVector&       optReordering,
+                         IntVector&       optPerm)
 {
 	static std::vector<int> tmp_reordering;
 	tmp_reordering.resize(m_n);
 
-	static VectorI degrees;
+	static IntVector degrees;
 	if (degrees.size() != m_n)
 		degrees.resize(m_n, 0);
 	else
@@ -1198,7 +1205,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 		// optReordering[i] = i;
 	thrust::sequence(optReordering.begin()+node_begin, optReordering.begin()+node_end, node_begin);
 
-	std::vector<int> *in_out_graph;
+	std::vector<int>* in_out_graph;
 
 	in_out_graph = new std::vector<int> [node_end];
 
@@ -1208,7 +1215,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	const int MAX_NUM_TRIAL = 10;
 	const int BANDWIDTH_THRESHOLD = 128;
 
-	static VectorB tried(m_n, 0);
+	static BoolVector tried(m_n, 0);
 	if (tried.size() != m_n)
 		tried.resize(m_n, 0);
 	else
@@ -1224,7 +1231,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 		std::priority_queue<NodeType> pq;
 
 		int tmp_node;
-		VectorB pushed(node_end, 0);
+		BoolVector pushed(node_end, 0);
 
 		if (num_trial > 0) {
 			tmp_node = rand() % (node_end - node_begin) + node_begin;
@@ -1260,7 +1267,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 
 			q.pop();
 
-			std::vector<int> &tmp_vec = in_out_graph[tmp_node];
+			std::vector<int>& tmp_vec = in_out_graph[tmp_node];
 			int in_out_size = tmp_vec.size();
 			if(in_out_size != 0) {
 				for (int i = 0; i < in_out_size; i++)  {
@@ -1279,10 +1286,9 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 		}
 
 		thrust::scatter(thrust::make_counting_iterator(node_begin),
-				thrust::make_counting_iterator(node_end),
-				tmp_reordering.begin() + node_begin,
-				optPerm.begin()
-				);
+		                thrust::make_counting_iterator(node_end),
+		                tmp_reordering.begin() + node_begin,
+		                optPerm.begin());
 
 		{
 			int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
@@ -1303,10 +1309,9 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	m_timeRCM += timer.getElapsed();
 
 	thrust::scatter(thrust::make_counting_iterator(node_begin),
-				thrust::make_counting_iterator(node_end),
-				optReordering.begin() + node_begin,
-				optPerm.begin()
-				);
+	                thrust::make_counting_iterator(node_end),
+	                optReordering.begin() + node_begin,
+	                optPerm.begin());
 
 	{
 		int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
@@ -1327,7 +1332,7 @@ template <typename T>
 void
 Graph<T>::buildTopology(EdgeIterator&      begin,
                         EdgeIterator&      end,
-                        VectorI&           degrees,
+                        IntVector&         degrees,
                         std::vector<int>*  in_out_graph)
 {
 	for(EdgeIterator edgeIt = begin; edgeIt != end; edgeIt++) {
@@ -1358,9 +1363,9 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
-                             Vector&   mc64RowScale,
-                             Vector&   mc64ColScale)
+Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
+                             DoubleVector&  mc64RowScale,
+                             DoubleVector&  mc64ColScale)
 {
 	// Allocate space for the output vectors.
 	mc64RowPerm.resize(m_n, 0);
@@ -1368,27 +1373,27 @@ Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 	mc64ColScale.resize(m_n + 1, 0);
 
 	// Allocate space for temporary vectors.
-	VectorI		row_ptr(m_n + 1, 0);
-	VectorI		rows(m_nnz);
-	VectorI		rev_match_nodes(m_nnz);
-	Vector		c_val(m_nnz);
-	Vector		max_val_in_col(m_n + 1, 0);
-	VectorI		prev(m_n + 1);
-	VectorI		matched(m_n + 1, 0);
-	VectorI		rev_matched(m_n + 1, 0);
+	IntVector     row_ptr(m_n + 1, 0);
+	IntVector     rows(m_nnz);
+	IntVector     rev_match_nodes(m_nnz);
+	DoubleVector  c_val(m_nnz);
+	DoubleVector  max_val_in_col(m_n + 1, 0);
+	IntVector     prev(m_n + 1);
+	IntVector     matched(m_n + 1, 0);
+	IntVector     rev_matched(m_n + 1, 0);
 
 	get_csc_matrix(row_ptr, rows, c_val, max_val_in_col);
 	init_reduced_cval(row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowPerm, rev_match_nodes, matched, rev_matched);
 
-	VectorI		irn(m_n);
+	IntVector  irn(m_n);
 	for(int i=0; i<m_n; i++) {
 		if(rev_matched[i]) continue;
-		bool success = false;
-		find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, success, irn);
+		bool success = find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
 	}
 
 	{
-		VectorI     unmatched_rows, unmatched_cols;
+		IntVector  unmatched_rows;
+		IntVector  unmatched_cols;
 
 		for (int i=0; i<m_n; i++)
 			if (!matched[i])
@@ -1409,13 +1414,11 @@ Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 	max_val_in_col.pop_back();
 
 	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), ExpOp<T>());
-	thrust::transform(
-			thrust::make_transform_iterator(mc64ColScale.begin(), ExpOp<T>()),
-			thrust::make_transform_iterator(mc64ColScale.end(), ExpOp<T>()),
-			max_val_in_col.begin(),
-			mc64ColScale.begin(),
-			thrust::divides<T>()
-			);
+	thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), ExpOp<T>()),
+	                  thrust::make_transform_iterator(mc64ColScale.end(), ExpOp<T>()),
+	                  max_val_in_col.begin(),
+	                  mc64ColScale.begin(),
+	                  thrust::divides<T>());
 }
 
 // ----------------------------------------------------------------------------
@@ -1427,12 +1430,12 @@ Graph<T>::find_minimum_match(VectorI&  mc64RowPerm,
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-Graph<T>::get_csc_matrix(VectorI&  row_ptr,
-                         VectorI&  rows,
-                         Vector&   c_val,
-                         Vector&   max_val_in_col)
+Graph<T>::get_csc_matrix(IntVector&     row_ptr,
+                         IntVector&     rows,
+                         DoubleVector&  c_val,
+                         DoubleVector&  max_val_in_col)
 {
-	VectorB row_visited(m_n, 0);
+	BoolVector row_visited(m_n, 0);
 
 	cusp::blas::fill(c_val, LOC_INFINITY);
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
@@ -1443,8 +1446,9 @@ Graph<T>::get_csc_matrix(VectorI&  row_ptr,
 	thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
-		int from = edgeIt -> m_from, to = edgeIt -> m_to;
-		T tmp_val = fabs(edgeIt -> m_val);
+		int from = edgeIt->m_from;
+		int to = edgeIt->m_to;
+		double tmp_val = fabs(edgeIt->m_val);
 		rows[row_ptr[to]++] = from;
 		if (max_val_in_col[to] < tmp_val)
 			max_val_in_col[to] = tmp_val;
@@ -1464,23 +1468,24 @@ Graph<T>::get_csc_matrix(VectorI&  row_ptr,
 // ----------------------------------------------------------------------------
 template <typename T>
 void 
-Graph<T>::init_reduced_cval(VectorI&  row_ptr,
-                            VectorI&  rows,
-                            Vector&   c_val,
-                            Vector&   u_val,
-                            Vector&   v_val,
-                            VectorI&  match_nodes,
-                            VectorI&  rev_match_nodes,
-                            VectorI&  matched,
-                            VectorI&  rev_matched) 
+Graph<T>::init_reduced_cval(IntVector&     row_ptr,
+                            IntVector&     rows,
+                            DoubleVector&  c_val,
+                            DoubleVector&  u_val,
+                            DoubleVector&  v_val,
+                            IntVector&     match_nodes,
+                            IntVector&     rev_match_nodes,
+                            IntVector&     matched,
+                            IntVector&     rev_matched) 
 {
-	int i, j;
+	int i;
+	int j;
 	cusp::blas::fill(u_val, LOC_INFINITY);
 	cusp::blas::fill(v_val, LOC_INFINITY);
 
-	for(i=0; i<m_n; i++) {
+	for(i = 0; i < m_n; i++) {
 		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
-		for(j=start_idx; j<end_idx; j++) {
+		for(j = start_idx; j < end_idx; j++) {
 			if (c_val[j] > LOC_INFINITY / 2.0) continue;
 			int row = rows[j];
 			if(u_val[row] > c_val[j]) {
@@ -1489,13 +1494,13 @@ Graph<T>::init_reduced_cval(VectorI&  row_ptr,
 		}
 	}
 
-	for(i=0; i<m_n; i++) {
+	for(i = 0; i < m_n; i++) {
 		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
 		int min_idx = -1;
-		for(j=start_idx; j<end_idx; j++) {
+		for(j = start_idx; j < end_idx; j++) {
 			if (c_val[j] > LOC_INFINITY / 2.0) continue;
 			int row = rows[j];
-			T tmp_val = c_val[j] - u_val[row];
+			double tmp_val = c_val[j] - u_val[row];
 			if(v_val[i] > tmp_val) {
 				v_val[i] = tmp_val;
 				min_idx = j;
@@ -1512,7 +1517,7 @@ Graph<T>::init_reduced_cval(VectorI&  row_ptr,
 		}
 	}
 
-	for(i=0; i<m_n; i++) {
+	for(i = 0; i < m_n; i++) {
 		if (!matched[i])
 			u_val[i] = 0.0;
 		if (!rev_matched[i])
@@ -1527,30 +1532,29 @@ Graph<T>::init_reduced_cval(VectorI&  row_ptr,
 // augmenting path and applying it.
 // ----------------------------------------------------------------------------
 template<typename T>
-void
-Graph<T>::find_shortest_aug_path(int       init_node,
-                                 VectorI&  matched,
-                                 VectorI&  rev_matched,
-                                 VectorI&  match_nodes,
-                                 VectorI&  rev_match_nodes,
-                                 VectorI&  row_ptr,
-                                 VectorI&  rows,
-                                 VectorI&  prev,
-                                 Vector&   u_val,
-                                 Vector&   v_val,
-                                 Vector&   c_val,
-                                 bool&     success,
-                                 VectorI&  irn) 
+bool
+Graph<T>::find_shortest_aug_path(int            init_node,
+                                 IntVector&     matched,
+                                 IntVector&     rev_matched,
+                                 IntVector&     match_nodes,
+                                 IntVector&     rev_match_nodes,
+                                 IntVector&     row_ptr,
+                                 IntVector&     rows,
+                                 IntVector&     prev,
+                                 DoubleVector&  u_val,
+                                 DoubleVector&  v_val,
+                                 DoubleVector&  c_val,
+                                 IntVector&     irn)
 {
-	success = false;
+	bool success = false;
 
-	static VectorI B(m_n+1, 0);
+	static IntVector B(m_n+1, 0);
 	int b_cnt = 0;
-	static VectorB inB(m_n+1, 0);
+	static BoolVector inB(m_n+1, 0);
 
-	std::priority_queue<Dijkstra<T> > Q;
-	T lsp = 0.0;
-	T lsap = LOC_INFINITY;
+	std::priority_queue<Dijkstra> Q;
+	double lsp = 0.0;
+	double lsap = LOC_INFINITY;
 	int cur_node = init_node;
 
 	int i;
@@ -1559,21 +1563,22 @@ Graph<T>::find_shortest_aug_path(int       init_node,
 	int ksap = -1;
 	prev[init_node] = -1;
 
-	static Vector d_vals(m_n+1, LOC_INFINITY);
-	static VectorB visited(m_n+1, 0);
+	static DoubleVector d_vals(m_n+1, LOC_INFINITY);
+	static BoolVector visited(m_n+1, 0);
 
 	while(1) {
-		int start_cur = row_ptr[cur_node], end_cur = row_ptr[cur_node+1];
-		for(i=start_cur; i<end_cur; i++) {
+		int start_cur = row_ptr[cur_node];
+		int end_cur = row_ptr[cur_node+1];
+		for(i = start_cur; i < end_cur; i++) {
 			int cur_row = rows[i];
 			if(inB[cur_row]) continue;
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
-			T reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
+			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
 			if (reduced_cval + 1e-10 < 0) {
 				fprintf(stderr, "Hmmmmmmmm... reduced_val = %g\n", reduced_cval);
 				exit(-1);
 			}
-			T d_new = lsp + reduced_cval;
+			double d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
 				if(!matched[cur_row]) {
 					lsap = d_new;
@@ -1584,13 +1589,13 @@ Graph<T>::find_shortest_aug_path(int       init_node,
 				} else if (d_new < d_vals[cur_row]){
 					d_vals[cur_row] = d_new;
 					prev[match_nodes[cur_row]] = cur_node;
-					Q.push(Dijkstra<T>(cur_row, d_new));
+					Q.push(Dijkstra(cur_row, d_new));
 					irn[cur_row] = i;
 				}
 			}
 		}
 
-		Dijkstra<T> min_d;
+		Dijkstra min_d;
 		bool found = false;
 
 		while(!Q.empty()) {
@@ -1643,7 +1648,7 @@ Graph<T>::find_shortest_aug_path(int       init_node,
 		rev_matched[cur_node] = true;
 		success = true;
 
-		for (i=0; i<b_cnt; i++) {
+		for (i = 0; i < b_cnt; i++) {
 			int tmp_row = B[i];
 			int j_val = match_nodes[tmp_row];
 			int tmp_k = rev_match_nodes[j_val];
@@ -1655,11 +1660,13 @@ Graph<T>::find_shortest_aug_path(int       init_node,
 		}
 
 		while(!Q.empty()) {
-			Dijkstra<T> tmpD = Q.top();
+			Dijkstra tmpD = Q.top();
 			Q.pop();
 			d_vals[tmpD.m_idx] = LOC_INFINITY;
 		}
 	}
+
+	return success;
 }
 
 

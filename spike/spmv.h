@@ -29,9 +29,9 @@ public:
 		return 2 * m_A.num_entries / (1e6 * avgTime);
 	}
 
-	template <typename Array1, typename Array2>
-	void operator()(const Array1& v,
-	                Array2&       Av)
+	template <typename Array>
+	void operator()(const Array& v,
+	                Array&       Av)
 	{
 		m_timer.Start();
 		cusp::multiply(m_A, v, Av);
