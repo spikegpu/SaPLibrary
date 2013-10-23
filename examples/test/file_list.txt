@@ -12,7 +12,7 @@ apache1.mtx
 8
 bauru5727.mtx
 1
-bayor01.mtx
+bayer01.mtx
 1
 bcircuit.mtx
 1
