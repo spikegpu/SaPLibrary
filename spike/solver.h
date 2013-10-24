@@ -74,6 +74,7 @@ struct Stats
 
 	int         bandwidthReorder;       /** Half-bandwidth after reordering. */
 	int         bandwidth;              /** Half-bandwidth after reordering and drop-off. */
+	int         bandwidthMC64;          /** Half-bandwidth after MC64. */
 
 	double      actualDropOff;          /** The fraction of elements dropped off. */
 
@@ -328,6 +329,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 
 	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
 	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
+	m_stats.bandwidthMC64 = m_precond_pointers[0]->getBandwidthMC64();
 	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
 	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
 	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
@@ -344,6 +346,8 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 			m_stats.bandwidthReorder = m_precond_pointers[i]->getBandwidthReordering();
 		if (m_stats.bandwidth < m_precond_pointers[i]->getBandwidth())
 			m_stats.bandwidth = m_precond_pointers[i]->getBandwidth();
+		if (m_stats.bandwidthMC64 < m_precond_pointers[i]->getBandwidthMC64())
+			m_stats.bandwidthMC64 = m_precond_pointers[i]->getBandwidthMC64();
 		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
 		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
 		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();

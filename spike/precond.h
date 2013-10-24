@@ -75,6 +75,7 @@ public:
 	double getTimeShuffle() const         {return m_time_shuffle;}
 
 	int    getBandwidthReordering() const {return m_k_reorder;}
+	int    getBandwidthMC64() const       {return m_k_mc64;}
 	int    getBandwidth() const           {return m_k;}
 
 	double getActualDropOff() const       {return m_dropOff_actual;}
@@ -153,6 +154,7 @@ private:
 	PrecVectorH          m_WV_host;
 
 	int                  m_k_reorder;             // bandwidth after reordering
+	int                  m_k_mc64;                // bandwidth after MC64
 
 	double               m_dropOff_actual;        // actual dropOff fraction achieved
 
@@ -246,6 +248,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_trackReordering(trackReordering),
 	m_setupDone(false),
 	m_k_reorder(0),
+	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_cpu_assemble(0),
@@ -267,6 +270,7 @@ template <typename PrecVector>
 Precond<PrecVector>::Precond()
 :	m_setupDone(false),
 	m_k_reorder(0),
+	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_cpu_assemble(0),
@@ -288,6 +292,7 @@ template <typename PrecVector>
 Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 :	m_setupDone(false),
 	m_k_reorder(0),
+	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_cpu_assemble(0),
@@ -881,7 +886,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap);
+	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_reorder += reorder_timer.getElapsed();

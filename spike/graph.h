@@ -137,7 +137,8 @@ public:
 	                   IntVector&       mc64RowPerm,
 	                   Vector&          mc64RowScale,
 	                   Vector&          mc64ColScale,
-	                   MatrixMapF&      scaleMap);
+	                   MatrixMapF&      scaleMap,
+					   int&             k_mc64);
 
 	int        dropOff(double   frac,
 	                   double&  frac_actual);
@@ -287,7 +288,8 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
                   IntVector&        mc64RowPerm,
                   Vector&           mc64RowScale,
                   Vector&           mc64ColScale,
-                  MatrixMapF&       scaleMap)
+                  MatrixMapF&       scaleMap,
+				  int&              k_mc64)
 {
 	m_n = Acoo.num_rows;
 	m_nnz = Acoo.num_entries;
@@ -315,6 +317,11 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
 	mc64RowScale = mc64RowScaleD;
 	mc64ColScale = mc64ColScaleD;
+
+	k_mc64 = 0;
+	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
+		if (k_mc64 < abs(edgeIt->m_from - edgeIt->m_to))
+			k_mc64 = abs(edgeIt->m_from - edgeIt->m_to);
 
 	// Apply reverse Cuthill-McKee algorithm.
 	// int bandwidth = RCM(m_edges, optReordering, optPerm);
