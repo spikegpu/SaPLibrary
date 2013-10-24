@@ -23,10 +23,22 @@ include(SBELUtils.cmake)
 #enable_openmp_support()
 enable_cuda_support()
 
+# CUSP dependency. Note that we always include CUSP headers using 
+# include <cusp/header.h>.
+find_path(CUSP_INCLUDE_DIR 
+          NAMES cusp/array1d.h 
+          HINTS ${CUDA_TOOLKIT_INCLUDE} 
+          DOC "Top-level CUSP directory")
+if(CUSP_INCLUDE_DIR)
+   message(STATUS "CUSP headers found in ${CUSP_INCLUDE_DIR}/cusp")
+else()
+   message(FATAL_ERROR "CUSP headers not found. Please set CUSP_INCLUDE_DIR.")
+endif()
+cuda_include_directories(${CUSP_INCLUDE_DIR})
+
+
 include_directories(.)
 include_directories(..)
-
-cuda_include_directories(/usr/local/cuda/cusp)
 
 
 SET(SPIKE_HEADERS
