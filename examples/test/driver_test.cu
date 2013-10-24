@@ -222,6 +222,8 @@ int main(int argc, char** argv)
 		outputItem( A.num_entries);
 		// Half-bandwidth
 		outputItem( stats.bandwidth);
+		// Half-bandwidth after MC64
+		outputItem( stats.bandwidthMC64);
 		// Solve the problem successfully
 		outputItem( success);
 		
