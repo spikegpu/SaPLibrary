@@ -178,9 +178,9 @@ int main(int argc, char** argv)
 	SpmvFunctor  mySpmv(A);
 	Vector       x(A.num_rows, 0);
 
-	mySolver.setup(A);
+	bool setupSuccess = mySolver.setup(A);
 
-	bool success = mySolver.solve(mySpmv, b, x);
+	bool solveSuccess = (setupSuccess ? mySolver.solve(mySpmv, b, x) : false);
 
 	// Write solution file and print solver statistics.
 	if (fileSol.length() > 0)
@@ -188,7 +188,7 @@ int main(int argc, char** argv)
 
 	// Calculate the actual residual and its norm.
 	if (verbose) {
-		PrintStats(success, mySolver, mySpmv);
+		PrintStats(solveSuccess, mySolver, mySpmv);
 		Vector r(A.num_rows);
 		Vector r_view(r);
 		mySpmv(x, r);
@@ -225,9 +225,9 @@ int main(int argc, char** argv)
 		// Half-bandwidth after MC64
 		outputItem( stats.bandwidthMC64);
 		// Solve the problem successfully
-		outputItem( success);
+		outputItem( solveSuccess);
 		
-		if (success) {
+		if (solveSuccess) {
 			// Reason why cannot solve (for unsuccessful solving only)
 			outputItem ("N/A");
 			// Number of partitions
@@ -255,6 +255,8 @@ int main(int argc, char** argv)
 			// Total amount of time
 			outputItem( stats.timeSetup + stats.timeSolve);
 		}
+		else if (!setupSuccess)
+			outputItem ( "Out of memory");
 		else if (ISNAN(cusp::blas::nrm1(x)))
 			outputItem ( "Zero pivoting");
 		else
