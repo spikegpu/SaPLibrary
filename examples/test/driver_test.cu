@@ -178,9 +178,15 @@ int main(int argc, char** argv)
 	SpmvFunctor  mySpmv(A);
 	Vector       x(A.num_rows, 0);
 
-	bool setupSuccess = mySolver.setup(A);
+	bool setupSuccess = true, solveSuccess = true; 
 
-	bool solveSuccess = (setupSuccess ? mySolver.solve(mySpmv, b, x) : false);
+	try {
+		mySolver.setup(A);
+		solveSuccess = mySolver.solve(mySpmv, b, x);
+	} catch (std::bad_alloc e) {
+		setupSuccess = false;
+		solveSuccess = false;
+	}
 
 	// Write solution file and print solver statistics.
 	if (fileSol.length() > 0)

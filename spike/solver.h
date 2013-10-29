@@ -303,8 +303,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 			if (m_precond_pointers.size() <= i)
 				m_precond_pointers.push_back(new Precond<PrecVector>(m_precond));
 
-			if (!m_precond_pointers[i]->setup(cur_matrix))
-				return false;
+			m_precond_pointers[i]->setup(cur_matrix);
 		}
 	} else {
 		m_compIndices.resize(m_n, 0);
@@ -321,8 +320,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 		if (m_precond_pointers.size() == 0)
 			m_precond_pointers.push_back(new Precond<PrecVector>(m_precond));
 
-		if (!m_precond_pointers[0]->setup(A))
-			return false;
+		m_precond_pointers[0]->setup(A);
 	}
 
 	timer.Stop();

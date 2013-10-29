@@ -84,7 +84,7 @@ public:
 	////        when there's a single component when it will be whatever
 	////        the user passes to Solver::setup().
 	template <typename Matrix>
-	bool   setup(const Matrix&  A);
+	void   setup(const Matrix&  A);
 
 	bool   setupDone() const              {return m_setupDone;}
 
@@ -171,7 +171,7 @@ private:
 	double               m_time_shuffle;          // cumulative GPU time for permutation and scaling
 
 	template <typename Matrix>
-	bool transformToBandedMatrix(const Matrix&  A);
+	void transformToBandedMatrix(const Matrix&  A);
 
 	template <typename Matrix>
 	void convertToBandedMatrix(const Matrix&  A);
@@ -199,14 +199,14 @@ private:
 	void partFullBckSweep(PrecVector& v);
 	void purifyRHS(PrecVector& v, PrecVector& res);
 
-	bool calculateSpikes(PrecVector& WV);
-	bool calculateSpikes_const(PrecVector& WV);
-	bool calculateSpikes_var(PrecVector& WV);
-	bool calculateSpikes_var_old(PrecVector& WV);
+	void calculateSpikes(PrecVector& WV);
+	void calculateSpikes_const(PrecVector& WV);
+	void calculateSpikes_var(PrecVector& WV);
+	void calculateSpikes_var_old(PrecVector& WV);
+	void calculateSpikes(PrecVector& B2, PrecVector& WV);
 
 	int adjustNumThreads(int inNumThreads);
 
-	bool calculateSpikes(PrecVector& B2, PrecVector& WV);
 
 	void assembleReducedMat(PrecVector& WV);
 
@@ -525,27 +525,23 @@ Precond<PrecVector>::update(const PrecVector& entries)
  */
 template <typename PrecVector>
 template <typename Matrix>
-bool
+void
 Precond<PrecVector>::setup(const Matrix&  A)
 {
 	m_n = A.num_rows;
 
 	m_setupDone = true;
 
-	bool out_of_memory = false;
 	// Form the banded matrix based on the specified matrix, either through
 	// transformation (reordering and drop-off) or straight conversion.
 	if (m_reorder)
-		out_of_memory = !transformToBandedMatrix(A);
+		transformToBandedMatrix(A);
 	else
 		convertToBandedMatrix(A);
 
-	if (out_of_memory)
-		return false;
-
 	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
 	if (m_k == 0)
-		return true;
+		return;
 
 
 	// If we are using a single partition, perform the LU factorization
@@ -559,7 +555,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 
 		////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
 
-		return true;
+		return;
 	}
 	
 	// We are using more than one partition, so we must assemble the
@@ -592,8 +588,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 			////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
 
 			m_timer.Start();
-			if (!calculateSpikes(mat_WV))
-				return false;
+			calculateSpikes(mat_WV);
 			assembleReducedMat(mat_WV);
 			m_timer.Stop();
 			m_time_assembly = m_timer.getElapsed();
@@ -630,8 +625,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 			cudaDeviceSetCacheConfig(cudaFuncCachePreferNone);
 
 			m_timer.Start();
-			if (!calculateSpikes(B2, mat_WV))
-				return false;
+			calculateSpikes(B2, mat_WV);
 			assembleReducedMat(mat_WV);
 			copyLastPartition(B2);
 			m_timer.Stop();
@@ -650,8 +644,6 @@ Precond<PrecVector>::setup(const Matrix&  A)
 	partFullLU();
 	m_timer.Stop();
 	m_time_fullLU = m_timer.getElapsed();
-
-	return true;
 }
 
 /**
@@ -855,7 +847,7 @@ Precond<PrecVector>::combinePermutation(IntVector&  perm,
  */
 template <typename PrecVector>
 template <typename Matrix>
-bool
+void
 Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 {
 	CPUTimer reorder_timer, assemble_timer, transfer_timer;
@@ -953,16 +945,14 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_time_reorder += reorder_timer.getElapsed();
 
 		assemble_timer.Start();
-		if (!graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, B,
+		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, B,
 		                           m_ks_host, m_BOffsets_host, 
-		                           typeMap, bandedMatMap))
-			return false;
+		                           typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 	} else {
 		assemble_timer.Start();
-		if (!graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, B, typeMap, bandedMatMap))
-			return false;
+		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, B, typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 	}
@@ -978,11 +968,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_mc64ColScale = mc64ColScale;
 	}
 
-	try {
-		m_B = B;
-	} catch (std::bad_alloc e) {
-		return false;
-	}
+	m_B = B;
 
 	if (m_variableBandwidth) {
 		m_ks = m_ks_host;
@@ -1034,8 +1020,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 	transfer_timer.Stop();
 	m_time_transfer += transfer_timer.getElapsed();
-
-	return true;
 }
 
 /**
@@ -1898,21 +1882,25 @@ Precond<PrecVector>::purifyRHS(PrecVector&  v,
  * This function calculates the spike blocks in the LU_only case.
  */
 template <typename PrecVector>
-bool
+void
 Precond<PrecVector>::calculateSpikes(PrecVector&  WV)
 {
-	if (!m_variableBandwidth)
-		return calculateSpikes_const(WV);
+	if (!m_variableBandwidth) {
+		calculateSpikes_const(WV);
+		return;
+	}
 
 	int totalRHSCount = cusp::blas::nrm1(m_offDiagWidths_right_host) + cusp::blas::nrm1(m_offDiagWidths_left_host);
-	if (totalRHSCount >= 2800)
-		return calculateSpikes_var(WV);
+	if (totalRHSCount >= 2800) {
+		calculateSpikes_var(WV);
+		return;
+	}
 
-	return calculateSpikes_var_old(WV);
+	calculateSpikes_var_old(WV);
 }
 
 template <typename PrecVector>
-bool
+void
 Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 {
 	PrecVector WV_spare(m_k*m_k);
@@ -1941,12 +1929,7 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 
 		const int BUF_FACTOR = 16;
 
-		PrecVector extV, buffer;
-		try {
-			extV.resize(m_k * n_eff, 0);
-		} catch (std::bad_alloc e) {
-			return false;
-		}
+		PrecVector extV(m_k * n_eff, 0), buffer;
 
 		PrecValueType* p_extV             = thrust::raw_pointer_cast(&extV[0]);
 		PrecValueType* p_B                = thrust::raw_pointer_cast(&m_B[0]);
@@ -2035,12 +2018,7 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 
 		const int BUF_FACTOR = 16;
 
-		PrecVector extW, buffer;
-		try {
-			extW.resize(m_k * n_eff, 0);
-		} catch (std::bad_alloc e) {
-			return false;
-		}
+		PrecVector extW(m_k * n_eff, 0), buffer;
 
 		PrecValueType* p_extW = thrust::raw_pointer_cast(&extW[0]);
 		PrecValueType* p_B    = thrust::raw_pointer_cast(&m_B[0]);
@@ -2128,11 +2106,10 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin() + ((2*i+1)*m_k*m_k));
 		}
 	}
-	return true;
 }
 
 template <typename PrecVector>
-bool
+void
 Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 {
 	PrecValueType* p_WV = thrust::raw_pointer_cast(&WV[0]);
@@ -2156,12 +2133,7 @@ Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 		int  partSize    = n_eff / numPart_eff;
 		int  remainder   = n_eff % numPart_eff;
 
-		PrecVector extV;
-		try {
-			extV.resize(m_k * n_eff, 0);
-		} catch (std::bad_alloc e) {
-			return false;
-		}
+		PrecVector extV(m_k * n_eff, 0);
 
 		PrecValueType* p_extV = thrust::raw_pointer_cast(&extV[0]);
 		PrecValueType* p_B    = thrust::raw_pointer_cast(&m_B[0]);
@@ -2198,12 +2170,7 @@ Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 		int  partSize    = n_eff / numPart_eff;
 		int  remainder   = n_eff % numPart_eff;
 
-		PrecVector  extW;
-		try {
-			extW.resize(m_k * n_eff, 0);
-		} catch (std::bad_alloc e) {
-			return false;
-		}
+		PrecVector  extW(m_k * n_eff, 0);
 
 		PrecValueType* p_extW = thrust::raw_pointer_cast(&extW[0]);
 		PrecValueType* p_B    = thrust::raw_pointer_cast(&m_B[(2*m_k+1)*first_partition_size]);
@@ -2228,11 +2195,10 @@ Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 			device::copyWVFromOrToExtendedW<PrecValueType><<<gridsCopy, m_k>>>(n_eff, m_k, partSize, remainder, p_WV, p_extW, true);
 		}
 	}
-	return true;
 }
 
 template <typename PrecVector>
-bool
+void
 Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 {
 	PrecVector WV_spare(m_k*m_k);
@@ -2256,12 +2222,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		int rightOffDiagWidth = cusp::blas::nrmmax(m_offDiagWidths_right);
 		int leftOffDiagWidth  = cusp::blas::nrmmax(m_offDiagWidths_left);
 
-		PrecVector extWV;
-		try {
-			extWV.resize((leftOffDiagWidth + rightOffDiagWidth) * n_eff, 0);
-		} catch (std::bad_alloc e) {
-			return false;
-		}
+		PrecVector extWV((leftOffDiagWidth + rightOffDiagWidth) * n_eff, 0);
 		PrecVector buffer;
 
 		PrecValueType* p_extWV               = thrust::raw_pointer_cast(&extWV[0]);
@@ -2284,11 +2245,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		kernelConfigAdjust(permuteGridY, permuteGridZ, MAX_GRID_DIMENSION);
 		dim3 gridsPermute(permuteGridX, permuteGridY, permuteGridZ);
 
-		try {
-			buffer.resize((leftOffDiagWidth + rightOffDiagWidth) * n_eff);
-		} catch (std::bad_alloc e) {
-			return false;
-		}
+		buffer.resize((leftOffDiagWidth + rightOffDiagWidth) * n_eff);
 		
 		PrecValueType* p_buffer = thrust::raw_pointer_cast(&buffer[0]);
 
@@ -2348,7 +2305,6 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin()+((2*i+1)*m_k*m_k));
 		}
 	}
-	return true;
 }
 
 /**
@@ -2378,7 +2334,7 @@ Precond<PrecVector>::adjustNumThreads(int inNumThreads) {
  * This function calculates the spike blocks in the LU_UL case.
  */
 template <typename PrecVector>
-bool
+void
 Precond<PrecVector>::calculateSpikes(PrecVector&  B2,
                                      PrecVector&  WV)
 {
@@ -2395,10 +2351,10 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  B2,
 
 	dim3 gridsCompress(two_k, m_numPartitions-1);
 
-		if (m_k > 511)
-			device::copydAtodA2_general<PrecValueType><<<gridsCompress, 1024>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
-		else
-			device::copydAtodA2<PrecValueType><<<gridsCompress, two_k+1>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
+	if (m_k > 511)
+		device::copydAtodA2_general<PrecValueType><<<gridsCompress, 1024>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
+	else
+		device::copydAtodA2<PrecValueType><<<gridsCompress, two_k+1>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
 
 	// Combine 'B' and 'compB2' into 'partialB'.
 	PrecVector partialB(2*(two_k+1)*(m_k+1)*(m_numPartitions-1));
@@ -2434,7 +2390,6 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  B2,
 		device::backwardElimUdWV<PrecValueType><<<gridsSweep, m_k>>>(m_k, p_partialB, p_WV, m_k, 1, 0);
 		device::forwardElimLdWV<PrecValueType><<<gridsSweep, m_k>>>(m_k, p_partialB, p_WV, m_k, 1, 1);
 	}
-	return true;
 }
 
 /**

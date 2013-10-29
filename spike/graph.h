@@ -168,14 +168,14 @@ public:
 	                                 IntVector&  secondPerm,
 	                                 IntVector&  first_rows);
 
-	bool       assembleBandedMatrix(int         bandwidth,
+	void       assembleBandedMatrix(int         bandwidth,
 	                                IntVector&  ks_col,
 	                                IntVector&  ks_row,
 	                                Vector&     B,
 	                                MatrixMap&  typeMap,
 	                                MatrixMap&  bandedMatMap);
 
-	bool       assembleBandedMatrix(int         bandwidth,
+	void       assembleBandedMatrix(int         bandwidth,
 	                                int         numPartitions,
 	                                IntVector&  ks_col,
 	                                IntVector&  ks_row,
@@ -826,7 +826,7 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 // that has banded diagonal blocks of different bandwidths for each partition.
 // ----------------------------------------------------------------------------
 template <typename T>
-bool
+void
 Graph<T>::assembleBandedMatrix(int         bandwidth,
                                IntVector&  ks_col,
                                IntVector&  ks_row,
@@ -836,11 +836,8 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 {
 	// Drop all edges from begin() to 'first'; i.e., keep all edges from
 	// 'first' to end().
-	try {
-		B.resize((2 * bandwidth + 1) * m_n);
-	} catch (std::bad_alloc e) {
-		return false;
-	}
+	B.resize((2 * bandwidth + 1) * m_n);
+
 	ks_col.resize(m_n);
 	ks_row.resize(m_n);
 	cusp::blas::fill(ks_col, 0);
@@ -888,12 +885,10 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 		if (ks_row[i] < ks_row[i-1] - 1)
 			ks_row[i] = ks_row[i-1] - 1;
 	}
-
-	return true;
 }
 
 template <typename T>
-bool
+void
 Graph<T>::assembleBandedMatrix(int         bandwidth,
                                int         numPartitions,
                                IntVector&  ks_col,
@@ -932,11 +927,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			BOffsets[i] = BOffsets[i-1] + (partSize) * (2 * ks[i-1] + 1);
 	}
 
-	try {
-		B.resize(BOffsets[numPartitions-1] + (2*ks[numPartitions-1]+1)*partSize);
-	} catch (std::bad_alloc e) {
-		return false;
-	}
+	B.resize(BOffsets[numPartitions-1] + (2*ks[numPartitions-1]+1)*partSize);
 
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
@@ -996,8 +987,6 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 		partBegin = partEnd;
 		partEnd = partBegin + partSize;
 	}
-
-	return true;
 }
 
 
