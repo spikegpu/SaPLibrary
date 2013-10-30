@@ -22,6 +22,8 @@
 #include <spike/common.h>
 #include <spike/timer.h>
 
+#include "exception.h"
+
 namespace spike {
 
 
@@ -1003,7 +1005,19 @@ Graph<T>::MC64(bool           scale,
                DoubleVector&  mc64ColScale,
                MatrixMapF&    scaleMap)
 {
-	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
+	try {
+		find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
+	} catch (NegativeReducedWeightException e) {
+		mc64RowScale.resize(m_n);
+		mc64ColScale.resize(m_n);
+		mc64RowPerm.resize(m_n);
+
+		thrust::sequence(mc64RowPerm.begin(), mc64RowPerm.end());
+		cusp::blas::fill(mc64RowScale, 1.0);
+		cusp::blas::fill(mc64ColScale, 1.0);
+
+		return true;
+	}
 
 	if (scale) {
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
@@ -1583,8 +1597,9 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
 			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
 			if (reduced_cval + 1e-10 < 0) {
-				fprintf(stderr, "Hmmmmmmmm... reduced_val = %g\n", reduced_cval);
-				exit(-1);
+				// fprintf(stderr, "Hmmmmmmmm... reduced_val = %g\n", reduced_cval);
+				// exit(-1);
+				throw NegativeReducedWeightException();
 			}
 			double d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
