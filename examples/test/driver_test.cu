@@ -57,8 +57,8 @@ using std::vector;
 #include <SimpleOpt/SimpleOpt.h>
 
 // ID values to identify command line arguments
-enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
-      OPT_NO_REORDERING, OPT_NO_SCALING,
+enum {OPT_HELP, OPT_PART,
+      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, 
       OPT_MATFILE, OPT_RHSFILE, 
@@ -88,6 +88,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
 	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
+	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
@@ -96,8 +97,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
-	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
-	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
 	{ OPT_HELP,          "-?",                   SO_NONE    },
 	{ OPT_HELP,          "-h",                   SO_NONE    },
 	{ OPT_HELP,          "--help",               SO_NONE    },
@@ -116,7 +115,6 @@ bool GetProblemSpecs(int             argc,
                      string&         fileRhs,
                      string&         fileSol,
                      int&            numPart,
-                     bool&           verbose,
                      spike::Options& opts);
 void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
 void PrintStats(bool               success,
@@ -149,10 +147,9 @@ int main(int argc, char** argv)
 	string         fileRhs;
 	string         fileSol;
 	int            numPart;
-	bool           verbose;
 	spike::Options opts;
 
-	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, verbose, opts))
+	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, opts))
 		return 1;
 
 	// Get the device with most available memory.
@@ -193,25 +190,7 @@ int main(int argc, char** argv)
 		cusp::io::write_matrix_market_file(x, fileSol);
 
 	// Calculate the actual residual and its norm.
-	if (verbose) {
-		PrintStats(solveSuccess, mySolver, mySpmv);
-		Vector r(A.num_rows);
-		Vector r_view(r);
-		mySpmv(x, r);
-		cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
-		cout << "|b - A*x|      = " << cusp::blas::nrm2(r) << endl;
-		cout << "|b|            = " << cusp::blas::nrm2(b) << endl;	
-
-		// If we have used a generated RHS, print the difference
-		// between the target solution and the obtained solution.
-		//    x_target <- x_target - x
-		if (fileRhs.length() == 0) {
-			cout << "|x_target|     = " << cusp::blas::nrm2(x_target) << endl;
-			delta_x_target.resize(A.num_rows);
-			cusp::blas::axpby(x_target, x, delta_x_target, REAL(1.0), REAL(-1.0));
-			cout << "|x_target - x| = " << cusp::blas::nrm2(delta_x_target) << endl;
-		}
-	} else {
+	{
 		spike::Stats stats = mySolver.getStats();
 		int i;
 		for (i = fileMat.size()-1; i>=0 && fileMat[i] != '/' && fileMat[i] != '\\'; i--);
@@ -351,7 +330,6 @@ GetProblemSpecs(int             argc,
                 string&         fileRhs,
                 string&         fileSol,
                 int&            numPart,
-                bool&           verbose,
                 spike::Options& opts)
 {
 	numPart = -1;
@@ -389,6 +367,9 @@ GetProblemSpecs(int             argc,
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
 				break;
+			case OPT_NO_MC64:
+				opts.performMC64 = false;
+				break;
 			case OPT_NO_SCALING:
 				opts.applyScaling = false;
 				break;
@@ -400,9 +381,6 @@ GetProblemSpecs(int             argc,
 				break;
 			case OPT_OUTFILE:
 				fileSol = args.OptionArg();
-				break;
-			case OPT_VERBOSE:
-				verbose = true;
 				break;
 			case OPT_FACTORIZATION:
 				{
@@ -467,38 +445,17 @@ GetProblemSpecs(int             argc,
 	}
 
 	// If no reordering, force using constant bandwidth.
-	if (!opts.performReorder)
+	if (!opts.performReorder) {
 		opts.variableBandwidth = false;
+		opts.performMC64 = false;
+	}
+
+	if (!opts.performMC64)
+		opts.applyScaling = false;
 
 	// If using variable bandwidth, force using LU factorization.
 	if (opts.variableBandwidth)
 		opts.factMethod = spike::LU_only;
-
-	// Print out the problem specifications.
-	if (verbose) {
-		cout << endl;
-		cout << "Matrix file: " << fileMat << endl;
-		if (fileRhs.length() > 0)
-			cout << "Rhs file:    " << fileRhs << endl;
-		if (fileSol.length() > 0)
-			cout << "Sol file:    " << fileSol << endl;
-		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
-		cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
-		cout << "Tolerance: " << opts.tolerance << endl;
-		cout << "Max. iterations: " << opts.maxNumIterations << endl;
-		cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
-		cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
-		if (opts.dropOffFraction > 0)
-			cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
-		else
-			cout << "No drop-off." << endl;
-		cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
-		cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
-		cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
-		cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
-		cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
-		cout << endl << endl;
-	}
 
 	return true;
 }
@@ -518,6 +475,8 @@ void ShowUsage()
 	cout << "        Specify the number of partitions (default 1)." << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering." << endl;
+	cout << " --no-mc64" << endl;
+	cout << "        Do not perform MC64 reordering." << endl;
 	cout << " --no-scaling" << endl;
 	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;
