@@ -22,7 +22,7 @@
 #include <spike/common.h>
 #include <spike/timer.h>
 
-#include "exception.h"
+#include <spike/exception.h>
 
 namespace spike {
 
@@ -133,6 +133,7 @@ public:
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
 	int        reorder(const MatrixCoo& Acoo,
+	                   bool             doMC64,
 	                   bool             scale,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
@@ -140,7 +141,7 @@ public:
 	                   Vector&          mc64RowScale,
 	                   Vector&          mc64ColScale,
 	                   MatrixMapF&      scaleMap,
-					   int&             k_mc64);
+	                   int&             k_mc64);
 
 	int        dropOff(double   frac,
 	                   double&  frac_actual);
@@ -284,6 +285,7 @@ Graph<T>::Graph(bool trackReordering)
 template <typename T>
 int
 Graph<T>::reorder(const MatrixCoo&  Acoo,
+                  bool              doMC64,
                   bool              scale,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
@@ -291,7 +293,7 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
                   Vector&           mc64RowScale,
                   Vector&           mc64ColScale,
                   MatrixMapF&       scaleMap,
-				  int&              k_mc64)
+                  int&              k_mc64)
 {
 	m_n = Acoo.num_rows;
 	m_nnz = Acoo.num_entries;
@@ -311,22 +313,32 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	//
 	// TODO:  how can we check if the precision of Vector is already
 	//        double, so that we can save extra copies.
-	if (m_trackReordering)
+	if (doMC64) {
+		DoubleVector  mc64RowScaleD;
+		DoubleVector  mc64ColScaleD;
+		MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+		mc64RowScale = mc64RowScaleD;
+		mc64ColScale = mc64ColScaleD;
+	} else {
+		mc64RowScale.resize(m_n);
+		mc64ColScale.resize(m_n);
+		mc64RowPerm.resize(m_n);
 		scaleMap.resize(m_nnz);
 
-	DoubleVector  mc64RowScaleD;
-	DoubleVector  mc64ColScaleD;
-	MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
-	mc64RowScale = mc64RowScaleD;
-	mc64ColScale = mc64ColScaleD;
+		thrust::sequence(mc64RowPerm.begin(), mc64RowPerm.end());
+		cusp::blas::fill(mc64RowScale, 1.0);
+		cusp::blas::fill(mc64ColScale, 1.0);
+		cusp::blas::fill(scaleMap, 1.0);
+	}
 
 	k_mc64 = 0;
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
 		if (k_mc64 < abs(edgeIt->m_from - edgeIt->m_to))
 			k_mc64 = abs(edgeIt->m_from - edgeIt->m_to);
+	
+
 
 	// Apply reverse Cuthill-McKee algorithm.
-	// int bandwidth = RCM(m_edges, optReordering, optPerm);
 	int bandwidth = RCM(m_edges, optReordering, optPerm);
 
 	// Initialize the iterator m_first (in case dropOff() is not called).
@@ -1005,19 +1017,10 @@ Graph<T>::MC64(bool           scale,
                DoubleVector&  mc64ColScale,
                MatrixMapF&    scaleMap)
 {
-	try {
-		find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
-	} catch (NegativeReducedWeightException e) {
-		mc64RowScale.resize(m_n);
-		mc64ColScale.resize(m_n);
-		mc64RowPerm.resize(m_n);
+	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
 
-		thrust::sequence(mc64RowPerm.begin(), mc64RowPerm.end());
-		cusp::blas::fill(mc64RowScale, 1.0);
-		cusp::blas::fill(mc64ColScale, 1.0);
-
-		return true;
-	}
+	if (m_trackReordering)
+		scaleMap.resize(m_nnz);
 
 	if (scale) {
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
@@ -1030,11 +1033,11 @@ Graph<T>::MC64(bool           scale,
 			iter->m_from = mc64RowPerm[from];
 		}
 	} else {
-		if (m_trackReordering)
-			cusp::blas::fill(scaleMap, 1.0);
-
 		for(EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++)
 			iter->m_from = mc64RowPerm[iter->m_from];
+
+		if (m_trackReordering)
+			cusp::blas::fill(scaleMap, 1.0);
 	}
 
 	return true;
@@ -1596,11 +1599,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 			if(inB[cur_row]) continue;
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
 			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
-			if (reduced_cval + 1e-10 < 0) {
-				// fprintf(stderr, "Hmmmmmmmm... reduced_val = %g\n", reduced_cval);
-				// exit(-1);
-				throw NegativeReducedWeightException();
-			}
+			if (reduced_cval + 1e-10 < 0)
+				throw system_error(system_error::Negative_MC64_weight, "Negative reduced weight in MC64.");
 			double d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
 				if(!matched[cur_row]) {

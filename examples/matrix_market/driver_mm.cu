@@ -8,6 +8,7 @@
 
 #include <spike/solver.h>
 #include <spike/spmv.h>
+#include <spike/exception.h>
 
 
 // -----------------------------------------------------------------------------
@@ -38,7 +39,7 @@ using std::vector;
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
-      OPT_NO_REORDERING, OPT_NO_SCALING,
+      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC,
       OPT_MATFILE, OPT_RHSFILE,
@@ -68,6 +69,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
 	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
+	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
@@ -135,9 +137,19 @@ int main(int argc, char** argv)
 	SpikeSolver  mySolver(numPart, opts);
 	SpmvFunctor  mySpmv(A);
 	Vector x(A.num_rows, 0);
+	bool   success;
 
-	mySolver.setup(A);
-	bool success = mySolver.solve(mySpmv, b, x);
+	try {
+		mySolver.setup(A);
+		success = mySolver.solve(mySpmv, b, x);
+	} catch (const std::bad_alloc& e) {
+		std::cout << "Exception (bad_alloc): " << e.what() << std::endl;
+		return 1;
+	} catch (const spike::system_error& e) {
+		std::cout << "Exception (system_error): " << e.what() << " Error code: " << e.reason() << std::endl;
+		return 1;
+	}
+
 
 	// Write solution file and print solver statistics.
 	if (fileSol.length() > 0)
@@ -228,6 +240,9 @@ GetProblemSpecs(int             argc,
 				break;
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
+				break;
+			case OPT_NO_MC64:
+				opts.performMC64 = false;
 				break;
 			case OPT_NO_SCALING:
 				opts.applyScaling = false;
@@ -330,6 +345,7 @@ GetProblemSpecs(int             argc,
 		cout << "No drop-off." << endl;
 	cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
 	cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
+	cout << (opts.performMC64 ? "Perform MC64 reordering." : "Do not perform MC64 reordering.") << endl;
 	cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
 	cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
 	cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
@@ -353,8 +369,10 @@ void ShowUsage()
 	cout << "        Specify the number of partitions (default 1)." << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering." << endl;
+	cout << " --no-mc64" << endl;
+	cout << "        Do not perform MC64 reordering." << endl;
 	cout << " --no-scaling" << endl;
-	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
+	cout << "        Do not perform MC64 scaling (ignored if --no-reordering or --no-mc64 is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;
 	cout << " --tolerance=TOLERANCE" << endl;
 	cout << "        Use TOLERANCE for BiCGStab stopping criteria (default 1e-6)." << endl;

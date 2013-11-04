@@ -1,13 +1,38 @@
 #ifndef SPIKE_EXCEPTION_H
 #define SPIKE_EXCEPTION_H
 
-#include <exception>
+#include <stdexcept>
+#include <string>
 
 namespace spike {
 
-class NegativeReducedWeightException: public std::exception
+class system_error : public std::runtime_error
 {
-	virtual const char* what() const throw() {return "Negative reduced weight found in MC64";}
+public:
+	enum Reason
+	{
+		Zero_pivoting        = -1,
+		Negative_MC64_weight = -2
+	};
+
+	system_error(Reason             reason,
+	             const std::string& what_arg)
+	: std::runtime_error(what_arg),
+	  m_reason(reason)
+	{}
+
+	system_error(Reason      reason,
+	             const char* what_arg)
+	: std::runtime_error(what_arg),
+	  m_reason(reason)
+	{}
+	
+	virtual ~system_error() throw() {}
+
+	Reason  reason() const {return m_reason;}
+
+private:
+	Reason        m_reason;
 };
 
 }

@@ -45,6 +45,7 @@ SET(SPIKE_HEADERS
 	../../spike/bicgstab2.h
 	../../spike/common.h
 	../../spike/components.h
+	../../spike/exception.h
 	../../spike/graph.h
 	../../spike/monitor.h
 	../../spike/precond.h

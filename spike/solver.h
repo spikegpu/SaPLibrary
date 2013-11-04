@@ -36,6 +36,7 @@ struct Options
 	double              tolerance;            /** Indicate the tolerance of error accepted, 1e^(-6) by default. */
 
 	bool                performReorder;       /** Indicate whether to perform reordering to the matrix, true by default.*/
+	bool                performMC64;          /** Indicate whether to perform MC64 reordering, true by default. */
 	bool                applyScaling;         /** Indicate whether to apply scaling in MC64 or not, true by default.*/
 	double              dropOffFraction;      /** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
 
@@ -160,6 +161,7 @@ Options::Options()
 	maxNumIterations(100),
 	tolerance(1e-6),
 	performReorder(true),
+	performMC64(true),
 	applyScaling(true),
 	dropOffFraction(0),
 	factMethod(LU_only),
@@ -207,7 +209,7 @@ template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
-	m_precond(numPartitions, opts.performReorder, opts.applyScaling,
+	m_precond(numPartitions, opts.performReorder, opts.performMC64, opts.applyScaling,
 	          opts.dropOffFraction, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),

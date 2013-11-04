@@ -49,6 +49,7 @@ public:
 
 	Precond(int                 numPart,
 	        bool                reorder,
+	        bool                doMC64,
 	        bool                scale,
 	        double              dropOff_frac,
 	        FactorizationMethod factMethod,
@@ -98,6 +99,7 @@ private:
 	int                  m_k;
 
 	bool                 m_reorder;
+	bool                 m_doMC64;
 	bool                 m_scale;
 	double               m_dropOff_frac;
 	FactorizationMethod  m_factMethod;
@@ -230,6 +232,7 @@ private:
 template <typename PrecVector>
 Precond<PrecVector>::Precond(int                 numPart,
                              bool                reorder,
+                             bool                doMC64,
                              bool                scale,
                              double              dropOff_frac,
                              FactorizationMethod factMethod,
@@ -239,6 +242,7 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                trackReordering)
 :	m_numPartitions(numPart),
 	m_reorder(reorder),
+	m_doMC64(doMC64),
 	m_scale(scale),
 	m_dropOff_frac(dropOff_frac),
 	m_factMethod(factMethod),
@@ -269,6 +273,9 @@ Precond<PrecVector>::Precond(int                 numPart,
 template <typename PrecVector>
 Precond<PrecVector>::Precond()
 :	m_setupDone(false),
+	m_reorder(false),
+	m_doMC64(false),
+	m_scale(false),
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
@@ -307,7 +314,8 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
-	m_reorder           = prec.m_reorder;;
+	m_reorder           = prec.m_reorder;
+	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
 	m_factMethod        = prec.m_factMethod;
@@ -323,7 +331,8 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
-	m_reorder           = prec.m_reorder;;
+	m_reorder           = prec.m_reorder;
+	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
 	m_factMethod        = prec.m_factMethod;
@@ -884,7 +893,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acoo, m_doMC64, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_reorder += reorder_timer.getElapsed();
