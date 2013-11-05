@@ -308,7 +308,7 @@ GetProblemSpecs(int             argc,
 // -----------------------------------------------------------------------------
 void ShowUsage()
 {
-	cout << "Usage:  driver_seq [OPTIONS]" << endl;
+	cout << "Usage:  driver_seq -p=NUM_PARTITIONS -m=MATFILE [OPTIONS]" << endl;
 	cout << endl;
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
@@ -325,11 +325,11 @@ void ShowUsage()
 	cout << " -d=FRACTION" << endl;
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
-	cout << "        Frobenius norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
+	cout << "        element-wise 1-norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
 	cout << " --single-component" << endl;
-	cout << "        Do not break the problem into several components." << endl;
+	cout << "        Do not attempt to break the problem into several components (default false)." << endl;
 	cout << " --safe-fact" << endl;
-	cout << "        Use safe LU-UL factorization." << endl; 
+	cout << "        Use safe LU-UL factorization (default false)." << endl; 
 	cout << " -? -h --help" << endl;
 	cout << "        Print this message and exit." << endl;
 	cout << endl;
