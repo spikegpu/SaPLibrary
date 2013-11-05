@@ -191,6 +191,7 @@ void spikeSetDevice() {
 	cudaSetDevice(max_idx);
 }
 
+
 // -----------------------------------------------------------------------------
 // GetProblemSpecs()
 //
@@ -319,8 +320,14 @@ GetProblemSpecs(int             argc,
 	}
 
 	// If no reordering, force using constant bandwidth.
-	if (!opts.performReorder)
+	if (!opts.performReorder) {
+		opts.performMC64 = false;
 		opts.variableBandwidth = false;
+	}
+
+	// If no MC64 reordering, force no scaling.
+	if (!opts.performMC64)
+		opts.applyScaling = false;
 
 	// If using variable bandwidth, force using LU factorization.
 	if (opts.variableBandwidth)
@@ -362,17 +369,17 @@ GetProblemSpecs(int             argc,
 // -----------------------------------------------------------------------------
 void ShowUsage()
 {
-	cout << "Usage:  driver_mm [OPTIONS]" << endl;
+	cout << "Usage:  driver_mm -p=NUM_PARTITIONS -m=MATFILE [OPTIONS]" << endl;
 	cout << endl;
 	cout << " -p=NUM_PARTITIONS" << endl;
 	cout << " --num-partitions=NUM_PARTITIONS" << endl;
-	cout << "        Specify the number of partitions (default 1)." << endl;
+	cout << "        Specify the number of partitions." << endl;
 	cout << " --no-reordering" << endl;
-	cout << "        Do not perform reordering." << endl;
+	cout << "        Do not perform reordering (default false)." << endl;
 	cout << " --no-mc64" << endl;
-	cout << "        Do not perform MC64 reordering." << endl;
+	cout << "        Do not perform MC64 reordering (ignored if --no-reordering is specified; default false)." << endl;
 	cout << " --no-scaling" << endl;
-	cout << "        Do not perform MC64 scaling (ignored if --no-reordering or --no-mc64 is specified)" << endl;
+	cout << "        Do not perform MC64 scaling (ignored if --no-reordering or --no-mc64 is specified; default false)." << endl;
 	cout << " -t=TOLERANCE" << endl;
 	cout << " --tolerance=TOLERANCE" << endl;
 	cout << "        Use TOLERANCE for BiCGStab stopping criteria (default 1e-6)." << endl;
@@ -382,19 +389,19 @@ void ShowUsage()
 	cout << " -d=FRACTION" << endl;
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
-	cout << "        Frobenius norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
+	cout << "        elementwise norm-1 is ignored (default 0.0 -- i.e. no drop-off)." << endl;
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
 	cout << " -r=RHSFILE" << endl;
 	cout << " --rhs-file=RHSFILE" << endl;
-	cout << "        Read the right-handside vector from the file RHSFILE (MatrixMarket format)." << endl;
-	cout << "        Only used if '-m' is specified." << endl;
+	cout << "        Read the right-hand side vector from the file RHSFILE (MatrixMarket format)." << endl;
+	cout << "        If not specified, a right-hand side of all ones is used." << endl;
 	cout << " -o=OUTFILE" << endl;
 	cout << " --output-file=OUTFILE" << endl;
 	cout << "        Write the solution to the file OUTFILE (MatrixMarket format)." << endl;
 	cout << " --single-component" << endl;
-	cout << "        Do not break the problem into several components." << endl;
+	cout << "        Do not attempt to break the problem into disconnected components (default false)." << endl;
 	cout << " -k=METHOD" << endl;
 	cout << " --krylov-method=METHOD" << endl;
 	cout << "        Specify the iterative Krylov solver:" << endl;
@@ -403,7 +410,7 @@ void ShowUsage()
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;
-	cout << "        Force using the constant-bandwidth method." << endl; 
+	cout << "        Force using the constant-bandwidth method (default false)." << endl; 
 	cout << " -f=METHOD" << endl;
 	cout << " --factorization-method=METHOD" << endl;
 	cout << "        Specify the factorization type used to assemble the reduced matrix" << endl;
