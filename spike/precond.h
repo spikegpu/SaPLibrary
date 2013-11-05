@@ -18,9 +18,6 @@
 #include <omp.h>
 
 
-#define MAX(A,B)   (((A) > (B)) ? (A) : (B))
-#define MIN(A,B)   (((A) < (B)) ? (A) : (B))
-
 namespace spike {
 
 /**
@@ -918,22 +915,12 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	// the following condition must be satisfied:
 	//   K+1 <= n   (for Spike algorithm)
 	// These imply a maximum allowable number of partitions.
-	int maxNumPartitions = MAX(m_n / (m_k + 1), 1);
+	int maxNumPartitions = std::max(m_n / (m_k + 1), 1);
+	m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
 
-	if (m_numPartitions > maxNumPartitions) {
-		std::cerr << "P = " << m_numPartitions << " is too large for N = "
-			<< m_n << " and K = " << m_k << std::endl
-			<< "The number of partitions was reset to P = " << maxNumPartitions << std::endl;
-		m_numPartitions = maxNumPartitions;
-	}
-
-	// If there is just one partition, do not use variable band and
-	// second stage reordering.
-	if (m_numPartitions == 1 || m_k == 0) {
-		if (m_variableBandwidth)
-			std::cerr << "A single partition is used or the half-bandwidth is zero. Variable-band option was disabled." << std::endl;
+	// If there is just one partition, force using constant bandwidth method.
+	if (m_numPartitions == 1 || m_k == 0)
 		m_variableBandwidth = false;
-	}
 
 	if (m_dropOff_frac > 0) {
 		if (m_variableBandwidth)
@@ -1061,21 +1048,12 @@ Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A)
 	//   (1)  K+1 <= n   (for Spike algorithm)
 	//   (2)  2*K <= n   (for current implementation of UL)
 	// These imply a maximum allowable number of partitions.
-	int  maxNumPartitions = MAX(1, m_n / MAX(m_k + 1, 2 * m_k));
-	if (m_numPartitions > maxNumPartitions) {
-		std::cerr << "P = " << m_numPartitions << " is too large for N = "
-		          << m_n << " and K = " << m_k << std::endl
-		          << "The number of partitions was reset to P = " << maxNumPartitions << std::endl;
-		m_numPartitions = maxNumPartitions;
-	}
+	int  maxNumPartitions = std::max(1, m_n / std::max(m_k + 1, 2 * m_k));
+	m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
 
-	// If there is just one partition, revert to using constant-bandwidth method.
-	if (m_numPartitions == 1) {
-		if (m_variableBandwidth) {
-			std::cerr << "Using a single partition: revert to constant-bandwidth method." << std::endl;
-			m_variableBandwidth = false;
-		}
-	}
+	// If there is just one partition, force using constant-bandwidth method.
+	if (m_numPartitions == 1)
+		m_variableBandwidth = false;
 
 	// Set the size and load the banded matrix into m_B.
 	m_B.resize((2*m_k+1)*n);
