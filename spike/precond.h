@@ -76,6 +76,7 @@ public:
 	int    getBandwidthMC64() const       {return m_k_mc64;}
 	int    getBandwidth() const           {return m_k;}
 
+	int    getActualNumPartitions() const {return m_numPartitions;}
 	double getActualDropOff() const       {return m_dropOff_actual;}
 
 	//// NOTE:  Matrix here will usually be PrecMatrixCooH, except

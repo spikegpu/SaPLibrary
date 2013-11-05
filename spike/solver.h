@@ -77,6 +77,7 @@ struct Stats
 	int         bandwidth;              /** Half-bandwidth after reordering and drop-off. */
 	int         bandwidthMC64;          /** Half-bandwidth after MC64. */
 
+	int         numPartitions;          /** Actual number of paritions used in the Spike factorization */
 	double      actualDropOff;          /** The fraction of elements dropped off. */
 
 	float       numIterations;          /** The number of iterations required for Krylov solver to converge. */
@@ -193,6 +194,7 @@ Stats::Stats()
 	time_shuffle(0),
 	bandwidthReorder(0),
 	bandwidth(0),
+	numPartitions(0),
 	actualDropOff(0),
 	numIterations(0),
 	residualNorm(std::numeric_limits<double>::max()),
@@ -332,6 +334,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
 	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
 	m_stats.bandwidthMC64 = m_precond_pointers[0]->getBandwidthMC64();
+	m_stats.numPartitions = m_precond_pointers[0]->getNumPartitions();
 	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
 	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
 	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
@@ -350,6 +353,8 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 			m_stats.bandwidth = m_precond_pointers[i]->getBandwidth();
 		if (m_stats.bandwidthMC64 < m_precond_pointers[i]->getBandwidthMC64())
 			m_stats.bandwidthMC64 = m_precond_pointers[i]->getBandwidthMC64();
+		if (m_stats.numPartitions > m_precond_pointers[i]->getNumPartitions())
+			m_stats.numPartitions = m_precond_pointers[i]->getNumPartitions();
 		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
 		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
 		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
