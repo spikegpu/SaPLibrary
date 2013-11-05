@@ -76,7 +76,7 @@ public:
 	int    getBandwidthMC64() const       {return m_k_mc64;}
 	int    getBandwidth() const           {return m_k;}
 
-	int    getActualNumPartitions() const {return m_numPartitions;}
+	int    getNumPartitions() const       {return m_numPartitions;}
 	double getActualDropOff() const       {return m_dropOff_actual;}
 
 	//// NOTE:  Matrix here will usually be PrecMatrixCooH, except
@@ -1312,6 +1312,11 @@ Precond<PrecVector>::partBandedLU_one()
 	if (m_safeFactorization)
 		device::boostLastPivot<PrecValueType><<<1, 1>>>(dB, m_n, m_k, m_n, 0);
 
+
+	cusp::io::write_matrix_market_file(m_B, "BBB.mtx");
+
+
+
 	int gridX = m_n, gridY = 1;
 	kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
 	dim3 grids(gridX, gridY);
@@ -1319,6 +1324,10 @@ Precond<PrecVector>::partBandedLU_one()
 		device::bandLU_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_k, m_n);
 	else
 		device::bandLU_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_k, m_n);
+
+
+
+	cusp::io::write_matrix_market_file(m_B, "BBB_BBB.mtx");
 }
 
 template <typename PrecVector>
