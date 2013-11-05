@@ -366,15 +366,11 @@ void
 Precond<PrecVector>::update(const PrecVector& entries)
 {
 	// If setup function is not called at all, directly return from this function
-	if (!m_setupDone) {
-		fprintf(stderr, "The update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
-		return;
-	}
+	if (!m_setupDone)
+		throw system_error(system_error::Illegal_update, "Illegal call to update() before setup().");
 
-	if (!m_trackReordering) {
-		fprintf(stderr, "The update function is NOT called due to the fact that no reordering information is tracked during setup.\n");
-		return;
-	}
+	if (!m_trackReordering)
+		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
 
 	m_time_reorder = 0.0;
 

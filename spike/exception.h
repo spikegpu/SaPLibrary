@@ -12,7 +12,8 @@ public:
 	enum Reason
 	{
 		Zero_pivoting        = -1,
-		Negative_MC64_weight = -2
+		Negative_MC64_weight = -2,
+		Illegal_update       = -3
 	};
 
 	system_error(Reason             reason,
