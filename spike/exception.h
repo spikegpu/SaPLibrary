@@ -36,6 +36,7 @@ private:
 	Reason        m_reason;
 };
 
-}
+} // namespace spike
+
 
 #endif
