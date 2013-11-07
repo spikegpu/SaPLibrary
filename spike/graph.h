@@ -319,9 +319,9 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 		scaleMap.resize(m_nnz);
 
 		thrust::sequence(mc64RowPerm.begin(), mc64RowPerm.end());
-		cusp::blas::fill(mc64RowScale, 1.0);
-		cusp::blas::fill(mc64ColScale, 1.0);
-		cusp::blas::fill(scaleMap, 1.0);
+		cusp::blas::fill(mc64RowScale, (T) 1.0);
+		cusp::blas::fill(mc64ColScale, (T) 1.0);
+		cusp::blas::fill(scaleMap, (T) 1.0);
 	}
 
 	k_mc64 = 0;
@@ -427,7 +427,7 @@ Graph<T>::dropOff(T   frac,
 
 	// Calculate the Frobenius norm of the current matrix and the minimum
 	// norm that must be retained after drop-off.
-	T norm_in2 = std::accumulate(m_edges.begin(), m_edges.end(), 0.0, EdgeAccumulator<T>());
+	T norm_in2 = std::accumulate(m_edges.begin(), m_edges.end(), (T) 0, EdgeAccumulator<T>());
 	T min_norm_out2 = (1 - frac) * (1 - frac) * norm_in2;
 	T norm_out2 = norm_in2;
 
@@ -449,7 +449,7 @@ Graph<T>::dropOff(T   frac,
 		// Find all edges in the current band and calculate the norm of the band.
 		do {last++;} while(abs(last->m_from - last->m_to) == bandwidth);
 
-		T band_norm2 = std::accumulate(m_first, last, 0.0, EdgeAccumulator<T>());
+		T band_norm2 = std::accumulate(m_first, last, (T) 0, EdgeAccumulator<T>());
 
 		// Stop now if removing this band would reduce the norm by more than
 		// allowed.
@@ -498,8 +498,8 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 		offDiagWidths_right.resize(numPartitions-1, 0);
 
 	} else {
-		cusp::blas::fill(WV_host, 0);
-		cusp::blas::fill(offDiags_host, 0);
+		cusp::blas::fill(WV_host, (T) 0);
+		cusp::blas::fill(offDiags_host, (T) 0);
 		cusp::blas::fill(offDiagWidths_left, 0);
 		cusp::blas::fill(offDiagWidths_right, 0);
 	}
@@ -524,7 +524,7 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 	}
 
 	m_exists.resize(m_n);
-	cusp::blas::fill(m_exists, 0);
+	cusp::blas::fill(m_exists, false);
 
 	for (EdgeIterator it = first; it != m_edges.end(); ++it) {
 		int j = it->m_from;
@@ -878,7 +878,7 @@ Graph<T>::MC64(bool           scale,
 			iter->m_from = mc64RowPerm[iter->m_from];
 
 		if (m_trackReordering)
-			cusp::blas::fill(scaleMap, 1.0);
+			cusp::blas::fill(scaleMap, (T) 1.0);
 	}
 
 	return true;
@@ -903,7 +903,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	int nnz = edges.size();
 
-	IntVector	tmp_reordering(m_n);
+	IntVector tmp_reordering(m_n);
 	IntVector degrees(m_n, 0);
 
 	thrust::sequence(optReordering.begin(), optReordering.end());
@@ -923,7 +923,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 	CPUTimer timer;
 	timer.Start();
 
-	BoolVector tried(m_n, 0);
+	BoolVector tried(m_n, false);
 	tried[0] = true;
 
 	int last_tried = 0;
@@ -934,7 +934,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 		std::priority_queue<NodeType> pq;
 
 		int tmp_node;
-		BoolVector pushed(m_n, 0);
+		BoolVector pushed(m_n, false);
 
 		int left_cnt = m_n;
 		int j = 0, last = 0;
@@ -1081,11 +1081,11 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	const int MAX_NUM_TRIAL = 10;
 	const int BANDWIDTH_THRESHOLD = 128;
 
-	static BoolVector tried(m_n, 0);
+	static BoolVector tried(m_n, false);
 	if (tried.size() != m_n)
-		tried.resize(m_n, 0);
+		tried.resize(m_n, false);
 	else
-		cusp::blas::fill(tried, 0);
+		cusp::blas::fill(tried, false);
 
 	tried[node_begin] = true;
 
