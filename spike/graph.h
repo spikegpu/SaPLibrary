@@ -144,6 +144,7 @@ public:
 	                   int&             k_mc64);
 
 	int        dropOff(T   frac,
+	                   int maxBandwidth,
 	                   T&  frac_actual);
 
 	void       assembleOffDiagMatrices(int         bandwidth,
@@ -416,6 +417,7 @@ struct PermApplier
 template <typename T>
 int
 Graph<T>::dropOff(T   frac,
+                  int maxBandwidth,
                   T&  frac_actual)
 {
 	CPUTimer timer;

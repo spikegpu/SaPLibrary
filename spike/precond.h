@@ -55,6 +55,7 @@ public:
 	        bool                doMC64,
 	        bool                scale,
 	        double              dropOff_frac,
+	        int                 maxBandwidth,
 	        FactorizationMethod factMethod,
 	        PreconditionerType  precondType,
 	        bool                safeFactorization,
@@ -93,9 +94,9 @@ public:
 
 	bool   setupDone() const              {return m_setupDone;}
 
-	void update(const PrecVector& entries);
+	void   update(const PrecVector& entries);
 
-	void solve(PrecVector& v, PrecVector& z);
+	void   solve(PrecVector& v, PrecVector& z);
 
 private:
 	int                  m_numPartitions;
@@ -106,6 +107,7 @@ private:
 	bool                 m_doMC64;
 	bool                 m_scale;
 	PrecValueType        m_dropOff_frac;
+	int                  m_maxBandwidth;
 	FactorizationMethod  m_factMethod;
 	PreconditionerType   m_precondType;
 	bool                 m_safeFactorization;
@@ -245,6 +247,7 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                doMC64,
                              bool                scale,
                              double              dropOff_frac,
+                             int                 maxBandwidth,
                              FactorizationMethod factMethod,
                              PreconditionerType  precondType,
                              bool                safeFactorization,
@@ -255,6 +258,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_doMC64(doMC64),
 	m_scale(scale),
 	m_dropOff_frac((PrecValueType)dropOff_frac),
+	m_maxBandwidth(maxBandwidth),
 	m_factMethod(factMethod),
 	m_precondType(precondType),
 	m_safeFactorization(safeFactorization),
@@ -289,6 +293,7 @@ Precond<PrecVector>::Precond()
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
+	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -328,6 +333,7 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
+	m_maxBandwidth      = prec.m_maxBandwidth;
 	m_factMethod        = prec.m_factMethod;
 	m_precondType       = prec.m_precondType;
 	m_safeFactorization = prec.m_safeFactorization;
@@ -345,6 +351,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
+	m_maxBandwidth      = prec.m_maxBandwidth;
 	m_factMethod        = prec.m_factMethod;
 	m_precondType       = prec.m_precondType;
 	m_safeFactorization = prec.m_safeFactorization;
@@ -905,7 +912,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	int dropped = 0;
 
 	if (m_dropOff_frac > 0)
-		dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual);
+		dropped = graph.dropOff(m_dropOff_frac, m_maxBandwidth, m_dropOff_actual);
 	else
 		m_dropOff_actual = 0;
 
