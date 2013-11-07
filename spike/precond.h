@@ -906,12 +906,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	
 	int dropped = 0;
 
-	if (m_dropOff_frac > 0) {
-		if (!m_variableBandwidth)
-			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual);
-		else
-			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual, dropMin);
-	}
+	if (m_dropOff_frac > 0)
+		dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual);
 	else
 		m_dropOff_actual = 0;
 
@@ -930,11 +926,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	// If there is just one partition, force using constant bandwidth method.
 	if (m_numPartitions == 1 || m_k == 0)
 		m_variableBandwidth = false;
-
-	if (m_dropOff_frac > 0) {
-		if (m_variableBandwidth)
-			graph.dropOffPost(m_dropOff_frac, m_dropOff_actual, dropMin, m_numPartitions);
-	}
 
 
 	// Assemble the banded matrix.

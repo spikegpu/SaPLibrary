@@ -143,15 +143,8 @@ public:
 	                   MatrixMapF&      scaleMap,
 	                   int&             k_mc64);
 
-	int        dropOff(double   frac,
-	                   double&  frac_actual);
-	int        dropOff(double   frac,
-	                   double&  frac_actual,
-	                   double   dropMin);
-	void	   dropOffPost(double   frac,
-	                       double&  frac_actual,
-	                       double   dropMin,
-	                       int      numPartitions);
+	int        dropOff(T   frac,
+	                   T&  frac_actual);
 
 	void       assembleOffDiagMatrices(int         bandwidth,
 	                                   int         numPartitions,
@@ -422,8 +415,8 @@ struct PermApplier
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::dropOff(double   frac,
-                  double&  frac_actual)
+Graph<T>::dropOff(T   frac,
+                  T&  frac_actual)
 {
 	CPUTimer timer;
 	timer.Start();
@@ -477,158 +470,6 @@ Graph<T>::dropOff(double   frac,
 	return dropped;
 }
 
-// ----------------------------------------------------------------------------
-// Graph::dropOff()
-//
-// This function is similar with the one which specifies the maximum fraction
-// to drop off, but differs in the fact that it only drops elements no larger
-// than the parameter ``dropMin''. In the current version, this function is 
-// only used in the drop-off with varying bandwidth method.
-// ----------------------------------------------------------------------------
-template <typename T>
-int
-Graph<T>::dropOff(double   frac,
-                  double&  frac_actual,
-                  double   dropMin)
-{
-	CPUTimer timer;
-	timer.Start();
-
-	// Sort the edges in *decreasing* order of their length (the difference
-	// between the indices of their adjacent nodes).
-	std::sort(m_edges.begin(), m_edges.end(), EdgeComparator<T>());
-
-	// Calculate the Frobenius norm of the current matrix and the minimum
-	// norm that must be retained after drop-off.
-	T norm_in2 = std::accumulate(m_edges.begin(), m_edges.end(), 0.0, EdgeAccumulator<T>());
-	T min_norm_out2 = (1 - frac) * (1 - frac) * norm_in2;
-	T norm_out2 = norm_in2;
-
-	// Walk all edges and accumulate the weigth of one band at a time.
-	// Continue until we are left with the main diagonal only or until the weight
-	// of all proccessed bands exceeds the allowable drop off.
-	int           dropped = 0;
-	EdgeIterator  last = m_edges.begin();
-	m_first = last;
-	bool failed = false;
-
-	while (true) {
-		// Current band
-		int bandwidth = abs(m_first->m_from - m_first->m_to);
-
-		// Stop now if we reached the main diagonal.
-		if (bandwidth == 0)
-			break;
-
-		// Find all edges in the current band and calculate the norm of the band.
-		while(abs(last->m_from - last->m_to) == bandwidth) {
-			if (last->m_val > dropMin || last->m_val < -dropMin) {
-				failed = true;
-				break;
-			}
-			last ++;
-		}
-
-		if (failed)
-			break;
-
-		T band_norm2 = std::accumulate(m_first, last, 0.0, EdgeAccumulator<T>());
-
-		// Stop now if removing this band would reduce the norm by more than
-		// allowed.
-		if (norm_out2 - band_norm2 < min_norm_out2)
-			break;
-
-		// Remove the norm of this band and move to the next one.
-		norm_out2 -= band_norm2;
-		m_first = last;
-		dropped++;
-	}
-
-
-	timer.Stop();
-	m_timeDropoff = timer.getElapsed();
-
-	// Calculate the actual norm reduction fraction.
-	frac_actual = 1 - sqrt(norm_out2/norm_in2);
-	return dropped;
-}
-
-// ----------------------------------------------------------------------------
-// Graph::dropOffPost()
-//
-// (Working for second-stage reordering only) This function drops more element
-// inside the envelop, in the hope that the half-bandwidth can be reduced further
-// with second-stage reordering.
-// ----------------------------------------------------------------------------
-template <typename T>
-void
-Graph<T>::dropOffPost(double   frac,
-                      double&  frac_actual,
-                      double   dropMin,
-                      int      numPartitions)
-{
-	CPUTimer timer;
-	timer.Start();
-
-	// Calculate the Frobenius norm of the current matrix and the minimum
-	// norm that must be retained after drop-off.
-	T norm_in2 = std::accumulate(m_edges.begin(), m_edges.end(), 0.0, EdgeAccumulator<T>());
-	T min_norm_out2 = (1 - frac) * (1 - frac) * norm_in2;
-	T norm_out2 = (1 - frac_actual) * (1 - frac_actual) * norm_in2;
-
-	EdgeVector remained_edges;
-	int partSize = m_n / numPartitions;
-	int remainder = m_n % numPartitions;
-
-	for (; m_first != m_edges.end(); m_first++) {
-		int bandwidth = abs(m_first->m_from - m_first->m_to);
-
-		if (bandwidth == 0) {
-			for (; m_first != m_edges.end(); m_first++)
-				remained_edges.push_back(*m_first);
-			break;
-		}
-
-		if (m_first->m_val > dropMin || m_first->m_val < -dropMin) {
-			remained_edges.push_back(*m_first);
-			continue;
-		}
-
-		int j = m_first->m_from;
-		int l = m_first->m_to;
-		int curPartNum = l / (partSize + 1);
-		if (curPartNum >= remainder)
-			curPartNum = remainder + (l-remainder * (partSize + 1)) / partSize;
-
-		int curPartNum2 = j / (partSize + 1);
-		if (curPartNum2 >= remainder)
-			curPartNum2 = remainder + (j-remainder * (partSize + 1)) / partSize;
-
-		if (curPartNum != curPartNum2) {
-			remained_edges.push_back(*m_first);
-			continue;
-		}
-
-		T tmp_norm2 = m_first->m_val * m_first->m_val;
-
-		if (norm_out2 - tmp_norm2 < min_norm_out2) {
-			for (; m_first != m_edges.end(); m_first++)
-				remained_edges.push_back(*m_first);
-			break;
-		}
-
-		norm_out2 -= tmp_norm2;
-	}
-
-	m_edges = remained_edges;
-
-	timer.Stop();
-	m_timeDropoff += timer.getElapsed();
-
-	m_first = m_edges.begin();
-	frac_actual = 1 - sqrt(norm_out2/norm_in2);
-}
 
 // ----------------------------------------------------------------------------
 // Graph::assembleOffDiagMatrices()
