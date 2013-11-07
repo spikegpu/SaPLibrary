@@ -7,6 +7,7 @@
 #define FACTOR_BAND_VAR_H
 
 #include <cuda.h>
+#include <spike/common.h>
 
 
 namespace spike {
@@ -76,7 +77,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 
@@ -91,7 +92,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	for(int i=1; i<last_row-k; i++) {
 		offset += (k<<1)+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -106,7 +107,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 		if(r >= i || c >= i) return ;
 		offset += (k<<1) + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -204,7 +205,7 @@ bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 
@@ -224,7 +225,7 @@ bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	for(int i=1; i<last_row-k; i++) {
 		offset += two_k+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
@@ -246,7 +247,7 @@ bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 		if(tid >= i_minus_1_square) return;
 		offset += two_k + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < i_minus_1; ttid+=blockDim.x) {
@@ -311,7 +312,7 @@ bandLU_critical_div_safe_general(T *dA, int start_row, int *ks, int *offsets, in
 	}
 	__shared__ T sharedA;
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 	for(;r<=last; r+=blockDim.x)
@@ -397,7 +398,7 @@ fullLU_div_safe(T *dA, int *ks, int *offsets, int cur_row)
 	int offset = offsets[bid] + cur_row * partition_size + cur_row;
 	__shared__ T sharedA;
 	if(tid == 0) {
-		sharedA = boostValue(dA[offset], dA[offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 	dA[tid + 1 + offset] /= sharedA;
@@ -437,7 +438,7 @@ fullLU_div_safe_general(T *dA, int *ks, int *offsets, int cur_row)
 
 	__shared__ T sharedA;
 	if(tid == 0)
-		sharedA = boostValue(dA[offset], dA[offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	__syncthreads();
 	for(;tid<it_last;tid+=blockDim.x)
 		dA[tid + 1 + offset] /= sharedA;
@@ -544,7 +545,7 @@ boostLastPivot(T *dA, int start_row, int *ks, int *offsets, int partition_size, 
 		start_row--;
 		offset += start_row * ((k<<1) + 1);
 	}
-	boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+	boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 }
 
 

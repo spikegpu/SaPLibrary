@@ -15,8 +15,6 @@
 // Macro to obtain a random number between two specified values
 // -----------------------------------------------------------------------------
 #define RAND(L,H)  ((L) + ((H)-(L)) * (float)rand()/(float)RAND_MAX)
-#define MAX(A,B)   (((A) > (B)) ? (A) : (B))
-#define MIN(A,B)   (((A) < (B)) ? (A) : (B))
 
 
 // -----------------------------------------------------------------------------
@@ -427,8 +425,8 @@ GetBandedMatrix(int N, int k, REAL d, Matrix& A)
 
 	int iiz = 0;
 	for (int ir = 0; ir < N; ir++) {
-		int left = MAX(0, ir - k);
-		int right = MIN(N - 1, ir + k);
+		int left = std::max(0, ir - k);
+		int right = std::min(N - 1, ir + k);
 
 		REAL row_sum = 0;
 		int  diag_iiz;

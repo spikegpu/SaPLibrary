@@ -22,6 +22,8 @@
 #include <spike/common.h>
 #include <spike/timer.h>
 
+#include <spike/exception.h>
+
 namespace spike {
 
 
@@ -131,6 +133,7 @@ public:
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
 	int        reorder(const MatrixCoo& Acoo,
+	                   bool             doMC64,
 	                   bool             scale,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
@@ -138,7 +141,7 @@ public:
 	                   Vector&          mc64RowScale,
 	                   Vector&          mc64ColScale,
 	                   MatrixMapF&      scaleMap,
-					   int&             k_mc64);
+	                   int&             k_mc64);
 
 	int        dropOff(double   frac,
 	                   double&  frac_actual);
@@ -282,6 +285,7 @@ Graph<T>::Graph(bool trackReordering)
 template <typename T>
 int
 Graph<T>::reorder(const MatrixCoo&  Acoo,
+                  bool              doMC64,
                   bool              scale,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
@@ -289,7 +293,7 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
                   Vector&           mc64RowScale,
                   Vector&           mc64ColScale,
                   MatrixMapF&       scaleMap,
-				  int&              k_mc64)
+                  int&              k_mc64)
 {
 	m_n = Acoo.num_rows;
 	m_nnz = Acoo.num_entries;
@@ -309,22 +313,32 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	//
 	// TODO:  how can we check if the precision of Vector is already
 	//        double, so that we can save extra copies.
-	if (m_trackReordering)
+	if (doMC64) {
+		DoubleVector  mc64RowScaleD;
+		DoubleVector  mc64ColScaleD;
+		MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+		mc64RowScale = mc64RowScaleD;
+		mc64ColScale = mc64ColScaleD;
+	} else {
+		mc64RowScale.resize(m_n);
+		mc64ColScale.resize(m_n);
+		mc64RowPerm.resize(m_n);
 		scaleMap.resize(m_nnz);
 
-	DoubleVector  mc64RowScaleD;
-	DoubleVector  mc64ColScaleD;
-	MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
-	mc64RowScale = mc64RowScaleD;
-	mc64ColScale = mc64ColScaleD;
+		thrust::sequence(mc64RowPerm.begin(), mc64RowPerm.end());
+		cusp::blas::fill(mc64RowScale, 1.0);
+		cusp::blas::fill(mc64ColScale, 1.0);
+		cusp::blas::fill(scaleMap, 1.0);
+	}
 
 	k_mc64 = 0;
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
 		if (k_mc64 < abs(edgeIt->m_from - edgeIt->m_to))
 			k_mc64 = abs(edgeIt->m_from - edgeIt->m_to);
+	
+
 
 	// Apply reverse Cuthill-McKee algorithm.
-	// int bandwidth = RCM(m_edges, optReordering, optPerm);
 	int bandwidth = RCM(m_edges, optReordering, optPerm);
 
 	// Initialize the iterator m_first (in case dropOff() is not called).
@@ -837,6 +851,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	// Drop all edges from begin() to 'first'; i.e., keep all edges from
 	// 'first' to end().
 	B.resize((2 * bandwidth + 1) * m_n);
+
 	ks_col.resize(m_n);
 	ks_row.resize(m_n);
 	cusp::blas::fill(ks_col, 0);
@@ -919,14 +934,14 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			ks[curPartNum] = abs(l-j);
 	}
 
-	for (int i=1; i < numPartitions; i++) {
-		if (i <= remainder)
-			BOffsets[i] = BOffsets[i-1] + (partSize + 1) * (2 * ks[i-1] + 1);
+	for (int i=0; i < numPartitions; i++) {
+		if (i < remainder)
+			BOffsets[i+1] = BOffsets[i] + (partSize + 1) * (2 * ks[i] + 1);
 		else
-			BOffsets[i] = BOffsets[i-1] + (partSize) * (2 * ks[i-1] + 1);
+			BOffsets[i+1] = BOffsets[i] + (partSize) * (2 * ks[i] + 1);
 	}
 
-	B.resize(BOffsets[numPartitions-1] + (2*ks[numPartitions-1]+1)*partSize);
+	B.resize(BOffsets[numPartitions]);
 
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
@@ -1004,6 +1019,9 @@ Graph<T>::MC64(bool           scale,
 {
 	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
 
+	if (m_trackReordering)
+		scaleMap.resize(m_nnz);
+
 	if (scale) {
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
 			int from = iter->m_from;
@@ -1015,11 +1033,11 @@ Graph<T>::MC64(bool           scale,
 			iter->m_from = mc64RowPerm[from];
 		}
 	} else {
-		if (m_trackReordering)
-			cusp::blas::fill(scaleMap, 1.0);
-
 		for(EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++)
 			iter->m_from = mc64RowPerm[iter->m_from];
+
+		if (m_trackReordering)
+			cusp::blas::fill(scaleMap, 1.0);
 	}
 
 	return true;
@@ -1069,7 +1087,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	int last_tried = 0;
 
-	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL || bandwidth >= BANDWIDTH_MIN_REQUIRED; trial_num++)
+	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL || (bandwidth >= BANDWIDTH_MIN_REQUIRED && trial_num < 10*MAX_NUM_TRIAL); trial_num++)
 	{
 		std::queue<int> q;
 		std::priority_queue<NodeType> pq;
@@ -1581,10 +1599,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 			if(inB[cur_row]) continue;
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
 			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
-			if (reduced_cval + 1e-10 < 0) {
-				fprintf(stderr, "Hmmmmmmmm... reduced_val = %g\n", reduced_cval);
-				exit(-1);
-			}
+			if (reduced_cval + 1e-10 < 0)
+				throw system_error(system_error::Negative_MC64_weight, "Negative reduced weight in MC64.");
 			double d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
 				if(!matched[cur_row]) {

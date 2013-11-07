@@ -45,11 +45,13 @@ SET(SPIKE_HEADERS
 	../../spike/bicgstab2.h
 	../../spike/common.h
 	../../spike/components.h
+	../../spike/exception.h
 	../../spike/graph.h
 	../../spike/monitor.h
 	../../spike/precond.h
 	../../spike/solver.h
 	../../spike/spmv.h
+	../../spike/strided_range.h
 	../../spike/timer.h
 )
 

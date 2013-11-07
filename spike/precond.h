@@ -4,9 +4,13 @@
 #include <cusp/blas.h>
 #include <cusp/print.h>
 
+#include <thrust/logical.h>
+#include <thrust/functional.h>
+
 #include <spike/common.h>
 #include <spike/graph.h>
 #include <spike/timer.h>
+#include <spike/strided_range.h>
 #include <spike/device/factor_band_const.cuh>
 #include <spike/device/factor_band_var.cuh>
 #include <spike/device/sweep_band_const.cuh>
@@ -18,19 +22,18 @@
 #include <omp.h>
 
 
-#define MAX(A,B)   (((A) > (B)) ? (A) : (B))
-#define MIN(A,B)   (((A) < (B)) ? (A) : (B))
-
 namespace spike {
 
 /**
  * This class encapsulates the truncated Spike preconditioner.
  */
 template <typename PrecVector>
-class Precond {
+class Precond
+{
 public:
 	typedef typename PrecVector::memory_space  MemorySpace;
 	typedef typename PrecVector::value_type    PrecValueType;
+	typedef typename PrecVector::iterator      PrecVectorIterator;
 
 	typedef typename cusp::array1d<int, MemorySpace>                  IntVector;
 	typedef IntVector                                                 MatrixMap;
@@ -49,6 +52,7 @@ public:
 
 	Precond(int                 numPart,
 	        bool                reorder,
+	        bool                doMC64,
 	        bool                scale,
 	        double              dropOff_frac,
 	        FactorizationMethod factMethod,
@@ -78,6 +82,7 @@ public:
 	int    getBandwidthMC64() const       {return m_k_mc64;}
 	int    getBandwidth() const           {return m_k;}
 
+	int    getNumPartitions() const       {return m_numPartitions;}
 	double getActualDropOff() const       {return m_dropOff_actual;}
 
 	//// NOTE:  Matrix here will usually be PrecMatrixCooH, except
@@ -98,6 +103,7 @@ private:
 	int                  m_k;
 
 	bool                 m_reorder;
+	bool                 m_doMC64;
 	bool                 m_scale;
 	double               m_dropOff_frac;
 	FactorizationMethod  m_factMethod;
@@ -203,10 +209,10 @@ private:
 	void calculateSpikes_const(PrecVector& WV);
 	void calculateSpikes_var(PrecVector& WV);
 	void calculateSpikes_var_old(PrecVector& WV);
+	void calculateSpikes(PrecVector& B2, PrecVector& WV);
 
 	int adjustNumThreads(int inNumThreads);
 
-	void calculateSpikes(PrecVector& B2, PrecVector& WV);
 
 	void assembleReducedMat(PrecVector& WV);
 
@@ -220,6 +226,12 @@ private:
 
 	void combinePermutation(IntVector& perm, IntVector& perm2, IntVector& finalPerm);
 	void getSRev(PrecVector& rhs, PrecVector& sol);
+
+
+	bool hasZeroPivots(const PrecVectorIterator& start_B,
+	                   const PrecVectorIterator& end_B,
+	                   int                       k,
+	                   PrecValueType             threshold);
 };
 
 
@@ -230,6 +242,7 @@ private:
 template <typename PrecVector>
 Precond<PrecVector>::Precond(int                 numPart,
                              bool                reorder,
+                             bool                doMC64,
                              bool                scale,
                              double              dropOff_frac,
                              FactorizationMethod factMethod,
@@ -239,6 +252,7 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                trackReordering)
 :	m_numPartitions(numPart),
 	m_reorder(reorder),
+	m_doMC64(doMC64),
 	m_scale(scale),
 	m_dropOff_frac(dropOff_frac),
 	m_factMethod(factMethod),
@@ -269,6 +283,9 @@ Precond<PrecVector>::Precond(int                 numPart,
 template <typename PrecVector>
 Precond<PrecVector>::Precond()
 :	m_setupDone(false),
+	m_reorder(false),
+	m_doMC64(false),
+	m_scale(false),
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
@@ -307,7 +324,8 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
-	m_reorder           = prec.m_reorder;;
+	m_reorder           = prec.m_reorder;
+	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
 	m_factMethod        = prec.m_factMethod;
@@ -323,7 +341,8 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
-	m_reorder           = prec.m_reorder;;
+	m_reorder           = prec.m_reorder;
+	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
 	m_factMethod        = prec.m_factMethod;
@@ -359,15 +378,11 @@ void
 Precond<PrecVector>::update(const PrecVector& entries)
 {
 	// If setup function is not called at all, directly return from this function
-	if (!m_setupDone) {
-		fprintf(stderr, "The update function is NOT called due to the fact that this preconditioner has not been set up yet.\n");
-		return;
-	}
+	if (!m_setupDone)
+		throw system_error(system_error::Illegal_update, "Illegal call to update() before setup().");
 
-	if (!m_trackReordering) {
-		fprintf(stderr, "The update function is NOT called due to the fact that no reordering information is tracked during setup.\n");
-		return;
-	}
+	if (!m_trackReordering)
+		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
 
 	m_time_reorder = 0.0;
 
@@ -644,8 +659,6 @@ Precond<PrecVector>::setup(const Matrix&  A)
 	partFullLU();
 	m_timer.Stop();
 	m_time_fullLU = m_timer.getElapsed();
-
-	////cusp::io::write_matrix_market_file(m_R, "R_lu.mtx");
 }
 
 /**
@@ -886,7 +899,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acoo, m_doMC64, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_reorder += reorder_timer.getElapsed();
@@ -911,22 +924,12 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	// the following condition must be satisfied:
 	//   K+1 <= n   (for Spike algorithm)
 	// These imply a maximum allowable number of partitions.
-	int maxNumPartitions = MAX(m_n / (m_k + 1), 1);
+	int maxNumPartitions = std::max(m_n / (m_k + 1), 1);
+	m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
 
-	if (m_numPartitions > maxNumPartitions) {
-		std::cerr << "P = " << m_numPartitions << " is too large for N = "
-			<< m_n << " and K = " << m_k << std::endl
-			<< "The number of partitions was reset to P = " << maxNumPartitions << std::endl;
-		m_numPartitions = maxNumPartitions;
-	}
-
-	// If there is just one partition, do not use variable band and
-	// second stage reordering.
-	if (m_numPartitions == 1 || m_k == 0) {
-		if (m_variableBandwidth)
-			std::cerr << "A single partition is used or the half-bandwidth is zero. Variable-band option was disabled." << std::endl;
+	// If there is just one partition, force using constant bandwidth method.
+	if (m_numPartitions == 1 || m_k == 0)
 		m_variableBandwidth = false;
-	}
 
 	if (m_dropOff_frac > 0) {
 		if (m_variableBandwidth)
@@ -969,6 +972,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_mc64RowScale = mc64RowScale;
 		m_mc64ColScale = mc64ColScale;
 	}
+
 	m_B = B;
 
 	if (m_variableBandwidth) {
@@ -1053,21 +1057,12 @@ Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A)
 	//   (1)  K+1 <= n   (for Spike algorithm)
 	//   (2)  2*K <= n   (for current implementation of UL)
 	// These imply a maximum allowable number of partitions.
-	int  maxNumPartitions = MAX(1, m_n / MAX(m_k + 1, 2 * m_k));
-	if (m_numPartitions > maxNumPartitions) {
-		std::cerr << "P = " << m_numPartitions << " is too large for N = "
-		          << m_n << " and K = " << m_k << std::endl
-		          << "The number of partitions was reset to P = " << maxNumPartitions << std::endl;
-		m_numPartitions = maxNumPartitions;
-	}
+	int  maxNumPartitions = std::max(1, m_n / std::max(m_k + 1, 2 * m_k));
+	m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
 
-	// If there is just one partition, revert to using constant-bandwidth method.
-	if (m_numPartitions == 1) {
-		if (m_variableBandwidth) {
-			std::cerr << "Using a single partition: revert to constant-bandwidth method." << std::endl;
-			m_variableBandwidth = false;
-		}
-	}
+	// If there is just one partition, force using constant-bandwidth method.
+	if (m_numPartitions == 1)
+		m_variableBandwidth = false;
 
 	// Set the size and load the banded matrix into m_B.
 	m_B.resize((2*m_k+1)*n);
@@ -1265,20 +1260,26 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::partBandedLU()
 {
-	if (!m_variableBandwidth) {
+	if (m_variableBandwidth) {
+		// Variable bandwidth method. Note that in this situation, there
+		// must be more than one partition.
+		partBandedLU_var();
+	} else {
+		// Constant bandwidth method.
 		if (m_numPartitions > 1)
 			partBandedLU_const();
 		else
 			partBandedLU_one();
 	}
-	else
-		partBandedLU_var();
 }
 
 template <typename PrecVector>
 void
 Precond<PrecVector>::partBandedLU_one()
 {
+	// As the name implies, this function can only be called if we arte using a single
+	// partition. In this case, the entire banded matrix m_B is LU factorized.
+
 	PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
 
 	if (m_ks_col_host.size() < m_n)
@@ -1326,8 +1327,16 @@ Precond<PrecVector>::partBandedLU_one()
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
 	}
 
+
 	if (m_safeFactorization)
 		device::boostLastPivot<PrecValueType><<<1, 1>>>(dB, m_n, m_k, m_n, 0);
+
+
+	// If not using safe factorization, check the factorized banded matrix for any
+	// zeros on its diagonal (this means a zero pivot).
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, (PrecValueType) BURST_VALUE))
+		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_one).");
+
 
 	int gridX = m_n, gridY = 1;
 	kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
@@ -1342,6 +1351,11 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::partBandedLU_const()
 {
+	// Note that this function is called only if there are two or more partitions.
+	// Moreover, if the factorization method is LU_only, all diagonal blocks in
+	// each partition are LU factorized. If the method is LU_UL, then the diagonal
+	// block in the last partition is *not* factorized.
+
 	PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
 
 	int n_eff = m_n;
@@ -1417,6 +1431,14 @@ Precond<PrecVector>::partBandedLU_const()
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
 	}
 
+
+	// If not using safe factorization, check the factorized banded matrix for any
+	// zeros on its diagonal (this means a zero pivot). Note that we must only check
+	// the diagonal blocks corresponding to the partitions for which LU was applied.
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, (PrecValueType) BURST_VALUE))
+		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_const).");
+
+
 	if (m_numPartitions == 1) {
 		int  gridX = m_n;
 		int  gridY = 1;
@@ -1434,6 +1456,10 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::partBandedLU_var()
 {
+	// Note that this function can only be called if there are two or more partitions.
+	// Also, in this case, the factorization method is LU_only which implies that all
+	// partitions are LU factorized.
+
 	PrecValueType* dB         = thrust::raw_pointer_cast(&m_B[0]);
 	int*           p_ks       = thrust::raw_pointer_cast(&m_ks[0]);
 	int*           p_BOffsets = thrust::raw_pointer_cast(&m_BOffsets[0]);
@@ -1511,8 +1537,20 @@ Precond<PrecVector>::partBandedLU_var()
 			device::var::bandLU<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k>>>(dB, p_ks, p_BOffsets, partSize, remainder);
 	}
 
+
 	if (m_safeFactorization)
 		device::var::boostLastPivot<PrecValueType><<<m_numPartitions, 1>>>(dB, partSize, p_ks, p_BOffsets, partSize, remainder);
+
+
+	// If not using safe factorization, check for zero pivots in the factorized banded
+	// matrix, one partition at a time.
+	if (!m_safeFactorization) {
+		for (int i = 0; i < m_numPartitions; i++) {
+			if (hasZeroPivots(m_B.begin() + m_BOffsets_host[i], m_B.begin() + m_BOffsets_host[i+1], m_ks_host[i], (PrecValueType) BURST_VALUE))
+				throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_var).");
+		}
+	}
+
 
 	int gridX = partSize+1;
 	int gridY = 1;
@@ -1544,22 +1582,30 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::partBandedUL(PrecVector& B)
 {
+	// Note that this function can only be called if using the constant band
+	// method and there are two or more partitions.
+	// In any other situation, we use LU only factorization.
+	// This means that the diagonal block for the first partition is never
+	// UL factorized.
+
+
 	int partSize  = m_n / m_numPartitions;
 	int remainder = m_n % m_numPartitions;
+	int n_first = (remainder == 0 ? partSize : (partSize + 1));
 
-	PrecValueType* dB = thrust::raw_pointer_cast(&B[(2 * m_k + 1) * (remainder == 0 ? partSize : (partSize + 1))]);
+	PrecValueType* dB = thrust::raw_pointer_cast(&B[(2 * m_k + 1) * n_first]);
 
-	int n_eff = m_n - (remainder == 0 ? partSize : (partSize+1));
+	int n_eff = m_n - n_first;
 	int numPart_eff = m_numPartitions - 1;
 
 	partSize = n_eff / numPart_eff;
 	remainder = n_eff % numPart_eff;
 
 	if(m_k >= CRITICAL_THRESHOLD) {
-		int final_partition_size = partSize + 1;
+		int n_final = partSize + 1;
 		int threadsNum = 0;
-		for (int st_row = final_partition_size - 1; st_row > 0; st_row--) {
-			if (st_row == final_partition_size - 1) {
+		for (int st_row = n_final - 1; st_row > 0; st_row--) {
+			if (st_row == n_final - 1) {
 				if (remainder == 0) continue;
 				threadsNum = m_k;
 				if(st_row < m_k)
@@ -1610,6 +1656,12 @@ Precond<PrecVector>::partBandedUL(PrecVector& B)
 			device::bandUL<PrecValueType><<<numPart_eff, m_k * m_k>>>(dB, m_k, partSize, remainder);
 			////device::swBandUL<PrecValueType><<<numPart_eff, m_k * m_k>>>(dB, m_k, partSize, remainder);
 	}
+
+
+	// If not using safe factorization, check for zero pivots in the factorized
+	// banded matrix.
+	if (!m_safeFactorization && hasZeroPivots(B.begin() + (2 * m_k + 1) * n_first, B.end(), m_k, (PrecValueType) BURST_VALUE))
+		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedUL).");
 }
 
 
@@ -1886,15 +1938,18 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::calculateSpikes(PrecVector&  WV)
 {
-	if (!m_variableBandwidth)
+	if (!m_variableBandwidth) {
 		calculateSpikes_const(WV);
-	else {
-		int totalRHSCount = cusp::blas::nrm1(m_offDiagWidths_right_host) + cusp::blas::nrm1(m_offDiagWidths_left_host);
-		if (totalRHSCount >= 2800)
-			calculateSpikes_var(WV);
-		else
-			calculateSpikes_var_old(WV);
+		return;
 	}
+
+	int totalRHSCount = cusp::blas::nrm1(m_offDiagWidths_right_host) + cusp::blas::nrm1(m_offDiagWidths_left_host);
+	if (totalRHSCount >= 2800) {
+		calculateSpikes_var(WV);
+		return;
+	}
+
+	calculateSpikes_var_old(WV);
 }
 
 template <typename PrecVector>
@@ -2349,10 +2404,10 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  B2,
 
 	dim3 gridsCompress(two_k, m_numPartitions-1);
 
-		if (m_k > 511)
-			device::copydAtodA2_general<PrecValueType><<<gridsCompress, 1024>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
-		else
-			device::copydAtodA2<PrecValueType><<<gridsCompress, two_k+1>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
+	if (m_k > 511)
+		device::copydAtodA2_general<PrecValueType><<<gridsCompress, 1024>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
+	else
+		device::copydAtodA2<PrecValueType><<<gridsCompress, two_k+1>>>(m_n, m_k, p_B2, p_compB2, two_k, partSize, m_numPartitions, remainder);
 
 	// Combine 'B' and 'compB2' into 'partialB'.
 	PrecVector partialB(2*(two_k+1)*(m_k+1)*(m_numPartitions-1));
@@ -2431,6 +2486,41 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::copyLastPartition(PrecVector &B2) {
 	thrust::copy(B2.begin()+(2*m_k+1) * (m_n - m_n / m_numPartitions), B2.end(), m_B.begin()+(2*m_k+1) * (m_n - m_n / m_numPartitions) );
+}
+
+
+/**
+ * This function checks the diagonal of the specified banded matrix for any 
+ * elements that are smaller in absolute value than a threshold value
+ */
+template <typename T>
+struct zero_functor : thrust::unary_function<T, bool> 
+{
+	zero_functor(T threshold) : m_threshold(threshold) {}
+
+	__host__ __device__
+	bool operator()(T val) {return abs(val) < m_threshold;}
+
+	T  m_threshold;
+};
+
+
+template <typename PrecVector>
+bool
+Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
+                                   const PrecVectorIterator&    end_B,
+                                   int                          k,
+                                   PrecValueType                threshold)
+{
+	// Create a strided range to select the main diagonal
+	strided_range<typename PrecVector::iterator> diag(start_B + k, end_B, 2*k + 1);
+
+	////std::cout << std::endl;
+	////thrust::copy(diag.begin(), diag.end(), std::ostream_iterator<PrecValueType>(std::cout, " "));
+	////std::cout << std::endl;
+
+	// Check if any of the diagonal elements is within the specified threshold
+	return thrust::any_of(diag.begin(), diag.end(), zero_functor<PrecValueType>(threshold));
 }
 
 

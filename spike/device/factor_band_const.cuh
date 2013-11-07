@@ -7,8 +7,7 @@
 #define FACTOR_BAND_CONST_H
 
 #include <cuda.h>
-#define BURST_VALUE ((T)(1e-7))
-#define BURST_NEW_VALUE ((T)(1e-4))
+#include <spike/common.h>
 
 
 namespace spike {
@@ -168,10 +167,10 @@ bandLU_safe(T *dA, int k, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		//sharedA = dA[k+offset];
 		//if (sharedA == 0.0)
-			//sharedA = dA[k+offset] = BURST_VALUE;
+			//sharedA = dA[k+offset] = (T)BURST_VALUE;
 	}
 	__syncthreads();
 
@@ -186,10 +185,10 @@ bandLU_safe(T *dA, int k, int partition_size, int rest_num)
 	for(int i=1; i<last_row-k; i++) {
 		offset += (k<<1)+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -204,10 +203,10 @@ bandLU_safe(T *dA, int k, int partition_size, int rest_num)
 		if(r >= i || c >= i) return ;
 		offset += (k<<1) + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -318,10 +317,10 @@ bandLU_g32_safe(T *dA, int k, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		//sharedA = dA[k+offset];
 		//if (sharedA == 0.0)
-			//sharedA = dA[k+offset] = BURST_VALUE;
+			//sharedA = dA[k+offset] = (T)BURST_VALUE;
 	}
 	__syncthreads();
 
@@ -342,10 +341,10 @@ bandLU_g32_safe(T *dA, int k, int partition_size, int rest_num)
 		offset += two_k+1;
 		//k_offset_sum += two_k+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
@@ -367,10 +366,10 @@ bandLU_g32_safe(T *dA, int k, int partition_size, int rest_num)
 		if(tid >= i_minus_1_square) return;
 		offset += two_k + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < i_minus_1; ttid+=blockDim.x) {
@@ -477,10 +476,10 @@ bandUL_g32_safe(T *dA, int k, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		//sharedA = dA[k+offset];
 		//if (sharedA == 0.0)
-			//sharedA = dA[k+offset] = BURST_VALUE;
+			//sharedA = dA[k+offset] = (T)BURST_VALUE;
 	}
 	__syncthreads();
 
@@ -499,10 +498,10 @@ bandUL_g32_safe(T *dA, int k, int partition_size, int rest_num)
 	for(int i=1; i<last_row-k; i++) {
 		offset -= two_k+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
@@ -524,10 +523,10 @@ bandUL_g32_safe(T *dA, int k, int partition_size, int rest_num)
 
 		offset -= two_k + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < i_minus_1; ttid+=blockDim.x) {
@@ -679,10 +678,10 @@ bandUL_safe(T *dA, int k, int partition_size, int rest_num)
 
 	__shared__ T sharedA;
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		//sharedA = dA[k+offset];
 		//if (sharedA == 0.0)
-			//sharedA = dA[k+offset] = BURST_VALUE;
+			//sharedA = dA[k+offset] = (T)BURST_VALUE;
 	}
 	__syncthreads();
 
@@ -698,9 +697,9 @@ bandUL_safe(T *dA, int k, int partition_size, int rest_num)
 		offset -= two_k+1;
 		if (threadIdx.x == 0) {
 			//sharedA = dA[k+offset];
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -715,10 +714,10 @@ bandUL_safe(T *dA, int k, int partition_size, int rest_num)
 		if(r >= i || c >= i) return ;
 		offset -= two_k + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 			//sharedA = dA[k+offset];
 			//if (sharedA == 0.0)
-				//sharedA = dA[k+offset] = BURST_VALUE;
+				//sharedA = dA[k+offset] = (T)BURST_VALUE;
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -770,10 +769,10 @@ bandLU_critical_div_safe(T *dA, int start_row, int k, int partition_size, int re
 
 	__shared__ T sharedA;
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		//sharedA = dA[k+offset];
 		//if (sharedA == 0.0)
-			//sharedA = dA[k+offset] = BURST_VALUE;
+			//sharedA = dA[k+offset] = (T)BURST_VALUE;
 	}
 	__syncthreads();
 	dA[r+k+offset] /= sharedA;
@@ -787,7 +786,7 @@ bandLU_critical_div_onePart_safe(T *dA, int start_row, int k) {
 
 	__shared__ T sharedA;
 	if (threadIdx.x == 0)
-		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	__syncthreads();
 
 	dA[r+pivotIdx] /= sharedA;
@@ -874,10 +873,10 @@ bandLU_critical_div_safe_general(T *dA, int start_row, int k, int partition_size
 	}
 	__shared__ T sharedA;
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		//sharedA = dA[k+offset];
 		//if (sharedA == 0.0)
-			//sharedA = dA[k+offset] = BURST_VALUE;
+			//sharedA = dA[k+offset] = (T)BURST_VALUE;
 	}
 	__syncthreads();
 	for(;r<=last; r+=blockDim.x)
@@ -890,7 +889,7 @@ bandLU_critical_div_onePart_safe_general(T *dA, int start_row, int k, int last) 
 	__shared__ T sharedA;
 	int pivotIdx = start_row * ((k<<1) + 1) + k;
 	if (threadIdx.x == 0)
-		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	__syncthreads();
 
 	for (int r = threadIdx.x + 1; r <= last; r+=blockDim.x)
@@ -956,7 +955,7 @@ bandUL_critical_div_safe(T *dA, int start_row, int k, int partition_size, int re
 		offset = (blockIdx.x * partition_size + rest_num + start_row) * ((k<<1) + 1);
 	__shared__ T sharedA;
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 	dA[-r+k+offset] /= sharedA;
@@ -1010,7 +1009,7 @@ bandUL_critical_div_safe_general(T *dA, int start_row, int k, int partition_size
 	last++;
 	__shared__ T sharedA;
 	if (threadIdx.x == 0)
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 
 	__syncthreads();
 	for(; r<last; r+=blockDim.x)
@@ -1088,7 +1087,7 @@ fullLU_div_safe(T *dA, int partition_size, int cur_row)
 	int offset = bid * partition_size * partition_size;
 	__shared__ T sharedA;
 	if(tid == 0) {
-		sharedA = boostValue(dA[partition_size * cur_row + cur_row + offset], dA[partition_size * cur_row + cur_row + offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[partition_size * cur_row + cur_row + offset], dA[partition_size * cur_row + cur_row + offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 	dA[partition_size*cur_row + cur_row + tid + 1 + offset] /= sharedA;
@@ -1117,7 +1116,7 @@ fullLU_div_safe_general(T *dA, int k, int partition_size, int cur_row)
 	int offset = blockIdx.x * partition_size * partition_size;
 	__shared__ T sharedA;
 	if(tid == 0)
-		sharedA = boostValue(dA[partition_size * cur_row + cur_row + offset], dA[partition_size * cur_row + cur_row + offset], BURST_VALUE, BURST_NEW_VALUE);
+		sharedA = boostValue(dA[partition_size * cur_row + cur_row + offset], dA[partition_size * cur_row + cur_row + offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 
 	__syncthreads();
 	int it_last = 2*k-1-cur_row;
@@ -1186,7 +1185,7 @@ boostLastPivot(T *dA, int start_row, int k, int partition_size, int rest_num)
 		start_row--;
 		offset = (blockIdx.x * partition_size + rest_num + start_row) * ((k<<1) + 1);
 	}
-	boostValue(dA[k+offset], dA[k+offset], BURST_VALUE, BURST_NEW_VALUE);
+	boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 }
 
 
