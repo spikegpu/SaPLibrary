@@ -1026,9 +1026,9 @@ Graph<T>::MC64(bool           scale,
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
 			int from = iter->m_from;
 			int to   = iter->m_to;
-			double scaleFact = mc64RowScale[from] * mc64ColScale[to];
+			T scaleFact = (T)(mc64RowScale[from] * mc64ColScale[to]);
 			if (m_trackReordering)
-				scaleMap[iter->m_ori_idx] = (T)scaleFact;
+				scaleMap[iter->m_ori_idx] = scaleFact;
 			iter->m_val *= scaleFact;
 			iter->m_from = mc64RowPerm[from];
 		}
