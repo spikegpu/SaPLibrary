@@ -1386,6 +1386,11 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // This is the entry function of the core part of MC64 algorithm, which reorders
 // the matrix by finding the minimum match of a bipartite graph.
 // ----------------------------------------------------------------------------
+struct ExpOp: public thrust::unary_function<double, double>
+{
+	__host__ double operator() (double a) {return exp(a);}
+};
+
 template <typename T>
 void
 Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
@@ -1438,12 +1443,12 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 	mc64ColScale.pop_back();
 	max_val_in_col.pop_back();
 
-	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), ExpOp<T>());
-	thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), ExpOp<T>()),
-	                  thrust::make_transform_iterator(mc64ColScale.end(), ExpOp<T>()),
+	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), ExpOp());
+	thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), ExpOp()),
+	                  thrust::make_transform_iterator(mc64ColScale.end(), ExpOp()),
 	                  max_val_in_col.begin(),
 	                  mc64ColScale.begin(),
-	                  thrust::divides<T>());
+	                  thrust::divides<double>());
 }
 
 // ----------------------------------------------------------------------------

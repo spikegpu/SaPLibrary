@@ -440,7 +440,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			m_offDiagMap.begin(),
 			m_typeMap.begin(),
 			m_offDiags.begin(),
-			NotTrue<int>()
+			thrust::logical_not<int>()
 			);
 
 	thrust::scatter_if(
@@ -449,7 +449,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			m_WVMap.begin(),
 			m_typeMap.begin(),
 			mat_WV.begin(),
-			NotTrue<int>()
+			thrust::logical_not<int>()
 			);
 	m_timer.Stop();
 	m_time_offDiags = m_timer.getElapsed();
