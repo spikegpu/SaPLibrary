@@ -228,10 +228,10 @@ private:
 	void getSRev(PrecVector& rhs, PrecVector& sol);
 
 
-	bool hasZeroPivots(PrecVectorIterator& start_B,
-	                   PrecVectorIterator& end_B,
-	                   int                 k,
-	                   PrecValueType       threshold);
+	bool hasZeroPivots(const PrecVectorIterator& start_B,
+	                   const PrecVectorIterator& end_B,
+	                   int                       k,
+	                   PrecValueType             threshold);
 };
 
 
@@ -1334,7 +1334,7 @@ Precond<PrecVector>::partBandedLU_one()
 
 	// If not using safe factorization, check the factorized banded matrix for any
 	// zeros on its diagonal (this means a zero pivot).
-	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_one).");
 
 
@@ -1435,7 +1435,7 @@ Precond<PrecVector>::partBandedLU_const()
 	// If not using safe factorization, check the factorized banded matrix for any
 	// zeros on its diagonal (this means a zero pivot). Note that we must only check
 	// the diagonal blocks corresponding to the partitions for which LU was applied.
-	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_const).");
 
 
@@ -1546,7 +1546,7 @@ Precond<PrecVector>::partBandedLU_var()
 	// matrix, one partition at a time.
 	if (!m_safeFactorization) {
 		for (int i = 0; i < m_numPartitions; i++) {
-			if (hasZeroPivots(m_B.begin() + m_BOffsets_host[i], m_B.begin() + m_BOffsets_host[i+1], m_ks_host[i], BURST_VALUE))
+			if (hasZeroPivots(m_B.begin() + m_BOffsets_host[i], m_B.begin() + m_BOffsets_host[i+1], m_ks_host[i], (PrecValueType) BURST_VALUE))
 				throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_var).");
 		}
 	}
@@ -1660,7 +1660,7 @@ Precond<PrecVector>::partBandedUL(PrecVector& B)
 
 	// If not using safe factorization, check for zero pivots in the factorized
 	// banded matrix.
-	if (!m_safeFactorization && hasZeroPivots(B.begin() + (2 * m_k + 1) * n_first, B.end(), m_k, BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(B.begin() + (2 * m_k + 1) * n_first, B.end(), m_k, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedUL).");
 }
 
@@ -2507,10 +2507,10 @@ struct zero_functor : thrust::unary_function<T, bool>
 
 template <typename PrecVector>
 bool
-Precond<PrecVector>::hasZeroPivots(PrecVectorIterator&    start_B,
-                                   PrecVectorIterator&    end_B,
-                                   int                    k,
-                                   PrecValueType          threshold)
+Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
+                                   const PrecVectorIterator&    end_B,
+                                   int                          k,
+                                   PrecValueType                threshold)
 {
 	// Create a strided range to select the main diagonal
 	strided_range<typename PrecVector::iterator> diag(start_B + k, end_B, 2*k + 1);
