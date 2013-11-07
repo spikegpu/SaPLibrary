@@ -174,36 +174,112 @@ int main(int argc, char** argv)
 	SpmvFunctor  mySpmv(A);
 	Vector       x(A.num_rows, 0);
 
-	bool setupSuccess = true, solveSuccess = true; 
+	bool solveSuccess = true; 
 
-	try {
-		mySolver.setup(A);
-		solveSuccess = mySolver.solve(mySpmv, b, x);
-	} catch (std::bad_alloc e) {
-		setupSuccess = false;
-		solveSuccess = false;
-	}
+	OutputItem outputItem(cout);
 
-	// Write solution file and print solver statistics.
-	if (fileSol.length() > 0)
-		cusp::io::write_matrix_market_file(x, fileSol);
+	cout << "<tr valign=top>" << endl;
 
-	// Calculate the actual residual and its norm.
+	// Name of matrix
 	{
-		spike::Stats stats = mySolver.getStats();
 		int i;
 		for (i = fileMat.size()-1; i>=0 && fileMat[i] != '/' && fileMat[i] != '\\'; i--);
 		i++;
 
-		OutputItem outputItem(cout);
-
-		cout << "<tr valign=top>" << endl;
-		// Name of matrix
 		outputItem( fileMat.substr(i));
-		// Dimension
-		outputItem( A.num_rows);
-		// No. of non-zeros
-		outputItem( A.num_entries);
+	}
+
+	// Dimension
+	outputItem( A.num_rows);
+	// No. of non-zeros
+	outputItem( A.num_entries);
+
+	try {
+		mySolver.setup(A);
+	} catch (const std::bad_alloc& ba) {
+		solveSuccess = false;
+		// Half-bandwidth
+		outputItem( "N/A");
+		// Half-bandwidth after MC64
+		outputItem( "N/A");
+		// Solve the problem successfully
+		outputItem( solveSuccess);
+		// Reason why cannot solve (for unsuccessful solving only)
+		outputItem ("Out of memory (in setup stage)");
+
+		return 1;
+	} catch (const spike::system_error& se) {
+		solveSuccess = false;
+		// Half-bandwidth
+		outputItem( "N/A");
+		// Half-bandwidth after MC64
+		outputItem( "N/A");
+		// Solve the problem successfully
+		outputItem( solveSuccess);
+
+		// Reason why cannot solve (for unsuccessful solving only)
+		switch(se.reason()) {
+			case spike::system_error::Zero_pivoting:
+				outputItem( "Zero pivoting");
+				break;
+			case spike::system_error::Illegal_update:
+				outputItem( "Illegal update");
+				break;
+			case spike::system_error::Negative_MC64_weight:
+				outputItem( "Internal system error");
+				break;
+			default:
+				outputItem( "Unknown error");
+				break;
+		}
+
+		return 1;
+	}
+
+	try {
+		solveSuccess = mySolver.solve(mySpmv, b, x);
+	} catch (const std::bad_alloc& ba) {
+		solveSuccess = false;
+		// Half-bandwidth
+		outputItem( "N/A");
+		// Half-bandwidth after MC64
+		outputItem( "N/A");
+		// Solve the problem successfully
+		outputItem( solveSuccess);
+		// Reason why cannot solve (for unsuccessful solving only)
+		outputItem ("Out of memory (in solve stage)");
+
+		return 1;
+	} catch (const spike::system_error& se) {
+		solveSuccess = false;
+		// Half-bandwidth
+		outputItem( "N/A");
+		// Half-bandwidth after MC64
+		outputItem( "N/A");
+		// Solve the problem successfully
+		outputItem( solveSuccess);
+
+		// Reason why cannot solve (for unsuccessful solving only)
+		switch(se.reason()) {
+			case spike::system_error::Zero_pivoting:
+				outputItem( "Zero pivoting");
+				break;
+			case spike::system_error::Illegal_update:
+				outputItem( "Illegal update");
+				break;
+			case spike::system_error::Negative_MC64_weight:
+				outputItem( "Internal system error");
+				break;
+			default:
+				outputItem( "Unknown error");
+				break;
+		}
+
+		return 1;
+	}
+
+	{
+		spike::Stats stats = mySolver.getStats();
 		// Half-bandwidth
 		outputItem( stats.bandwidth);
 		// Half-bandwidth after MC64
@@ -238,12 +314,7 @@ int main(int argc, char** argv)
 			outputItem( stats.timeSolve);
 			// Total amount of time
 			outputItem( stats.timeSetup + stats.timeSolve);
-		}
-		else if (!setupSuccess)
-			outputItem ( "Out of memory");
-		else if (ISNAN(cusp::blas::nrm1(x)))
-			outputItem ( "Zero pivoting");
-		else
+		} else
 			outputItem ( "Not converged");
 
 		cout << "</tr>" << endl;
@@ -467,7 +538,7 @@ GetProblemSpecs(int             argc,
 // -----------------------------------------------------------------------------
 void ShowUsage()
 {
-	cout << "Usage:  driver_mm [OPTIONS]" << endl;
+	cout << "Usage:  driver_test [OPTIONS]" << endl;
 	cout << endl;
 	cout << " -p=NUM_PARTITIONS" << endl;
 	cout << " --num-partitions=NUM_PARTITIONS" << endl;
