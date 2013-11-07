@@ -2271,7 +2271,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		int rightOffDiagWidth = cusp::blas::nrmmax(m_offDiagWidths_right);
 		int leftOffDiagWidth  = cusp::blas::nrmmax(m_offDiagWidths_left);
 
-		PrecVector extWV((leftOffDiagWidth + rightOffDiagWidth) * n_eff, 0);
+		PrecVector extWV((leftOffDiagWidth + rightOffDiagWidth) * n_eff, (PrecValueType) 0);
 		PrecVector buffer;
 
 		PrecValueType* p_extWV               = thrust::raw_pointer_cast(&extWV[0]);
