@@ -51,6 +51,7 @@ SET(SPIKE_HEADERS
 	../../spike/precond.h
 	../../spike/solver.h
 	../../spike/spmv.h
+	../../spike/strided_range.h
 	../../spike/timer.h
 )
 
