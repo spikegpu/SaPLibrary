@@ -228,10 +228,10 @@ private:
 	void getSRev(PrecVector& rhs, PrecVector& sol);
 
 
-	bool hasZeroPivots(const PrecVectorIterator& start_B,
-	                   const PrecVectorIterator& end_B,
-	                   int                       k,
-	                   PrecValueType             threshold);
+	bool hasZeroPivots(PrecVectorIterator  start_B,
+	                   PrecVectorIterator  end_B,
+	                   int                 k,
+	                   PrecValueType       threshold);
 };
 
 
@@ -2507,10 +2507,10 @@ struct zero_functor : thrust::unary_function<T, bool>
 
 template <typename PrecVector>
 bool
-Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
-                                   const PrecVectorIterator&    end_B,
-                                   int                          k,
-                                   PrecValueType                threshold)
+Precond<PrecVector>::hasZeroPivots(PrecVectorIterator     start_B,
+                                   PrecVectorIterator     end_B,
+                                   int                    k,
+                                   PrecValueType          threshold)
 {
 	// Create a strided range to select the main diagonal
 	strided_range<typename PrecVector::iterator> diag(start_B + k, end_B, 2*k + 1);

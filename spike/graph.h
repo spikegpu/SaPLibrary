@@ -934,14 +934,14 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			ks[curPartNum] = abs(l-j);
 	}
 
-	for (int i=1; i < numPartitions; i++) {
-		if (i <= remainder)
-			BOffsets[i] = BOffsets[i-1] + (partSize + 1) * (2 * ks[i-1] + 1);
+	for (int i=0; i < numPartitions; i++) {
+		if (i < remainder)
+			BOffsets[i+1] = BOffsets[i] + (partSize + 1) * (2 * ks[i] + 1);
 		else
-			BOffsets[i] = BOffsets[i-1] + (partSize) * (2 * ks[i-1] + 1);
+			BOffsets[i+1] = BOffsets[i] + (partSize) * (2 * ks[i] + 1);
 	}
 
-	B.resize(BOffsets[numPartitions-1] + (2*ks[numPartitions-1]+1)*partSize);
+	B.resize(BOffsets[numPartitions]);
 
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
