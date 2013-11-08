@@ -911,7 +911,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	
 	int dropped = 0;
 
-	if (m_dropOff_frac > 0)
+	if (m_k_reorder > m_maxBandwidth || m_dropOff_frac > 0)
 		dropped = graph.dropOff(m_dropOff_frac, m_maxBandwidth, m_dropOff_actual);
 	else
 		m_dropOff_actual = 0;

@@ -355,17 +355,15 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 // ----------------------------------------------------------------------------
 template <typename T>
 struct EdgeComparator {
-	bool operator()(const EdgeT<T>& a,
-	                const EdgeT<T>& b) {
+	bool operator()(const EdgeT<T>& a, const EdgeT<T>& b) {
 		return abs(a.m_from - a.m_to) > abs(b.m_from - b.m_to);
 	}
 };
 
 template <typename T>
 struct EdgeAccumulator {
-	T operator()(T               res,
-	             const EdgeT<T>& edge) {
-		return res + edge.m_val * edge.m_val;
+	T operator()(T res, const EdgeT<T>& edge) {
+		return res + std::abs(edge.m_val);
 	}
 };
 
@@ -406,11 +404,16 @@ struct PermApplier
 // Graph::dropOff()
 //
 // This function identifies the elements that can be removed in the reordered
-// matrix while reducing the Frobenius norm by no more than the specified
+// matrix while reducing the element-wise 1-norm by no more than the specified
 // fraction. 
+//
 // We cache an iterator in the (now ordered) vector of edges, such that the
-// edges from that point to the end encode a banded matrix whose Frobenius norm
-// is at least (1-frac) ||A||.
+// edges from that point to the end encode a banded matrix whose element-wise
+// 1-norm is at least (1-frac) ||A||_1.
+//
+// Note that the final bandwidth is guranteed to be no more than the specified
+// maxBandwidth value.
+//
 // The return value is the number of dropped diagonals. We also return the
 // actual norm reduction fraction achieved.
 // ----------------------------------------------------------------------------
@@ -427,15 +430,17 @@ Graph<T>::dropOff(T   frac,
 	// between the indices of their adjacent nodes).
 	std::sort(m_edges.begin(), m_edges.end(), EdgeComparator<T>());
 
-	// Calculate the Frobenius norm of the current matrix and the minimum
-	// norm that must be retained after drop-off.
-	T norm_in2 = std::accumulate(m_edges.begin(), m_edges.end(), (T) 0, EdgeAccumulator<T>());
-	T min_norm_out2 = (1 - frac) * (1 - frac) * norm_in2;
-	T norm_out2 = norm_in2;
+	// Calculate the 1-norm of the current matrix and the minimum norm that
+	// must be retained after drop-off. Initialize the 1-norm of the resulting
+	// truncated matrix.
+	T norm_in = std::accumulate(m_edges.begin(), m_edges.end(), (T) 0, EdgeAccumulator<T>());
+	T min_norm_out = (1 - frac) * norm_in;
+	T norm_out = norm_in;
 
-	// Walk all edges and accumulate the weigth of one band at a time.
+	// Walk all edges and accumulate the weigth (1-norm) of one band at a time.
 	// Continue until we are left with the main diagonal only or until the weight
-	// of all proccessed bands exceeds the allowable drop off.
+	// of all proccessed bands exceeds the allowable drop off (provided we do not
+	// exceed the specified maximum bandwidth.
 	m_first = m_edges.begin();
 	EdgeIterator  last = m_first;
 	int           dropped = 0;
@@ -451,15 +456,15 @@ Graph<T>::dropOff(T   frac,
 		// Find all edges in the current band and calculate the norm of the band.
 		do {last++;} while(abs(last->m_from - last->m_to) == bandwidth);
 
-		T band_norm2 = std::accumulate(m_first, last, (T) 0, EdgeAccumulator<T>());
+		T band_norm = std::accumulate(m_first, last, (T) 0, EdgeAccumulator<T>());
 
-		// Stop now if removing this band would reduce the norm by more than
-		// allowed.
-		if (norm_out2 - band_norm2 < min_norm_out2)
+		// Stop now if we are below the specified maximum and removing this band
+		// would reduce the norm by more than allowed.
+		if (bandwidth <= maxBandwidth && norm_out - band_norm < min_norm_out)
 			break;
 
 		// Remove the norm of this band and move to the next one.
-		norm_out2 -= band_norm2;
+		norm_out -= band_norm;
 		m_first = last;
 		dropped++;
 	}
@@ -468,7 +473,8 @@ Graph<T>::dropOff(T   frac,
 	m_timeDropoff = timer.getElapsed();
 
 	// Calculate the actual norm reduction fraction.
-	frac_actual = 1 - sqrt(norm_out2/norm_in2);
+	frac_actual = 1 - norm_out/norm_in;
+
 	return dropped;
 }
 

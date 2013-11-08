@@ -41,7 +41,7 @@ using std::vector;
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
       OPT_TOL, OPT_MAXIT,
-      OPT_DROPOFF_FRAC,
+      OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE,
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT,
@@ -61,6 +61,8 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_MAXIT,         "--max-num-iterations", SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "-d",                   SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
+	{ OPT_MAX_BANDWIDTH, "-b",                   SO_REQ_CMB },
+	{ OPT_MAX_BANDWIDTH, "--max-bandwidth",      SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
 	{ OPT_RHSFILE,       "-r",                   SO_REQ_CMB },
@@ -214,6 +216,8 @@ GetProblemSpecs(int             argc,
 	// processed.
 	CSimpleOptA args(argc, argv, g_options);
 
+	bool  maxBandwidth_specified = false;
+
 	while (args.Next()) {
 		// Exit immediately if we encounter an invalid argument.
 		if (args.LastError() != SO_SUCCESS) {
@@ -238,6 +242,10 @@ GetProblemSpecs(int             argc,
 				break;
 			case OPT_DROPOFF_FRAC:
 				opts.dropOffFraction = atof(args.OptionArg());
+				break;
+			case OPT_MAX_BANDWIDTH:
+				opts.maxBandwidth = atoi(args.OptionArg());
+				maxBandwidth_specified = true;
 				break;
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
@@ -350,6 +358,8 @@ GetProblemSpecs(int             argc,
 		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
 	else
 		cout << "No drop-off." << endl;
+	if (maxBandwidth_specified)
+		cout << "Maximum bandwidth: " << opts.maxBandwidth << endl;
 	cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
 	cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
 	cout << (opts.performMC64 ? "Perform MC64 reordering." : "Do not perform MC64 reordering.") << endl;
@@ -390,6 +400,9 @@ void ShowUsage()
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
 	cout << "        elementwise norm-1 is ignored (default 0.0 -- i.e. no drop-off)." << endl;
+	cout << " -b=MAX_BANDWIDTH" << endl;
+	cout << " --max-bandwidth=MAX_BANDWIDTH" << endl;
+	cout << "        Drop off elements such that the bandwidth is at most MAX_BANDWIDTH" << endl;
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
@@ -444,8 +457,9 @@ void PrintStats(bool               success,
 	cout << "Residual norm        = " << stats.residualNorm << endl;
 	cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
 	cout << endl;
+	cout << "Bandwidth after MC64       = " << stats.bandwidthMC64 << endl;
 	cout << "Bandwidth after reordering = " << stats.bandwidthReorder << endl;
-	cout << "Bandwidth                  = " << stats.bandwidth << endl;
+	cout << "Bandwidth after drop-off   = " << stats.bandwidth << endl;
 	cout << "Actual drop-off fraction   = " << stats.actualDropOff << endl;
 	cout << endl;
 	cout << "Setup time total  = " << stats.timeSetup << endl;
