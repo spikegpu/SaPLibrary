@@ -764,7 +764,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
                                MatrixMap&  bandedMatMap)
 {
 	ks.resize(numPartitions);
-	BOffsets.resize(numPartitions);
+	BOffsets.resize(numPartitions + 1);
 
 	cusp::blas::fill(ks, 0);
 	BOffsets[0] = 0;
