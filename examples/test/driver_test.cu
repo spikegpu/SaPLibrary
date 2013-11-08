@@ -222,6 +222,9 @@ int main(int argc, char** argv)
 			case spike::system_error::Zero_pivoting:
 				outputItem( "Zero pivoting");
 				break;
+			case spike::system_error::Matrix_singular:
+				outputItem( "Matrix singular");
+				break;
 			case spike::system_error::Illegal_update:
 				outputItem( "Illegal update");
 				break;

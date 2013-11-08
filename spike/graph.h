@@ -850,7 +850,8 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 {
 	// Drop all edges from begin() to 'first'; i.e., keep all edges from
 	// 'first' to end().
-	B.resize((2 * bandwidth + 1) * m_n);
+	size_t Bsize = (size_t) (2 * bandwidth + 1) * m_n;
+	B.resize(Bsize);
 
 	ks_col.resize(m_n);
 	ks_row.resize(m_n);
@@ -868,7 +869,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			int j = it->m_from;
 			int l = it->m_to;
 
-			int i = l * (2 * bandwidth + 1) + bandwidth + j - l;
+			size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
 			B[i] = it->m_val;
 			typeMap[it->m_ori_idx] = 1;
 			bandedMatMap[it->m_ori_idx] = i;
@@ -883,7 +884,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			int j = it->m_from;
 			int l = it->m_to;
 
-			int i = l * (2 * bandwidth + 1) + bandwidth + j - l;
+			size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
 			B[i] = it->m_val;
 
 			if (ks_col[l] < j - l)
@@ -1417,6 +1418,10 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 	}
 
 	{
+		for (int i=0; i<m_n; i++)
+			if (!matched[i])
+				throw system_error(system_error::Matrix_singular, "Singular matrix found");
+#if 0
 		IntVector  unmatched_rows;
 		IntVector  unmatched_cols;
 
@@ -1432,6 +1437,7 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 
 		for (int i=0; i<unmatched_count; i++)
 			mc64RowPerm[unmatched_rows[i]] = unmatched_cols[i];
+#endif
 	}
 
 	mc64RowScale.pop_back();

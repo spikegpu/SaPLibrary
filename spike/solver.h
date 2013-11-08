@@ -13,6 +13,8 @@
 #include <thrust/sequence.h>
 #include <thrust/scan.h>
 #include <thrust/functional.h>
+#include <thrust/logical.h>
+
 
 #include <spike/common.h>
 #include <spike/components.h>
@@ -272,9 +274,13 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 
 		IntVectorH cur_indices(numComponents, 0);
 
+		IntVectorH visited(m_n, 0);
+
 		for (int i=0; i < nnz; i++) {
 			int from = Acoo.row_indices[i], to = Acoo.column_indices[i];
 			int compIndex = sc.m_compIndices[from];
+
+			visited[from] = visited[to] = 1;
 
 			if (m_comp_perms[from] < 0) {
 				m_comp_perms[from] = cur_indices[compIndex];
@@ -297,6 +303,9 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 			if (m_trackReordering)
 				m_compMap[i] = compIndex;
 		}
+
+		if (thrust::any_of(visited.begin(), visited.end(), thrust::logical_not<int>() ))
+			throw system_error(system_error::Matrix_singular, "Singular matrix found");
 
 		for (int i=0; i < numComponents; i++) {
 			PrecMatrixCooH& cur_matrix = coo_matrices[i];

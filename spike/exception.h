@@ -13,7 +13,8 @@ public:
 	{
 		Zero_pivoting        = -1,
 		Negative_MC64_weight = -2,
-		Illegal_update       = -3
+		Illegal_update       = -3,
+		Matrix_singular      = -4,
 	};
 
 	system_error(Reason             reason,
