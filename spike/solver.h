@@ -40,6 +40,7 @@ struct Options
 	bool                performReorder;       /** Indicate whether to perform reordering to the matrix, true by default.*/
 	bool                performMC64;          /** Indicate whether to perform MC64 reordering, true by default. */
 	bool                applyScaling;         /** Indicate whether to apply scaling in MC64 or not, true by default.*/
+	int                 maxBandwidth;         /** Indicate the maximum half-bandwidth, INT_MAX by default */
 	double              dropOffFraction;      /** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
 
 	FactorizationMethod factMethod;           /** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
@@ -166,6 +167,7 @@ Options::Options()
 	performReorder(true),
 	performMC64(true),
 	applyScaling(true),
+	maxBandwidth(std::numeric_limits<int>::max()),
 	dropOffFraction(0),
 	factMethod(LU_only),
 	precondType(Spike),
@@ -214,7 +216,7 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
 	m_precond(numPartitions, opts.performReorder, opts.performMC64, opts.applyScaling,
-	          opts.dropOffFraction, opts.factMethod, opts.precondType, 
+	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
 	m_singleComponent(opts.singleComponent),

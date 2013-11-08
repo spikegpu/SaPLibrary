@@ -55,6 +55,7 @@ public:
 	        bool                doMC64,
 	        bool                scale,
 	        double              dropOff_frac,
+	        int                 maxBandwidth,
 	        FactorizationMethod factMethod,
 	        PreconditionerType  precondType,
 	        bool                safeFactorization,
@@ -83,7 +84,7 @@ public:
 	int    getBandwidth() const           {return m_k;}
 
 	int    getNumPartitions() const       {return m_numPartitions;}
-	double getActualDropOff() const       {return m_dropOff_actual;}
+	double getActualDropOff() const       {return (double) m_dropOff_actual;}
 
 	//// NOTE:  Matrix here will usually be PrecMatrixCooH, except
 	////        when there's a single component when it will be whatever
@@ -93,9 +94,9 @@ public:
 
 	bool   setupDone() const              {return m_setupDone;}
 
-	void update(const PrecVector& entries);
+	void   update(const PrecVector& entries);
 
-	void solve(PrecVector& v, PrecVector& z);
+	void   solve(PrecVector& v, PrecVector& z);
 
 private:
 	int                  m_numPartitions;
@@ -105,7 +106,8 @@ private:
 	bool                 m_reorder;
 	bool                 m_doMC64;
 	bool                 m_scale;
-	double               m_dropOff_frac;
+	PrecValueType        m_dropOff_frac;
+	int                  m_maxBandwidth;
 	FactorizationMethod  m_factMethod;
 	PreconditionerType   m_precondType;
 	bool                 m_safeFactorization;
@@ -162,7 +164,7 @@ private:
 	int                  m_k_reorder;             // bandwidth after reordering
 	int                  m_k_mc64;                // bandwidth after MC64
 
-	double               m_dropOff_actual;        // actual dropOff fraction achieved
+	PrecValueType        m_dropOff_actual;        // actual dropOff fraction achieved
 
 	GPUTimer             m_timer;
 	double               m_time_reorder;          // CPU time for matrix reordering
@@ -245,6 +247,7 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                doMC64,
                              bool                scale,
                              double              dropOff_frac,
+                             int                 maxBandwidth,
                              FactorizationMethod factMethod,
                              PreconditionerType  precondType,
                              bool                safeFactorization,
@@ -254,7 +257,8 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_reorder(reorder),
 	m_doMC64(doMC64),
 	m_scale(scale),
-	m_dropOff_frac(dropOff_frac),
+	m_dropOff_frac((PrecValueType)dropOff_frac),
+	m_maxBandwidth(maxBandwidth),
 	m_factMethod(factMethod),
 	m_precondType(precondType),
 	m_safeFactorization(safeFactorization),
@@ -289,6 +293,7 @@ Precond<PrecVector>::Precond()
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
+	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -328,6 +333,7 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
+	m_maxBandwidth      = prec.m_maxBandwidth;
 	m_factMethod        = prec.m_factMethod;
 	m_precondType       = prec.m_precondType;
 	m_safeFactorization = prec.m_safeFactorization;
@@ -345,6 +351,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
+	m_maxBandwidth      = prec.m_maxBandwidth;
 	m_factMethod        = prec.m_factMethod;
 	m_precondType       = prec.m_precondType;
 	m_safeFactorization = prec.m_safeFactorization;
@@ -389,7 +396,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 	m_timer.Start();
 
 
-	cusp::blas::fill(m_B, 0);
+	cusp::blas::fill(m_B, (PrecValueType) 0);
 
 	thrust::scatter_if(
 			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
@@ -430,7 +437,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 	// in the array m_offDiags.
 	PrecVector mat_WV;
 	mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
-	cusp::blas::fill(m_offDiags, 0);
+	cusp::blas::fill(m_offDiags, (PrecValueType) 0);
 
 	m_timer.Start();
 
@@ -440,7 +447,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			m_offDiagMap.begin(),
 			m_typeMap.begin(),
 			m_offDiags.begin(),
-			NotTrue<int>()
+			thrust::logical_not<int>()
 			);
 
 	thrust::scatter_if(
@@ -449,7 +456,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			m_WVMap.begin(),
 			m_typeMap.begin(),
 			mat_WV.begin(),
-			NotTrue<int>()
+			thrust::logical_not<int>()
 			);
 	m_timer.Stop();
 	m_time_offDiags = m_timer.getElapsed();
@@ -889,8 +896,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	IntVectorH   offDiagPerms_left;
 	IntVectorH   offDiagPerms_right;
 
-	double       dropMin = 1.0/100;
-
 	MatrixMapH   offDiagMap;
 	MatrixMapH   WVMap;
 	MatrixMapH   typeMap;
@@ -906,12 +911,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	
 	int dropped = 0;
 
-	if (m_dropOff_frac > 0) {
-		if (!m_variableBandwidth)
-			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual);
-		else
-			dropped = graph.dropOff(m_dropOff_frac, m_dropOff_actual, dropMin);
-	}
+	if (m_k_reorder > m_maxBandwidth || m_dropOff_frac > 0)
+		dropped = graph.dropOff(m_dropOff_frac, m_maxBandwidth, m_dropOff_actual);
 	else
 		m_dropOff_actual = 0;
 
@@ -930,11 +931,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	// If there is just one partition, force using constant bandwidth method.
 	if (m_numPartitions == 1 || m_k == 0)
 		m_variableBandwidth = false;
-
-	if (m_dropOff_frac > 0) {
-		if (m_variableBandwidth)
-			graph.dropOffPost(m_dropOff_frac, m_dropOff_actual, dropMin, m_numPartitions);
-	}
 
 
 	// Assemble the banded matrix.
@@ -2052,7 +2048,7 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 			device::copyWVFromOrToExtendedV_general<PrecValueType><<<gridsCopy, numThreadsToUse>>>(n_eff, m_k, partSize, remainder, p_WV, p_extV, true);
 		}
 		for (int i=0; i<numPart_eff; i++) {
-			cusp::blas::fill(WV_spare, 0);
+			cusp::blas::fill(WV_spare, (PrecValueType) 0);
 			device::matrixVReordering_perPartition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>>(m_k, p_WV+2*i*m_k*m_k, p_WV_spare, p_offDiagPerms_right+i*m_k);
 			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin() + (2*i*m_k*m_k));
 		}
@@ -2154,7 +2150,7 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 		}
 
 		for (int i = 0; i < numPart_eff; i++) {
-			cusp::blas::fill(WV_spare, 0);
+			cusp::blas::fill(WV_spare, (PrecValueType) 0);
 			device::matrixWReordering_perPartition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>>(m_k, p_WV+(2*i+1)*m_k*m_k, p_WV_spare, p_offDiagPerms_left+i*m_k);
 			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin() + ((2*i+1)*m_k*m_k));
 		}
@@ -2186,7 +2182,7 @@ Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 		int  partSize    = n_eff / numPart_eff;
 		int  remainder   = n_eff % numPart_eff;
 
-		PrecVector extV(m_k * n_eff, 0);
+		PrecVector extV(m_k * n_eff, (PrecValueType) 0);
 
 		PrecValueType* p_extV = thrust::raw_pointer_cast(&extV[0]);
 		PrecValueType* p_B    = thrust::raw_pointer_cast(&m_B[0]);
@@ -2223,7 +2219,7 @@ Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 		int  partSize    = n_eff / numPart_eff;
 		int  remainder   = n_eff % numPart_eff;
 
-		PrecVector  extW(m_k * n_eff, 0);
+		PrecVector  extW(m_k * n_eff, (PrecValueType) 0);
 
 		PrecValueType* p_extW = thrust::raw_pointer_cast(&extW[0]);
 		PrecValueType* p_B    = thrust::raw_pointer_cast(&m_B[(2*m_k+1)*first_partition_size]);
@@ -2275,7 +2271,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		int rightOffDiagWidth = cusp::blas::nrmmax(m_offDiagWidths_right);
 		int leftOffDiagWidth  = cusp::blas::nrmmax(m_offDiagWidths_left);
 
-		PrecVector extWV((leftOffDiagWidth + rightOffDiagWidth) * n_eff, 0);
+		PrecVector extWV((leftOffDiagWidth + rightOffDiagWidth) * n_eff, (PrecValueType) 0);
 		PrecVector buffer;
 
 		PrecValueType* p_extWV               = thrust::raw_pointer_cast(&extWV[0]);
@@ -2349,11 +2345,11 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		device::copyWVFromOrToExtendedWVTranspose_general<PrecValueType><<<gridsCopy, numThreadsToUse>>>(leftOffDiagWidth + rightOffDiagWidth, m_k, rightOffDiagWidth, partSize, remainder, m_k-rightOffDiagWidth-leftOffDiagWidth, p_WV, p_extWV, true);
 
 		for (int i = 0; i < numPart_eff - 1; i++) {
-			cusp::blas::fill(WV_spare, 0);
+			cusp::blas::fill(WV_spare, (PrecValueType) 0);
 			device::matrixVReordering_perPartition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>>(m_k, p_WV+2*i*m_k*m_k, p_WV_spare, p_offDiagPerms_right+i*m_k);
 			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin()+(2*i*m_k*m_k));
 
-			cusp::blas::fill(WV_spare, 0);
+			cusp::blas::fill(WV_spare, (PrecValueType) 0);
 			device::matrixWReordering_perPartition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>>(m_k, p_WV+(2*i+1)*m_k*m_k, p_WV_spare, p_offDiagPerms_left+i*m_k);
 			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin()+((2*i+1)*m_k*m_k));
 		}
@@ -2397,7 +2393,7 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  B2,
 
 	// Compress the provided UL factorization 'B2' into 'compB2'.
 	PrecVector compB2((two_k+1)*two_k*(m_numPartitions-1));
-	cusp::blas::fill(compB2, 0);
+	cusp::blas::fill(compB2, (PrecValueType) 0);
 
 	PrecValueType* p_B2     = thrust::raw_pointer_cast(&B2[0]);
 	PrecValueType* p_compB2 = thrust::raw_pointer_cast(&compB2[0]);
