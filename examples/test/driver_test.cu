@@ -196,7 +196,7 @@ int main(int argc, char** argv)
 
 	try {
 		mySolver.setup(A);
-	} catch (const std::bad_alloc& ba) {
+	} catch (const std::bad_alloc& ) {
 		solveSuccess = false;
 		// Half-bandwidth
 		outputItem( "N/A");
@@ -241,7 +241,7 @@ int main(int argc, char** argv)
 
 	try {
 		solveSuccess = mySolver.solve(mySpmv, b, x);
-	} catch (const std::bad_alloc& ba) {
+	} catch (const std::bad_alloc& ) {
 		solveSuccess = false;
 		// Half-bandwidth
 		outputItem( "N/A");

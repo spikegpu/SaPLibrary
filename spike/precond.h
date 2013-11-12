@@ -1978,7 +1978,7 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 
 		const int BUF_FACTOR = 16;
 
-		PrecVector extV(m_k * n_eff, 0), buffer;
+		PrecVector extV(m_k * n_eff, (PrecValueType)0), buffer;
 
 		PrecValueType* p_extV             = thrust::raw_pointer_cast(&extV[0]);
 		PrecValueType* p_B                = thrust::raw_pointer_cast(&m_B[0]);
@@ -2067,7 +2067,7 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 
 		const int BUF_FACTOR = 16;
 
-		PrecVector extW(m_k * n_eff, 0), buffer;
+		PrecVector extW(m_k * n_eff, (PrecValueType)0), buffer;
 
 		PrecValueType* p_extW = thrust::raw_pointer_cast(&extW[0]);
 		PrecValueType* p_B    = thrust::raw_pointer_cast(&m_B[0]);

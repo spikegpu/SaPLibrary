@@ -1106,7 +1106,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 		std::priority_queue<NodeType> pq;
 
 		int tmp_node;
-		BoolVector pushed(node_end, 0);
+		BoolVector pushed(node_end, false);
 
 		if (num_trial > 0) {
 			tmp_node = rand() % (node_end - node_begin) + node_begin;
@@ -1320,7 +1320,7 @@ Graph<T>::get_csc_matrix(IntVector&     row_ptr,
                          DoubleVector&  c_val,
                          DoubleVector&  max_val_in_col)
 {
-	BoolVector row_visited(m_n, 0);
+	BoolVector row_visited(m_n, false);
 
 	cusp::blas::fill(c_val, LOC_INFINITY);
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
@@ -1435,7 +1435,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 
 	static IntVector B(m_n+1, 0);
 	int b_cnt = 0;
-	static BoolVector inB(m_n+1, 0);
+	static BoolVector inB(m_n+1, false);
 
 	std::priority_queue<Dijkstra> Q;
 	double lsp = 0.0;
@@ -1449,7 +1449,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 	prev[init_node] = -1;
 
 	static DoubleVector d_vals(m_n+1, LOC_INFINITY);
-	static BoolVector visited(m_n+1, 0);
+	static BoolVector visited(m_n+1, false);
 
 	while(1) {
 		int start_cur = row_ptr[cur_node];
