@@ -77,8 +77,8 @@ struct Stats
 	double      time_shuffle;           /** Total time to do vector reordering and scaling. */
 
 	int         bandwidthReorder;       /** Half-bandwidth after reordering. */
-	int         bandwidth;              /** Half-bandwidth after reordering and drop-off. */
 	int         bandwidthMC64;          /** Half-bandwidth after MC64. */
+	int         bandwidth;              /** Half-bandwidth after reordering and drop-off. */
 
 	int         numPartitions;          /** Actual number of paritions used in the Spike factorization */
 	double      actualDropOff;          /** The fraction of elements dropped off. */
@@ -197,6 +197,7 @@ Stats::Stats()
 	time_fullLU(0),
 	time_shuffle(0),
 	bandwidthReorder(0),
+	bandwidthMC64(0),
 	bandwidth(0),
 	numPartitions(0),
 	actualDropOff(0),
