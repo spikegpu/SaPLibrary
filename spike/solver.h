@@ -238,7 +238,7 @@ bool
 Solver<Array, PrecValueType>::setup(const Matrix& A)
 {
 	m_n = A.num_rows;
-	int nnz = A.num_entries;
+	size_t nnz = A.num_entries;
 
 	CPUTimer timer;
 
@@ -247,16 +247,17 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	PrecMatrixCooH Acoo;
 	
 	Components sc(m_n);
-	int numComponents;
+	size_t     numComponents;
 
-	if (!m_singleComponent) {
+	if (m_singleComponent)
+		numComponents = 1;
+	else {
 		Acoo = A;
-		for (int i=0; i < nnz; i++)
+		for (size_t i = 0; i < nnz; i++)
 			sc.combineComponents(Acoo.row_indices[i], Acoo.column_indices[i]);
 		sc.adjustComponentIndices();
 		numComponents = sc.m_numComponents;
-	} else
-		numComponents = 1;
+	}
 
 	if (m_trackReordering)
 		m_compMap.resize(nnz);
@@ -272,15 +273,16 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 		else
 			cusp::blas::fill(m_comp_perms, -1);
 
-		for (int i=0; i < numComponents; i++)
+		for (size_t i=0; i < numComponents; i++)
 			m_comp_reorderings[i].clear();
 
 		IntVectorH cur_indices(numComponents, 0);
 
 		IntVectorH visited(m_n, 0);
 
-		for (int i=0; i < nnz; i++) {
-			int from = Acoo.row_indices[i], to = Acoo.column_indices[i];
+		for (size_t i = 0; i < nnz; i++) {
+			int from = Acoo.row_indices[i];
+			int to = Acoo.column_indices[i];
 			int compIndex = sc.m_compIndices[from];
 
 			visited[from] = visited[to] = 1;
@@ -310,7 +312,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 		if (thrust::any_of(visited.begin(), visited.end(), thrust::logical_not<int>() ))
 			throw system_error(system_error::Matrix_singular, "Singular matrix found");
 
-		for (int i=0; i < numComponents; i++) {
+		for (size_t i = 0; i < numComponents; i++) {
 			PrecMatrixCooH& cur_matrix = coo_matrices[i];
 
 			cur_matrix.num_entries = cur_matrix.values.size();
@@ -358,7 +360,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.time_assembly = m_precond_pointers[0]->gettimeAssembly();
 	m_stats.time_fullLU = m_precond_pointers[0]->getTimeFullLU();
 
-	for (int i=1; i < numComponents; i++) {
+	for (size_t i=1; i < numComponents; i++) {
 		if (m_stats.bandwidthReorder < m_precond_pointers[i]->getBandwidthReordering())
 			m_stats.bandwidthReorder = m_precond_pointers[i]->getBandwidthReordering();
 		if (m_stats.bandwidth < m_precond_pointers[i]->getBandwidth())
