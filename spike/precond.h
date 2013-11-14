@@ -1278,10 +1278,10 @@ Precond<PrecVector>::partBandedLU_one()
 
 	PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
 
-	if (m_ks_col_host.size() < m_n)
+	if (m_ks_col_host.size() != m_n)
 		m_ks_col_host.resize(m_n, m_k);
 
-	if (m_ks_row_host.size() < m_n)
+	if (m_ks_row_host.size() != m_n)
 		m_ks_row_host.resize(m_n, m_k);
 
 	if(m_k >= CRITICAL_THRESHOLD) {
