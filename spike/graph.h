@@ -702,10 +702,8 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	size_t Bsize = (size_t) (2 * bandwidth + 1) * m_n;
 	B.resize(Bsize);
 
-	ks_col.resize(m_n);
-	ks_row.resize(m_n);
-	cusp::blas::fill(ks_col, 0);
-	cusp::blas::fill(ks_row, 0);
+	ks_col.resize(m_n, 0);
+	ks_row.resize(m_n, 0);
 
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
@@ -763,10 +761,9 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
                                MatrixMap&  typeMap,
                                MatrixMap&  bandedMatMap)
 {
-	ks.resize(numPartitions);
+	ks.resize(numPartitions, 0);
 	BOffsets.resize(numPartitions + 1);
 
-	cusp::blas::fill(ks, 0);
 	BOffsets[0] = 0;
 
 	int partSize = m_n / numPartitions;
@@ -799,10 +796,8 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 		bandedMatMap.resize(m_nnz);
 	}
 
-	ks_col.resize(m_n);
-	ks_row.resize(m_n);
-	cusp::blas::fill(ks_col, 0);
-	cusp::blas::fill(ks_row, 0);
+	ks_col.resize(m_n, 0);
+	ks_row.resize(m_n, 0);
 
 	for (EdgeIterator it = toStart; it != toEnd; ++it) {
 		int j = it->m_from;
