@@ -5,7 +5,7 @@ SpikeGPU is a C++ template library which provides a SPIKE-based preconditioner f
 
 The SpikeGPU library is built on top of CUSP and Thrust. 
 
-More information available at http://spikegpu.sbel.org
+Additional information available at http://spikegpu.sbel.org.
 
 Directory structure
 -------------------
@@ -19,11 +19,11 @@ There are two top-level directories:
 
 Dependencies
 ------------
-SpikeGPU requires a CUDA-capable GPU and the CUSP library, available from https://github.com/cusplibrary
+SpikeGPU requires CUDA and the CUSP library, available from https://github.com/cusplibrary.
 
 Example Usage
 -------------
-```
+```C++
 #include <spike/solver.h>
 #include <spike/spmv.h>
 #include <spike/exception.h>
@@ -74,7 +74,7 @@ To see a full list of the arguments for driver_mm as an example, use
 
 Support
 -------
-Submit bug reports and feature requests at https://github.com/spikegpu/SpikeLibrary/issues
+Submit bug reports and feature requests at https://github.com/spikegpu/SpikeLibrary/issues.
 
 Feel free to fork the github repository and submit pull requests.
 
