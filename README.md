@@ -2,7 +2,9 @@ SpikeGPU Library version 1.0.0
 ==============================
 
 SpikeGPU is a C++ template library which provides a SPIKE-based preconditioner for the solution of large-scale sparse linear solvers using Krylov-space iterative solvers on CUDA architecture GPUs. 
+
 The SpikeGPU library is built on top of CUSP and Thrust. 
+
 More information available at http://spikegpu.sbel.org
 
 Directory structure
@@ -61,7 +63,11 @@ int main(int argc, char** argv)
 
 Building and running the example drivers
 ----------------------------------------
-Use CMake ...
+Use CMake to configure the provided example drivers:
+* driver_mm  - sample program for using SpikeGPU with a matrix read from a Matrix Market file.
+* driver_seq - sample program illustrating the use of SpikeGPU on a sequence of matrices with the same sparsity pattern.
+* driver_views - sample program illustrating the use of SpikeGPU with CUSP array views.
+* driver_banded - sample program illustrating the use of SpikeGPU to solve banded systems.
 
 To see a full list of the arguments for driver_mm as an example, use
 `driver_mm -h`
@@ -69,10 +75,11 @@ To see a full list of the arguments for driver_mm as an example, use
 Support
 -------
 Submit bug reports and feature requests at https://github.com/spikegpu/SpikeLibrary/issues
+
 Feel free to fork the github repository and submit pull requests.
 
 License
 -------
-The code is available at github under a BSD-3 license. See the file LICENSE.
+The code is available from https://github.com/spikegpu/SpikeLibrary under a BSD-3 license. See the file LICENSE.
 
 
