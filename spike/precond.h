@@ -19,14 +19,10 @@
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
 
-#include <omp.h>
-
 
 namespace spike {
 
-/**
- * This class encapsulates the truncated Spike preconditioner.
- */
+/// Spike preconditioner.
 template <typename PrecVector>
 class Precond
 {
@@ -92,8 +88,6 @@ public:
 	template <typename Matrix>
 	void   setup(const Matrix&  A);
 
-	bool   setupDone() const              {return m_setupDone;}
-
 	void   update(const PrecVector& entries);
 
 	void   solve(PrecVector& v, PrecVector& z);
@@ -114,7 +108,6 @@ private:
 	bool                 m_variableBandwidth;
 	bool                 m_trackReordering;
 
-	bool                 m_setupDone;
 	MatrixMap            m_offDiagMap;
 	MatrixMap            m_WVMap;
 	MatrixMap            m_typeMap;
@@ -264,7 +257,6 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_safeFactorization(safeFactorization),
 	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
-	m_setupDone(false),
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
@@ -286,8 +278,7 @@ Precond<PrecVector>::Precond(int                 numPart,
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond()
-:	m_setupDone(false),
-	m_reorder(false),
+:	m_reorder(false),
 	m_doMC64(false),
 	m_scale(false),
 	m_k_reorder(0),
@@ -312,8 +303,7 @@ Precond<PrecVector>::Precond()
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
-:	m_setupDone(false),
-	m_k_reorder(0),
+:	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
@@ -358,7 +348,6 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
 
-	m_setupDone         = false;
 	m_ks_host           = prec.m_ks_host;
 	m_offDiagWidths_left_host = prec.m_offDiagWidths_left_host;
 	m_offDiagWidths_right_host = prec.m_offDiagWidths_right_host;
@@ -384,13 +373,6 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::update(const PrecVector& entries)
 {
-	// If setup function is not called at all, directly return from this function
-	if (!m_setupDone)
-		throw system_error(system_error::Illegal_update, "Illegal call to update() before setup().");
-
-	if (!m_trackReordering)
-		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
-
 	m_time_reorder = 0.0;
 
 	m_timer.Start();
@@ -551,8 +533,6 @@ void
 Precond<PrecVector>::setup(const Matrix&  A)
 {
 	m_n = A.num_rows;
-
-	m_setupDone = true;
 
 	// Form the banded matrix based on the specified matrix, either through
 	// transformation (reordering and drop-off) or straight conversion.
