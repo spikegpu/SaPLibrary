@@ -97,18 +97,6 @@ template <typename Array, typename PrecValueType>
 class Solver
 {
 public:
-	typedef typename Array::value_type    SolverValueType;
-	typedef typename Array::memory_space  MemorySpace;
-
-	typedef typename cusp::array1d<SolverValueType, MemorySpace>        SolverVector;
-	typedef typename cusp::array1d<PrecValueType,   MemorySpace>        PrecVector;
-
-	typedef typename cusp::array1d<PrecValueType,   cusp::host_memory>  PrecVectorH;
-	typedef typename cusp::array1d<int,             cusp::host_memory>  IntVectorH;
-
-	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
-
-
 	Solver(int             numPartitions,
 	       const Options&  opts);
 
@@ -138,6 +126,18 @@ public:
 	const Stats&  getStats() const {return m_stats;}
 
 private:
+	typedef typename Array::value_type    SolverValueType;
+	typedef typename Array::memory_space  MemorySpace;
+
+	typedef typename cusp::array1d<SolverValueType, MemorySpace>        SolverVector;
+	typedef typename cusp::array1d<PrecValueType,   MemorySpace>        PrecVector;
+
+	typedef typename cusp::array1d<PrecValueType,   cusp::host_memory>  PrecVectorH;
+	typedef typename cusp::array1d<int,             cusp::host_memory>  IntVectorH;
+
+	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
+
+
 	KrylovSolverType                    m_solver;
 	Monitor<SolverVector>               m_monitor;
 	Precond<PrecVector>                 m_precond;
