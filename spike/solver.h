@@ -472,9 +472,15 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
                                     const Array&        b,
                                     Array&              x)
 {
+	// Check if this call to solve() is legal.
+	if (!m_setupDone)
+		throw system_error(system_error::Illegal_solve, "Illegal call to solve() before setup().");
+
 	SolverVector b_vector = b;
 	SolverVector x_vector = x;
 
+
+	// Solve the linear system.
 	m_monitor.init(b_vector);
 
 	CPUTimer timer;
