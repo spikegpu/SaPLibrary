@@ -26,7 +26,7 @@
 
 namespace spike {
 
-/// Inuput solver options.
+/// Input solver options.
 /**
  * This structure encapsulates all solver options and specifies the methods and
  * parameters used in the iterative solver and the preconditioner.
@@ -93,19 +93,17 @@ struct Stats
 
 
 /// Main SPIKE::GPU solver.
+/** 
+ * This class is the public interface to the Spike-preconditioned
+ * Krylov iterative solver.
+ */
 template <typename Array, typename PrecValueType>
 class Solver
 {
 public:
 	Solver(int             numPartitions,
 	       const Options&  opts);
-
-	~Solver() {
-		int numComponents = m_precond_pointers.size();
-		for (int i=0; i<numComponents; i++)
-			delete m_precond_pointers[i];
-		m_precond_pointers.clear();
-	}
+	~Solver();
 
 	template <typename Matrix>
 	bool setup(const Matrix& A);
@@ -118,11 +116,7 @@ public:
 	           const Array&   b,
 	           Array&         x);
 
-	/**
-	 * This is the function to get the statistic for the solver,
-	 * including the residual norm, half-bandwidth and all timing
-	 * information.
-	 */
+	/// Extract solver statistics.
 	const Stats&  getStats() const {return m_stats;}
 
 private:
@@ -209,9 +203,10 @@ Stats::Stats()
 }
 
 
+/// Spike solver constructor.
 /**
  * This is the constructor for the Solver class. It specifies the requested number
- * of partitions and the structure of solver options.
+ * of partitions and the set of solver options.
  */
 template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
@@ -228,6 +223,20 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
 }
 
 
+/// Spike solver destructor.
+/**
+ * This is the destructor for the Solver class. It frees the preconditioner objects.
+ */
+template <typename Array, typename PrecValueType>
+Solver<Array, PrecValueType>::~Solver()
+{
+		for (size_t i = 0; i < m_precond_pointers.size(); i++)
+			delete m_precond_pointers[i];
+		m_precond_pointers.clear();
+}
+
+
+/// Preconditioner setup.
 /**
  * This function performs the initial setup for the Spike solver. It prepares
  * the preconditioner based on the specified matrix A (which may be the system
@@ -386,11 +395,17 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	return true;
 }
 
+
+/// Preconditioner update.
 /**
- * This function does an update to the banded matrix and off-diagonal matrices after
- * function setup has been called at least once and during setup, the reordering information
- * is asked to be tracked. In case at least one of the conditions is not met, errors
- * are reported.
+ * This function updates the Spike preconditioner assuming that the reordering
+ * information generated when the preconditioner was initially set up is still
+ * valid.  The diagonal blocks and off-diagonal spike blocks are updates based
+ * on the provided matrix non-zero entries.
+ * 
+ * An exception is thrown if this call was not preceeded by a call to
+ * Solver::setup() or if reordering tracking was not enabled through the solver
+ * options.
  */
 template <typename Array, typename PrecValueType>
 template <typename Array1>
@@ -404,10 +419,10 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
 	if (!m_trackReordering)
 		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
 
+
 	// Update the preconditioner.
 	CPUTimer timer;
 	timer.Start();
-
 
 	int numComponents = m_precond_pointers.size();
 
@@ -461,9 +476,14 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
 	return true;
 }
 
+
+/// Linear system solve
 /**
  * This function solves the system Ax=b, for given matrix A and right-handside
  * vector b.
+ *
+ * An exception is throw if this call was not preceeded by a call to
+ * Solver::setup().
  */
 template <typename Array, typename PrecValueType>
 template <typename SpmvOperator>

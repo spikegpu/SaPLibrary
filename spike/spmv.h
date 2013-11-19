@@ -10,25 +10,30 @@
 namespace spike {
 
 
-// ----------------------------------------------------------------------------
-// SpmvCusp
-//
-// This is the default CUSP-based SPMV functor class for the SPIKE solver.
-// It uses the cusp sparse matrix-vector multiply algorithm.
-// ----------------------------------------------------------------------------
+/// Default SPMV functor class.
+/**
+ * This class implements the default SPMV functor for sparse matrix-vector
+ * product, using the cusp::multiply algorithm.
+ */
 template <typename Matrix>
 class SpmvCusp {
 public:
 	SpmvCusp(Matrix& A) : m_A(A), m_time(0), m_count(0) {}
 
-	double getTime() const   {return m_time;}     // Total time (ms)
-	double getCount() const  {return m_count;}    // Total number of calls
-	double getGFlops() const                      // Average GFLOP/s
+	/// Cummulative time for all SPMV calls (ms).
+	double getTime() const   {return m_time;}
+
+	/// Total number of calls to the SPMV functor.
+	double getCount() const  {return m_count;}
+
+	/// Average GFLOP/s over all SPMV calls.
+	double getGFlops() const
 	{
 		double avgTime = m_time / m_count;
 		return 2 * m_A.num_entries / (1e6 * avgTime);
 	}
 
+	/// Implementation of the SPMV functor using cusp::multiply().
 	template <typename Array>
 	void operator()(const Array& v,
 	                Array&       Av)
