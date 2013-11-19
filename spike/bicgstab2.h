@@ -21,10 +21,11 @@ typedef typename cusp::array1d<int,  cusp::host_memory>  IntVectorH;
 
 
 template <typename T>
-struct IsEqual
+struct IsEqualTo
 {
 	T m_val;
-	IsEqual(T val = 0) : m_val(val) {}
+
+	IsEqualTo(T val = 0) : m_val(val) {}
 
 	__host__ __device__
 	bool operator() (const T& val)
@@ -50,7 +51,7 @@ void precondSolveWrapper(SolverVector&                       rhs,
 		PrecVector buffer_rhs(loc_n);
 		PrecVector buffer_sol(loc_n);
 
-		thrust::scatter_if(rhs.begin(), rhs.end(), comp_perms.begin(), compIndices.begin(), buffer_rhs.begin(), IsEqual<int>(i));
+		thrust::scatter_if(rhs.begin(), rhs.end(), comp_perms.begin(), compIndices.begin(), buffer_rhs.begin(), IsEqualTo<int>(i));
 		precond_pointers[i]->solve(buffer_rhs, buffer_sol);
 		thrust::scatter(buffer_sol.begin(), buffer_sol.end(), comp_reorderings[i].begin(), sol.begin());
 	}

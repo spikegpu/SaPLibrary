@@ -84,15 +84,6 @@ void kernelConfigAdjust(int &numThreads, int &numBlockX, int &numBlockY, const i
 	}
 }
 
-template<typename T>
-struct Multiplier: public thrust::unary_function<T, T>
-{
-	__host__ __device__
-	T operator() (thrust::tuple<T, T> tu) {
-		return thrust::get<0>(tu) * thrust::get<1>(tu);
-	}
-};
-
 
 } // namespace spike
 

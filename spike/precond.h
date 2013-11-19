@@ -232,13 +232,35 @@ private:
 	void combinePermutation(IntVector& perm, IntVector& perm2, IntVector& finalPerm);
 	void getSRev(PrecVector& rhs, PrecVector& sol);
 
-
 	bool hasZeroPivots(const PrecVectorIterator& start_B,
 	                   const PrecVectorIterator& end_B,
 	                   int                       k,
 	                   PrecValueType             threshold);
 };
 
+
+// Functor objects 
+// 
+// TODO:  figure out why I cannot make these private to Precond...
+template<typename T>
+struct Multiply: public thrust::unary_function<T, T>
+{
+	__host__ __device__
+	T operator() (thrust::tuple<T, T> tu) {
+		return thrust::get<0>(tu) * thrust::get<1>(tu);
+	}
+};
+
+template <typename T>
+struct SmallerThan : public thrust::unary_function<T, bool> 
+{
+	SmallerThan(T threshold) : m_threshold(threshold) {}
+
+	__host__ __device__
+	bool operator()(T val) {return std::abs(val) < m_threshold;}
+
+	T  m_threshold;
+};
 
 
 /**
@@ -391,8 +413,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 	cusp::blas::fill(m_B, (PrecValueType) 0);
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiply<PrecValueType>()),
 			m_bandedMatMap.begin(),
 			m_typeMap.begin(),
 			m_B.begin()
@@ -434,8 +456,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 	m_timer.Start();
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiply<PrecValueType>()),
 			m_offDiagMap.begin(),
 			m_typeMap.begin(),
 			m_offDiags.begin(),
@@ -443,8 +465,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			);
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiply<PrecValueType>()),
 			m_WVMap.begin(),
 			m_typeMap.begin(),
 			mat_WV.begin(),
@@ -792,8 +814,8 @@ Precond<PrecVector>::permuteAndScale(PrecVector&   v,
 	m_timer.Start();
 
 	thrust::scatter(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), thrust::make_permutation_iterator(scale.begin(), perm.begin()))), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), thrust::make_permutation_iterator(scale.end(), perm.end()))), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), thrust::make_permutation_iterator(scale.begin(), perm.begin()))), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), thrust::make_permutation_iterator(scale.end(), perm.end()))), Multiply<PrecValueType>()),
 			perm.begin(),
 			w.begin()
 			);
@@ -815,8 +837,8 @@ Precond<PrecVector>::scaleAndPermute(PrecVector&   v,
 {
 	m_timer.Start();
 	thrust::scatter(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), scale.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), scale.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), scale.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), scale.end())), Multiply<PrecValueType>()),
 			perm.begin(),
 			w.begin()
 			);
@@ -2479,18 +2501,6 @@ Precond<PrecVector>::copyLastPartition(PrecVector &B2) {
  * This function checks the diagonal of the specified banded matrix for any 
  * elements that are smaller in absolute value than a threshold value
  */
-template <typename T>
-struct zero_functor : thrust::unary_function<T, bool> 
-{
-	zero_functor(T threshold) : m_threshold(threshold) {}
-
-	__host__ __device__
-	bool operator()(T val) {return abs(val) < m_threshold;}
-
-	T  m_threshold;
-};
-
-
 template <typename PrecVector>
 bool
 Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
@@ -2506,7 +2516,7 @@ Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
 	////std::cout << std::endl;
 
 	// Check if any of the diagonal elements is within the specified threshold
-	return thrust::any_of(diag.begin(), diag.end(), zero_functor<PrecValueType>(threshold));
+	return thrust::any_of(diag.begin(), diag.end(), SmallerThan<PrecValueType>(threshold));
 }
 
 
