@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <fstream>
 #include <cmath>
+#include <map>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <cusp/io/matrix_market.h>
@@ -123,7 +125,9 @@ void PrintStats(bool               success,
 class OutputItem
 {
 public:
-	OutputItem(std::ostream &o): m_o(o) {}
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(12) {}
+
+	int           m_additional_item_count;
 
 	template <typename T>
 	void operator() (T item) {
@@ -187,6 +191,25 @@ int main(int argc, char** argv)
 		i++;
 
 		outputItem( fileMat.substr(i));
+		fileMat = fileMat.substr(i);
+	}
+
+	// Load information of Pardiso time
+	std::map<std::string, double> pardiso_time_table;
+	{
+		std::ifstream fin("../../test/pardiso_list.txt", std::ios::in);
+		if (fin.is_open()) {
+			std::string mat_name;
+			double pardiso_time;
+
+			while(fin >> mat_name >> pardiso_time) {
+				if (mat_name == fileMat) {
+					pardiso_time_table[mat_name] = pardiso_time;
+					break;
+				}
+			}
+			fin.close();
+		}
 	}
 
 	// Dimension
@@ -206,6 +229,21 @@ int main(int argc, char** argv)
 		outputItem( solveSuccess);
 		// Reason why cannot solve (for unsuccessful solving only)
 		outputItem ("Out of memory (in setup stage)");
+		// Make up for the other columns
+		for (int i=0; i < outputItem.m_additional_item_count; i++)
+			outputItem("");
+		// Output the pardiso time
+		std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+		if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+			outputItem(map_it->second);
+			outputItem("");
+		}
+		else {
+			outputItem("");
+			outputItem("");
+		}
+
+		cout << "</tr>" << endl;
 
 		return 1;
 	} catch (const spike::system_error& se) {
@@ -236,6 +274,23 @@ int main(int argc, char** argv)
 				break;
 		}
 
+		// Make up for the other columns
+		for (int i=0; i < outputItem.m_additional_item_count; i++)
+			outputItem("");
+
+		// Output the pardiso time
+		std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+		if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+			outputItem(map_it->second);
+			outputItem("");
+		}
+		else {
+			outputItem("");
+			outputItem("");
+		}
+
+		cout << "</tr>" << endl;
+
 		return 1;
 	}
 
@@ -251,6 +306,22 @@ int main(int argc, char** argv)
 		outputItem( solveSuccess);
 		// Reason why cannot solve (for unsuccessful solving only)
 		outputItem ("Out of memory (in solve stage)");
+		// Make up for the other columns
+		for (int i=0; i < outputItem.m_additional_item_count; i++)
+			outputItem("");
+
+		// Output the pardiso time
+		std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+		if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+			outputItem(map_it->second);
+			outputItem("");
+		}
+		else {
+			outputItem("");
+			outputItem("");
+		}
+
+		cout << "</tr>" << endl;
 
 		return 1;
 	} catch (const spike::system_error& se) {
@@ -277,6 +348,23 @@ int main(int argc, char** argv)
 				outputItem( "Unknown error");
 				break;
 		}
+
+		// Make up for the other columns
+		for (int i=0; i < outputItem.m_additional_item_count; i++)
+			outputItem("");
+
+		// Output the pardiso time
+		std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+		if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+			outputItem(map_it->second);
+			outputItem("");
+		}
+		else {
+			outputItem("");
+			outputItem("");
+		}
+
+		cout << "</tr>" << endl;
 
 		return 1;
 	}
@@ -317,8 +405,34 @@ int main(int argc, char** argv)
 			outputItem( stats.timeSolve);
 			// Total amount of time
 			outputItem( stats.timeSetup + stats.timeSolve);
-		} else
+			// Output the pardiso time
+			std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+			if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+				outputItem(map_it->second);
+				outputItem((stats.timeSetup + stats.timeSolve) / map_it->second);
+			}
+			else {
+				outputItem("");
+				outputItem("");
+			}
+		} else {
 			outputItem ( "Not converged");
+
+			// Make up for the other columns
+			for (int i=0; i < outputItem.m_additional_item_count; i++)
+				outputItem("");
+
+			// Output the pardiso time
+			std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+			if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+				outputItem(map_it->second);
+				outputItem("");
+			}
+			else {
+				outputItem("");
+				outputItem("");
+			}
+		}
 
 		cout << "</tr>" << endl;
 	}
