@@ -1,3 +1,7 @@
+/** \file precond.h
+ *  \brief Definition of the Spike preconditioner class.
+ */
+
 #ifndef SPIKE_PRECOND_CUH
 #define SPIKE_PRECOND_CUH
 
@@ -19,13 +23,15 @@
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
 
-#include <omp.h>
-
 
 namespace spike {
 
+/// Spike preconditioner.
 /**
- * This class encapsulates the truncated Spike preconditioner.
+ * This class implements the Spike preconditioner.
+ *
+ * \tparam PrecVector is the vector type used in the preconditioner.
+ *         (its underlying type defines the precision of the preconditioner).
  */
 template <typename PrecVector>
 class Precond
@@ -92,8 +98,6 @@ public:
 	template <typename Matrix>
 	void   setup(const Matrix&  A);
 
-	bool   setupDone() const              {return m_setupDone;}
-
 	void   update(const PrecVector& entries);
 
 	void   solve(PrecVector& v, PrecVector& z);
@@ -114,7 +118,6 @@ private:
 	bool                 m_variableBandwidth;
 	bool                 m_trackReordering;
 
-	bool                 m_setupDone;
 	MatrixMap            m_offDiagMap;
 	MatrixMap            m_WVMap;
 	MatrixMap            m_typeMap;
@@ -229,13 +232,35 @@ private:
 	void combinePermutation(IntVector& perm, IntVector& perm2, IntVector& finalPerm);
 	void getSRev(PrecVector& rhs, PrecVector& sol);
 
-
 	bool hasZeroPivots(const PrecVectorIterator& start_B,
 	                   const PrecVectorIterator& end_B,
 	                   int                       k,
 	                   PrecValueType             threshold);
 };
 
+
+// Functor objects 
+// 
+// TODO:  figure out why I cannot make these private to Precond...
+template<typename T>
+struct Multiply: public thrust::unary_function<T, T>
+{
+	__host__ __device__
+	T operator() (thrust::tuple<T, T> tu) {
+		return thrust::get<0>(tu) * thrust::get<1>(tu);
+	}
+};
+
+template <typename T>
+struct SmallerThan : public thrust::unary_function<T, bool> 
+{
+	SmallerThan(T threshold) : m_threshold(threshold) {}
+
+	__host__ __device__
+	bool operator()(T val) {return std::abs(val) < m_threshold;}
+
+	T  m_threshold;
+};
 
 
 /**
@@ -264,7 +289,6 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_safeFactorization(safeFactorization),
 	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
-	m_setupDone(false),
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
@@ -286,8 +310,7 @@ Precond<PrecVector>::Precond(int                 numPart,
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond()
-:	m_setupDone(false),
-	m_reorder(false),
+:	m_reorder(false),
 	m_doMC64(false),
 	m_scale(false),
 	m_k_reorder(0),
@@ -312,8 +335,7 @@ Precond<PrecVector>::Precond()
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
-:	m_setupDone(false),
-	m_k_reorder(0),
+:	m_k_reorder(0),
 	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
@@ -358,7 +380,6 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
 
-	m_setupDone         = false;
 	m_ks_host           = prec.m_ks_host;
 	m_offDiagWidths_left_host = prec.m_offDiagWidths_left_host;
 	m_offDiagWidths_right_host = prec.m_offDiagWidths_right_host;
@@ -384,13 +405,6 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::update(const PrecVector& entries)
 {
-	// If setup function is not called at all, directly return from this function
-	if (!m_setupDone)
-		throw system_error(system_error::Illegal_update, "Illegal call to update() before setup().");
-
-	if (!m_trackReordering)
-		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
-
 	m_time_reorder = 0.0;
 
 	m_timer.Start();
@@ -399,8 +413,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 	cusp::blas::fill(m_B, (PrecValueType) 0);
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiply<PrecValueType>()),
 			m_bandedMatMap.begin(),
 			m_typeMap.begin(),
 			m_B.begin()
@@ -442,8 +456,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 	m_timer.Start();
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiply<PrecValueType>()),
 			m_offDiagMap.begin(),
 			m_typeMap.begin(),
 			m_offDiags.begin(),
@@ -451,8 +465,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			);
 
 	thrust::scatter_if(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.begin(), m_scaleMap.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(entries.end(), m_scaleMap.end())), Multiply<PrecValueType>()),
 			m_WVMap.begin(),
 			m_typeMap.begin(),
 			mat_WV.begin(),
@@ -551,8 +565,6 @@ void
 Precond<PrecVector>::setup(const Matrix&  A)
 {
 	m_n = A.num_rows;
-
-	m_setupDone = true;
 
 	// Form the banded matrix based on the specified matrix, either through
 	// transformation (reordering and drop-off) or straight conversion.
@@ -802,8 +814,8 @@ Precond<PrecVector>::permuteAndScale(PrecVector&   v,
 	m_timer.Start();
 
 	thrust::scatter(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), thrust::make_permutation_iterator(scale.begin(), perm.begin()))), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), thrust::make_permutation_iterator(scale.end(), perm.end()))), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), thrust::make_permutation_iterator(scale.begin(), perm.begin()))), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), thrust::make_permutation_iterator(scale.end(), perm.end()))), Multiply<PrecValueType>()),
 			perm.begin(),
 			w.begin()
 			);
@@ -825,8 +837,8 @@ Precond<PrecVector>::scaleAndPermute(PrecVector&   v,
 {
 	m_timer.Start();
 	thrust::scatter(
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), scale.begin())), Multiplier<PrecValueType>()),
-			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), scale.end())), Multiplier<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.begin(), scale.begin())), Multiply<PrecValueType>()),
+			thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(v.end(), scale.end())), Multiply<PrecValueType>()),
 			perm.begin(),
 			w.begin()
 			);
@@ -2489,18 +2501,6 @@ Precond<PrecVector>::copyLastPartition(PrecVector &B2) {
  * This function checks the diagonal of the specified banded matrix for any 
  * elements that are smaller in absolute value than a threshold value
  */
-template <typename T>
-struct zero_functor : thrust::unary_function<T, bool> 
-{
-	zero_functor(T threshold) : m_threshold(threshold) {}
-
-	__host__ __device__
-	bool operator()(T val) {return abs(val) < m_threshold;}
-
-	T  m_threshold;
-};
-
-
 template <typename PrecVector>
 bool
 Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
@@ -2516,7 +2516,7 @@ Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
 	////std::cout << std::endl;
 
 	// Check if any of the diagonal elements is within the specified threshold
-	return thrust::any_of(diag.begin(), diag.end(), zero_functor<PrecValueType>(threshold));
+	return thrust::any_of(diag.begin(), diag.end(), SmallerThan<PrecValueType>(threshold));
 }
 
 

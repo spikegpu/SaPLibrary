@@ -1,3 +1,7 @@
+/** \file solver.h
+ *  \brief Definition of the main Spike solver class.
+ */
+
 #ifndef SPIKE_SOLVER_H
 #define SPIKE_SOLVER_H
 
@@ -24,34 +28,42 @@
 #include <spike/timer.h>
 
 
+/** \namespace spike
+ * \brief spike is the top-level namespace which contains all Spike functions and types.
+ */
+
+
 namespace spike {
 
+/// Input solver options.
 /**
- * This structure encapsulates all solver options.
+ * This structure encapsulates all solver options and specifies the methods and
+ * parameters used in the iterative solver and the preconditioner.
  */
 struct Options
 {
 	Options();
 
-	KrylovSolverType    solverType;           /** Indicate the Krylov method to use, BiCGStab(2) by default. */
-	int                 maxNumIterations;     /** Indicate the maximum number of iterations the Krylov method will run, 100 by default. */
-	double              tolerance;            /** Indicate the tolerance of error accepted, 1e^(-6) by default. */
+	KrylovSolverType    solverType;           /**< Krylov method to use; default: BiCGStab2 */
+	int                 maxNumIterations;     /**< Maximum number of iterations; default: 100 */
+	double              tolerance;            /**< Relative tolerance; default: 1e-6 */
 
-	bool                performReorder;       /** Indicate whether to perform reordering to the matrix, true by default.*/
-	bool                performMC64;          /** Indicate whether to perform MC64 reordering, true by default. */
-	bool                applyScaling;         /** Indicate whether to apply scaling in MC64 or not, true by default.*/
-	int                 maxBandwidth;         /** Indicate the maximum half-bandwidth, INT_MAX by default */
-	double              dropOffFraction;      /** Indicate the maximum fraction of elements which can be dropped-off, 0 by default. */
+	bool                performReorder;       /**< Perform matrix reorderings? default: true */
+	bool                performMC64;          /**< Perform MC64 reordering? default: true */
+	bool                applyScaling;         /**< Apply MC64 scaling? default: true */
+	int                 maxBandwidth;         /**< Maximum half-bandwidth; default: INT_MAX */
+	double              dropOffFraction;      /**< Maximum fraction of the element-wise matrix 1-norm that can be dropped-off; default: 0 */
 
-	FactorizationMethod factMethod;           /** Indicate the method to assemble off-diagonal matrices, LU_only by default. */
-	PreconditionerType  precondType;          /** Indicate the method to do preconditioning, SPIKE by default. */
-	bool                safeFactorization;    /** Indicate whether to use safe factorization methods, false by default. */
-	bool                variableBandwidth;    /** Indicate whether variable bandwidths be used for different partitions, true by default. */
-	bool                singleComponent;      /** Indicate whether the whole matrix is treated as a single component, false by default. */
-	bool                trackReordering;      /** Indicate whether to keep track of the reordering information, false by default. */
+	FactorizationMethod factMethod;           /**< Diagonal block factorization method; default: LU_only */
+	PreconditionerType  precondType;          /**< Preconditioner type; default: Spike */
+	bool                safeFactorization;    /**< Use safe factorization (diagonal boosting)? default: false */
+	bool                variableBandwidth;    /**< Allow variable partition bandwidths? default: true */
+	bool                singleComponent;      /**< Disable check for disconnected components? default: false */
+	bool                trackReordering;      /**< Keep track of the reordering information? default: false */
 };
 
 
+/// Output solver statistics.
 /**
  * This structure encapsulates all solver statistics, both from the iterative
  * solver and the preconditioner.
@@ -60,63 +72,52 @@ struct Stats
 {
 	Stats();
 
-	double      timeSetup;              /** Time to setup the preconditioner. */
-	double      timeUpdate;             /** Time to update the preconditioner. */
-	double      timeSolve;              /** Time for Krylov solve. */
+	double      timeSetup;              /**< Time to set up the preconditioner. */
+	double      timeUpdate;             /**< Time to update the preconditioner. */
+	double      timeSolve;              /**< Time for Krylov solve. */
 
-	double      time_reorder;           /** Time to do reordering. */
-	double      time_cpu_assemble;      /** Time on CPU to achieve the banded matrix and off-diagonal matrices. */
-	double      time_transfer;          /** Time to transfer data from CPU to GPU. */
-	double      time_toBanded;          /** Time to form banded matrix when reordering is disabled. TODO: combine this with time_cpu_assemble*/
-	double      time_offDiags;          /** Time to achieve off-diagonal matrices on GPU. */
-	double      time_bandLU;            /** Time for LU factorization. */
-	double      time_bandUL;            /** Time for UL factorization (in LU_UL method only). */
-	double      time_fullLU;            /** Time for LU factorization on reduced matrix R. */
-	double      time_assembly;          /** Time for assembling off-diagonal matrices (including solving multiple RHS)*/
+	double      time_reorder;           /**< Time to do reordering. */
+	double      time_cpu_assemble;      /**< Time on CPU to assemble the banded matrix and off-diagonal spikes. */
+	double      time_transfer;          /**< Time to transfer data from CPU to GPU. */
+	double      time_toBanded;          /**< Time to form banded matrix when reordering is disabled.*/ /*TODO: combine this with time_cpu_assemble*/
+	double      time_offDiags;          /**< Time to compute off-diagonal spike matrices on GPU. */
+	double      time_bandLU;            /**< Time for LU factorization of diagonal blocks. */
+	double      time_bandUL;            /**< Time for UL factorization of diagonal blocks(in LU_UL method only). */
+	double      time_fullLU;            /**< Time for LU factorization of the reduced matrix R. */
+	double      time_assembly;          /**< Time for assembling off-diagonal matrices (including solving multiple RHS) */
 
-	double      time_shuffle;           /** Total time to do vector reordering and scaling. */
+	double      time_shuffle;           /**< Total time to do vector reordering and scaling. */
 
-	int         bandwidthReorder;       /** Half-bandwidth after reordering. */
-	int         bandwidthMC64;          /** Half-bandwidth after MC64. */
-	int         bandwidth;              /** Half-bandwidth after reordering and drop-off. */
+	int         bandwidthReorder;       /**< Half-bandwidth after reordering. */
+	int         bandwidthMC64;          /**< Half-bandwidth after MC64. */
+	int         bandwidth;              /**< Half-bandwidth after reordering and drop-off. */
 
-	int         numPartitions;          /** Actual number of paritions used in the Spike factorization */
-	double      actualDropOff;          /** The fraction of elements dropped off. */
+	int         numPartitions;          /**< Actual number of partitions used in the Spike factorization */
+	double      actualDropOff;          /**< Actual fraction of the element-wise matrix 1-norm dropped off. */
 
-	float       numIterations;          /** The number of iterations required for Krylov solver to converge. */
-	double      residualNorm;           /** The residual norm of the solution (i.e. |b-Ax|_2). */
-	double      relResidualNorm;        /** The relative residual norm of the solution (i.e. |b-Ax|_2 / |b|_2)*/
+	float       numIterations;          /**< Number of iterations required for iterative solver to converge. */
+	double      residualNorm;           /**< Final residual norm (i.e. ||b-Ax||_2). */
+	double      relResidualNorm;        /**< Final relative residual norm (i.e. ||b-Ax||_2 / ||b||_2)*/
 };
 
 
-/**
- * This class encapsulates the main SPIKE::GPU solver. 
+/// Main SPIKE::GPU solver.
+/** 
+ * This class is the public interface to the Spike-preconditioned
+ * Krylov iterative solver.
+ *
+ * \tparam Array is the array type for the linear system solution.
+ *         (both cusp::array1d and cusp::array1d_view are valid).
+ * \tparam PrecValueType is the floating point type used in the preconditioner
+ *         (to support mixed-precision calculations).
  */
 template <typename Array, typename PrecValueType>
 class Solver
 {
 public:
-	typedef typename Array::value_type    SolverValueType;
-	typedef typename Array::memory_space  MemorySpace;
-
-	typedef typename cusp::array1d<SolverValueType, MemorySpace>        SolverVector;
-	typedef typename cusp::array1d<PrecValueType,   MemorySpace>        PrecVector;
-
-	typedef typename cusp::array1d<PrecValueType,   cusp::host_memory>  PrecVectorH;
-	typedef typename cusp::array1d<int,             cusp::host_memory>  IntVectorH;
-
-	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
-
-
 	Solver(int             numPartitions,
 	       const Options&  opts);
-
-	~Solver() {
-		int numComponents = m_precond_pointers.size();
-		for (int i=0; i<numComponents; i++)
-			delete m_precond_pointers[i];
-		m_precond_pointers.clear();
-	}
+	~Solver();
 
 	template <typename Matrix>
 	bool setup(const Matrix& A);
@@ -129,14 +130,22 @@ public:
 	           const Array&   b,
 	           Array&         x);
 
-	/**
-	 * This is the function to get the statistic for the solver,
-	 * including the residual norm, half-bandwidth and all timing
-	 * information.
-	 */
+	/// Extract solver statistics.
 	const Stats&  getStats() const {return m_stats;}
 
 private:
+	typedef typename Array::value_type    SolverValueType;
+	typedef typename Array::memory_space  MemorySpace;
+
+	typedef typename cusp::array1d<SolverValueType, MemorySpace>        SolverVector;
+	typedef typename cusp::array1d<PrecValueType,   MemorySpace>        PrecVector;
+
+	typedef typename cusp::array1d<PrecValueType,   cusp::host_memory>  PrecVectorH;
+	typedef typename cusp::array1d<int,             cusp::host_memory>  IntVectorH;
+
+	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
+
+
 	KrylovSolverType                    m_solver;
 	Monitor<SolverVector>               m_monitor;
 	Precond<PrecVector>                 m_precond;
@@ -208,9 +217,10 @@ Stats::Stats()
 }
 
 
+/// Spike solver constructor.
 /**
  * This is the constructor for the Solver class. It specifies the requested number
- * of partitions and the structure of solver options.
+ * of partitions and the set of solver options.
  */
 template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
@@ -227,10 +237,26 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
 }
 
 
+/// Spike solver destructor.
+/**
+ * This is the destructor for the Solver class. It frees the preconditioner objects.
+ */
+template <typename Array, typename PrecValueType>
+Solver<Array, PrecValueType>::~Solver()
+{
+		for (size_t i = 0; i < m_precond_pointers.size(); i++)
+			delete m_precond_pointers[i];
+		m_precond_pointers.clear();
+}
+
+
+/// Preconditioner setup.
 /**
  * This function performs the initial setup for the Spike solver. It prepares
  * the preconditioner based on the specified matrix A (which may be the system
  * matrix, or some approximation to it).
+ *
+ * \tparam Matrix is the sparse matrix type used in the preconditioner.
  */
 template <typename Array, typename PrecValueType>
 template <typename Matrix>
@@ -385,11 +411,20 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	return true;
 }
 
+
+/// Preconditioner update.
 /**
- * This function does an update to the banded matrix and off-diagonal matrices after
- * function setup has been called at least once and during setup, the reordering information
- * is asked to be tracked. In case at least one of the conditions is not met, errors
- * are reported.
+ * This function updates the Spike preconditioner assuming that the reordering
+ * information generated when the preconditioner was initially set up is still
+ * valid.  The diagonal blocks and off-diagonal spike blocks are updates based
+ * on the provided matrix non-zero entries.
+ * 
+ * An exception is thrown if this call was not preceeded by a call to
+ * Solver::setup() or if reordering tracking was not enabled through the solver
+ * options.
+ *
+ * \tparam Array1 is the vector type for the non-zero entries of the updated
+ *         matrix (both cusp::array1d and cusp::array1d_view are allowed).
  */
 template <typename Array, typename PrecValueType>
 template <typename Array1>
@@ -397,20 +432,16 @@ bool
 Solver<Array, PrecValueType>::update(const Array1& entries)
 {
 	// Check if this call to update() is legal.
-	if (!m_setupDone) {
-		fprintf(stderr, "The update function is NOT called due to the fact that the preconditioners have not been set up yet.\n");
-		return false;
-	}
+	if (!m_setupDone)
+		throw system_error(system_error::Illegal_update, "Illegal call to update() before setup().");
 
-	if (!m_trackReordering) {
-		fprintf(stderr, "The update function is NOT called due to the fact that no reordering information is tracked during setup.\n");
-		return false;
-	}
+	if (!m_trackReordering)
+		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
+
 
 	// Update the preconditioner.
 	CPUTimer timer;
 	timer.Start();
-
 
 	int numComponents = m_precond_pointers.size();
 
@@ -464,9 +495,18 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
 	return true;
 }
 
+
+/// Linear system solve
 /**
  * This function solves the system Ax=b, for given matrix A and right-handside
  * vector b.
+ *
+ * An exception is throw if this call was not preceeded by a call to
+ * Solver::setup().
+ *
+ * \tparam SpmvOperator is a functor class which implements the operator()
+ *         to calculate sparse matrix-vector product. See spike::SpmvCusp
+ *         for an example.
  */
 template <typename Array, typename PrecValueType>
 template <typename SpmvOperator>
@@ -475,9 +515,15 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
                                     const Array&        b,
                                     Array&              x)
 {
+	// Check if this call to solve() is legal.
+	if (!m_setupDone)
+		throw system_error(system_error::Illegal_solve, "Illegal call to solve() before setup().");
+
 	SolverVector b_vector = b;
 	SolverVector x_vector = x;
 
+
+	// Solve the linear system.
 	m_monitor.init(b_vector);
 
 	CPUTimer timer;

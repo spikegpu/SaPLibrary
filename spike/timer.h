@@ -1,3 +1,7 @@
+/** \file timer.h
+ *  \brief CPU and GPU timer classes.
+ */
+
 #ifndef TIMER_H
 #define TIMER_H
 
@@ -11,8 +15,10 @@
 #endif
 
 
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
+namespace spike {
+
+
+/// Base timer class.
 class Timer {
 public:
 	virtual ~Timer() {}
@@ -22,8 +28,10 @@ public:
 };
 
 
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
+/// GPU timer.
+/**
+ * CUDA-based GPU timer.
+ */
 class GPUTimer : public Timer {
 protected:
 	int gpu_idx;
@@ -59,14 +67,20 @@ public:
 };
 
 
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
+/// CPU timer.
+/**
+ * CPU timer using the performance counter for WIN32 and
+ * gettimeofday() for Linux.
+ */
 #ifdef WIN32
 
 class CPUTimer : public Timer
 {
 public:
-	CPUTimer()   {QueryPerformanceFrequency(&m_frequency);}
+	CPUTimer()
+	{
+		QueryPerformanceFrequency(&m_frequency);
+	}
 	~CPUTimer()  {}
 
 	virtual void Start() {QueryPerformanceCounter(&m_start);}
@@ -105,6 +119,8 @@ public:
 };
 
 #endif // WIN32
+
+} // namespace spike
 
 
 #endif

@@ -1,3 +1,7 @@
+/** \file exception.h
+ *  \brief Definition of the Spike system_error exception class.
+ */
+
 #ifndef SPIKE_EXCEPTION_H
 #define SPIKE_EXCEPTION_H
 
@@ -14,7 +18,8 @@ public:
 		Zero_pivoting        = -1,
 		Negative_MC64_weight = -2,
 		Illegal_update       = -3,
-		Matrix_singular      = -4,
+		Illegal_solve        = -4,
+		Matrix_singular      = -5
 	};
 
 	system_error(Reason             reason,

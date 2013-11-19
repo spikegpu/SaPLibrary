@@ -46,13 +46,7 @@ public:
 };
 
 
-
-// ----------------------------------------------------------------------------
-// Node
-//
-// This class encapsulates a graph node.
-// ----------------------------------------------------------------------------
-class Node 
+class Node
 {
 public:
 	Node(int idx, int degree) : m_idx(idx), m_degree(degree) {}
@@ -70,23 +64,15 @@ public:
 };
 
 
-
-// ----------------------------------------------------------------------------
-// EdgeT
-//
-// This class encapsulates a graph edge.
-// ----------------------------------------------------------------------------
 template <typename T>
 class EdgeT
 {
 public:
 	EdgeT() {}
-	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val)
-	{}
+	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val) {}
 
 	EdgeT(int ori_idx, int from, int to, T val)
-		: m_ori_idx(ori_idx), m_from(from), m_to(to), m_val(val)
-	{}
+		: m_ori_idx(ori_idx), m_from(from), m_to(to), m_val(val) {}
 
 	friend bool operator< (const EdgeT& a, const EdgeT& b) {
 		return a.m_to < b.m_to;
@@ -100,12 +86,6 @@ public:
 };
 
 
-
-// ----------------------------------------------------------------------------
-// Graph
-//
-// This class...
-// ----------------------------------------------------------------------------
 template <typename T>
 class Graph
 {
@@ -247,6 +227,69 @@ private:
 	                          IntVector&     rows, 
 	                          DoubleVector&  c_val,
 	                          DoubleVector&  max_val_in_col);
+
+	// Functor objects.
+	struct CompareEdgeLength
+	{
+		bool operator()(const EdgeT<T>& a, const EdgeT<T>& b)
+		{
+			return abs(a.m_from - a.m_to) > abs(b.m_from - b.m_to);
+		}
+	};
+
+	struct AccumulateEdgeValue
+	{
+		T operator()(T res, const EdgeT<T>& edge)
+		{
+			return res + std::abs(edge.m_val);
+		}
+	};
+
+	struct EdgeLength : public thrust::unary_function<EdgeT<T>, int>
+	{
+		__host__ __device__
+		int operator() (const EdgeT<T>& a)
+		{
+			return std::abs(a.m_from - a.m_to);
+		}
+	};
+
+	struct PermutedEdgeLength : public thrust::unary_function<EdgeT<T>, int>
+	{
+		int* m_perm;
+
+		PermutedEdgeLength(int* perm): m_perm(perm) {}
+
+		__host__ __device__
+		int operator() (const EdgeT<T>& a)
+		{
+			return std::abs(m_perm[a.m_from] - m_perm[a.m_to]);
+		}
+	};
+
+	struct PermuteEdge
+	{
+		int* m_perm;
+
+		PermuteEdge(int* perm): m_perm(perm) {}
+
+		__host__ __device__
+		void operator() (EdgeT<T>& a)
+		{
+			a.m_from = m_perm[a.m_from];
+			a.m_to = m_perm[a.m_to];
+		}
+	};
+
+	struct Exponential: public thrust::unary_function<double, double>
+	{
+		__host__
+		double operator() (double a)
+		{
+			return exp(a);
+		}
+	};
+
 };
 
 
@@ -257,7 +300,7 @@ const double Graph<T>::LOC_INFINITY = 1e37;
 // ----------------------------------------------------------------------------
 // Graph::Graph()
 //
-// This is the constructor for the Graph class...
+// This is the constructor for the Graph class.
 // ----------------------------------------------------------------------------
 template <typename T>
 Graph<T>::Graph(bool trackReordering)
@@ -344,63 +387,6 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 
 
 // ----------------------------------------------------------------------------
-// EdgeComparator
-// EdgeAccumulator
-// BandwidthAchiever
-// BandwidthAchiever2
-// PermApplier
-//
-// These utility functor classes are used for sorting and reducing vectors of
-// edges.
-// ----------------------------------------------------------------------------
-template <typename T>
-struct EdgeComparator {
-	bool operator()(const EdgeT<T>& a, const EdgeT<T>& b) {
-		return abs(a.m_from - a.m_to) > abs(b.m_from - b.m_to);
-	}
-};
-
-template <typename T>
-struct EdgeAccumulator {
-	T operator()(T res, const EdgeT<T>& edge) {
-		return res + std::abs(edge.m_val);
-	}
-};
-
-template <typename T>
-struct BandwidthAchiever : public thrust::unary_function<EdgeT<T>, int>{
-	__host__ __device__
-	int operator() (const EdgeT<T>& a) {
-		int delta = a.m_from - a.m_to;
-		return (delta < 0 ? -delta : delta);
-	}
-};
-
-template <typename T>
-struct BandwidthAchiever2 : public thrust::unary_function<EdgeT<T>, int>{
-	int* m_perm;
-	BandwidthAchiever2(int* perm): m_perm(perm) {}
-	__host__ __device__
-	int operator() (const EdgeT<T>& a) {
-		int delta = m_perm[a.m_from] - m_perm[a.m_to];
-		return (delta < 0 ? -delta : delta);
-	}
-};
-
-template <typename T>
-struct PermApplier
-{
-	int* m_perm;
-	PermApplier(int* perm): m_perm(perm) {}
-	__host__ __device__
-	void operator() (EdgeT<T>& a) {
-		a.m_from = m_perm[a.m_from];
-		a.m_to = m_perm[a.m_to];
-	}
-};
-
-
-// ----------------------------------------------------------------------------
 // Graph::dropOff()
 //
 // This function identifies the elements that can be removed in the reordered
@@ -428,12 +414,12 @@ Graph<T>::dropOff(T   frac,
 
 	// Sort the edges in *decreasing* order of their length (the difference
 	// between the indices of their adjacent nodes).
-	std::sort(m_edges.begin(), m_edges.end(), EdgeComparator<T>());
+	std::sort(m_edges.begin(), m_edges.end(), CompareEdgeLength());
 
 	// Calculate the 1-norm of the current matrix and the minimum norm that
 	// must be retained after drop-off. Initialize the 1-norm of the resulting
 	// truncated matrix.
-	T norm_in = std::accumulate(m_edges.begin(), m_edges.end(), (T) 0, EdgeAccumulator<T>());
+	T norm_in = std::accumulate(m_edges.begin(), m_edges.end(), (T) 0, AccumulateEdgeValue());
 	T min_norm_out = (1 - frac) * norm_in;
 	T norm_out = norm_in;
 
@@ -456,7 +442,7 @@ Graph<T>::dropOff(T   frac,
 		// Find all edges in the current band and calculate the norm of the band.
 		do {last++;} while(abs(last->m_from - last->m_to) == bandwidth);
 
-		T band_norm = std::accumulate(m_first, last, (T) 0, EdgeAccumulator<T>());
+		T band_norm = std::accumulate(m_first, last, (T) 0, AccumulateEdgeValue());
 
 		// Stop now if we are below the specified maximum and removing this band
 		// would reduce the norm by more than allowed.
@@ -916,8 +902,10 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	in_out_graph = new std::vector<int> [m_n];
 
-	EdgeIterator begin = edges.begin(), end = edges.end();
-	int tmp_bdwidth = thrust::transform_reduce(begin, end, BandwidthAchiever<T>(), 0, thrust::maximum<int>()), bandwidth = tmp_bdwidth;
+	EdgeIterator begin = edges.begin();
+	EdgeIterator end = edges.end();
+	int tmp_bdwidth = thrust::transform_reduce(begin, end, EdgeLength(), 0, thrust::maximum<int>());
+	int bandwidth = tmp_bdwidth;
 	buildTopology(begin, end, degrees, in_out_graph);
 
 	const int MAX_NUM_TRIAL = 10;
@@ -1016,7 +1004,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 		{
 			int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-			tmp_bdwidth = thrust::transform_reduce(edges.begin(), edges.end(), BandwidthAchiever2<T>(perm_array), 0, thrust::maximum<int>());
+			tmp_bdwidth = thrust::transform_reduce(edges.begin(), edges.end(), PermutedEdgeLength(perm_array), 0, thrust::maximum<int>());
 		}
 
 		if(bandwidth > tmp_bdwidth) {
@@ -1039,13 +1027,14 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	{
 		int* perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-		thrust::for_each(edges.begin(), edges.end(), PermApplier<T>(perm_array));
+		thrust::for_each(edges.begin(), edges.end(), PermuteEdge(perm_array));
 	}
 
 	delete [] in_out_graph;
 
 	return bandwidth;
 }
+
 
 // ----------------------------------------------------------------------------
 // Graph::partitionedRCM()
@@ -1079,7 +1068,8 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 
 	in_out_graph = new std::vector<int> [node_end];
 
-	int tmp_bdwidth = thrust::transform_reduce(begin, end, BandwidthAchiever<T>(), 0, thrust::maximum<int>()), opt_bdwidth = tmp_bdwidth;
+	int tmp_bdwidth = thrust::transform_reduce(begin, end, EdgeLength(), 0, thrust::maximum<int>());
+	int opt_bdwidth = tmp_bdwidth;
 	buildTopology(begin, end, degrees, in_out_graph);
 
 	const int MAX_NUM_TRIAL = 10;
@@ -1162,7 +1152,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 
 		{
 			int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-			tmp_bdwidth = thrust::transform_reduce(begin, end, BandwidthAchiever2<T>(perm_array), 0, thrust::maximum<int>());
+			tmp_bdwidth = thrust::transform_reduce(begin, end, PermutedEdgeLength(perm_array), 0, thrust::maximum<int>());
 		}
 
 		if(opt_bdwidth > tmp_bdwidth) {
@@ -1184,8 +1174,8 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	                optPerm.begin());
 
 	{
-		int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-		thrust::for_each(begin, end, PermApplier<T>(perm_array));
+		int* perm_array = thrust::raw_pointer_cast(&optPerm[0]);
+		thrust::for_each(begin, end, PermuteEdge(perm_array));
 	}
 
 	delete [] in_out_graph;
@@ -1231,11 +1221,6 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // This is the entry function of the core part of MC64 algorithm, which reorders
 // the matrix by finding the minimum match of a bipartite graph.
 // ----------------------------------------------------------------------------
-struct ExpOp: public thrust::unary_function<double, double>
-{
-	__host__ double operator() (double a) {return exp(a);}
-};
-
 template <typename T>
 void
 Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
@@ -1293,9 +1278,9 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 	mc64ColScale.pop_back();
 	max_val_in_col.pop_back();
 
-	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), ExpOp());
-	thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), ExpOp()),
-	                  thrust::make_transform_iterator(mc64ColScale.end(), ExpOp()),
+	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), Exponential());
+	thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), Exponential()),
+	                  thrust::make_transform_iterator(mc64ColScale.end(), Exponential()),
 	                  max_val_in_col.begin(),
 	                  mc64ColScale.begin(),
 	                  thrust::divides<double>());
