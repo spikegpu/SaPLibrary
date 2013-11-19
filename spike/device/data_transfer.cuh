@@ -1,3 +1,8 @@
+/** \file data_transfer.cuh
+ *
+ * Data transfer CUDA kernels.
+ */
+
 #ifndef DATA_TRANSFER_CUH
 #define DATA_TRANSFER_CUH
 

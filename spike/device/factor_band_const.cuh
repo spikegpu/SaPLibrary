@@ -1,7 +1,7 @@
-// ============================================================================
-// This file contains the various matrix factorization CUDA kernels used for
-// partitions with equal bandwidths.
-// ============================================================================
+/** \file factor_band_var.cuh
+ *  Various matrix factorization CUDA kernels used for the case of partitions
+    with equal bandwidths.
+ */
 
 #ifndef FACTOR_BAND_CONST_H
 #define FACTOR_BAND_CONST_H

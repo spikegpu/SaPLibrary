@@ -1,7 +1,7 @@
-// ============================================================================
-// This file contains the various matrix factorization CUDA kernels used for
-// partitions of varying bandwidths.
-// ============================================================================
+/** \file factor_band_var.cuh
+ *  Various matrix factorization CUDA kernels used for the case of partitions
+ *  with varying bandwidths.
+ */
 
 #ifndef FACTOR_BAND_VAR_H
 #define FACTOR_BAND_VAR_H
@@ -9,6 +9,14 @@
 #include <cuda.h>
 #include <spike/common.h>
 
+/** \namespace spike::device
+ * \brief spike::device contains all CUDA kernels.
+ */
+
+/** \namespace spike::device::var
+ * \brief spike::device::var contains all CUDA kernels for the
+          variable bandwidth preconditioner.
+ */
 
 namespace spike {
 namespace device {

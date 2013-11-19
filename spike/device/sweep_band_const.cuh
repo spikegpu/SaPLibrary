@@ -1,7 +1,7 @@
-// ============================================================================
-// This file contains the various CUDA kernels for forward/backward sweeps used
-// for partitions with equal bandwidths.
-// ============================================================================
+/** \file sweep_band_var.cuh
+ *  Various forward/backward sweep CUDA kernels used for the case of partitions
+    with equal bandwidths.
+ */
 
 #ifndef SWEEP_BAND_CONST_CUH
 #define SWEEP_BAND_CONST_CUH
