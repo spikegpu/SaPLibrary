@@ -15,6 +15,9 @@
 #endif
 
 
+namespace spike {
+
+
 /// Base timer class.
 class Timer {
 public:
@@ -74,7 +77,10 @@ public:
 class CPUTimer : public Timer
 {
 public:
-	CPUTimer()   {QueryPerformanceFrequency(&m_frequency);}
+	CPUTimer()
+	{
+		QueryPerformanceFrequency(&m_frequency);
+	}
 	~CPUTimer()  {}
 
 	virtual void Start() {QueryPerformanceCounter(&m_start);}
@@ -113,6 +119,8 @@ public:
 };
 
 #endif // WIN32
+
+} // namespace spike
 
 
 #endif
