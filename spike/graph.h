@@ -46,7 +46,7 @@ public:
 };
 
 
-class Node 
+class Node
 {
 public:
 	Node(int idx, int degree) : m_idx(idx), m_degree(degree) {}
@@ -69,12 +69,10 @@ class EdgeT
 {
 public:
 	EdgeT() {}
-	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val)
-	{}
+	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val) {}
 
 	EdgeT(int ori_idx, int from, int to, T val)
-		: m_ori_idx(ori_idx), m_from(from), m_to(to), m_val(val)
-	{}
+		: m_ori_idx(ori_idx), m_from(from), m_to(to), m_val(val) {}
 
 	friend bool operator< (const EdgeT& a, const EdgeT& b) {
 		return a.m_to < b.m_to;
@@ -336,34 +334,42 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 // edges.
 // ----------------------------------------------------------------------------
 template <typename T>
-struct EdgeComparator {
-	bool operator()(const EdgeT<T>& a, const EdgeT<T>& b) {
+struct EdgeComparator
+{
+	bool operator()(const EdgeT<T>& a, const EdgeT<T>& b)
+	{
 		return abs(a.m_from - a.m_to) > abs(b.m_from - b.m_to);
 	}
 };
 
 template <typename T>
-struct EdgeAccumulator {
-	T operator()(T res, const EdgeT<T>& edge) {
+struct EdgeAccumulator
+{
+	T operator()(T res, const EdgeT<T>& edge)
+	{
 		return res + std::abs(edge.m_val);
 	}
 };
 
 template <typename T>
-struct BandwidthAchiever : public thrust::unary_function<EdgeT<T>, int>{
+struct BandwidthAchiever : public thrust::unary_function<EdgeT<T>, int>
+{
 	__host__ __device__
-	int operator() (const EdgeT<T>& a) {
+	int operator() (const EdgeT<T>& a)
+	{
 		int delta = a.m_from - a.m_to;
 		return (delta < 0 ? -delta : delta);
 	}
 };
 
 template <typename T>
-struct BandwidthAchiever2 : public thrust::unary_function<EdgeT<T>, int>{
+struct BandwidthAchiever2 : public thrust::unary_function<EdgeT<T>, int>
+{
 	int* m_perm;
 	BandwidthAchiever2(int* perm): m_perm(perm) {}
 	__host__ __device__
-	int operator() (const EdgeT<T>& a) {
+	int operator() (const EdgeT<T>& a)
+	{
 		int delta = m_perm[a.m_from] - m_perm[a.m_to];
 		return (delta < 0 ? -delta : delta);
 	}
@@ -375,7 +381,8 @@ struct PermApplier
 	int* m_perm;
 	PermApplier(int* perm): m_perm(perm) {}
 	__host__ __device__
-	void operator() (EdgeT<T>& a) {
+	void operator() (EdgeT<T>& a)
+	{
 		a.m_from = m_perm[a.m_from];
 		a.m_to = m_perm[a.m_to];
 	}

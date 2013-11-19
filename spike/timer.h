@@ -1,3 +1,7 @@
+/** \file timer.h
+ *  \brief CPU and GPU timer classes.
+ */
+
 #ifndef TIMER_H
 #define TIMER_H
 
@@ -11,8 +15,7 @@
 #endif
 
 
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
+/// Base timer class.
 class Timer {
 public:
 	virtual ~Timer() {}
@@ -22,8 +25,10 @@ public:
 };
 
 
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
+/// GPU timer.
+/**
+ * CUDA-based GPU timer.
+ */
 class GPUTimer : public Timer {
 protected:
 	int gpu_idx;
@@ -59,8 +64,11 @@ public:
 };
 
 
-// ----------------------------------------------------------------------------
-// ----------------------------------------------------------------------------
+/// CPU timer.
+/**
+ * CPU timer using the performance counter for WIN32 and
+ * gettimeofday() for Linux.
+ */
 #ifdef WIN32
 
 class CPUTimer : public Timer

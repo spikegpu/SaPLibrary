@@ -1,3 +1,7 @@
+/** \file exception.h
+ *  \brief Definition of the Spike system_error exception class.
+ */
+
 #ifndef SPIKE_EXCEPTION_H
 #define SPIKE_EXCEPTION_H
 

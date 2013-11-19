@@ -1,3 +1,7 @@
+/** \file spmv.h
+ *  \brief Definition of the default Spike SPMV functor class.
+ */
+
 #ifndef SPIKE_SPMV_H
 #define SPIKE_SPMV_H
 
@@ -14,6 +18,8 @@ namespace spike {
 /**
  * This class implements the default SPMV functor for sparse matrix-vector
  * product, using the cusp::multiply algorithm.
+ *
+ * \tparam Matrix is the type of the sparse matrix.
  */
 template <typename Matrix>
 class SpmvCusp {

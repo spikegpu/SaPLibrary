@@ -1,3 +1,7 @@
+/** \file solver.h
+ *  \brief Definition of the main Spike solver class.
+ */
+
 #ifndef SPIKE_SOLVER_H
 #define SPIKE_SOLVER_H
 
@@ -22,6 +26,11 @@
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
 #include <spike/timer.h>
+
+
+/** \namespace spike
+ * \brief spike is the top-level namespace which contains all Spike functions and types.
+ */
 
 
 namespace spike {
@@ -96,6 +105,11 @@ struct Stats
 /** 
  * This class is the public interface to the Spike-preconditioned
  * Krylov iterative solver.
+ *
+ * \tparam Array is the array type for the linear system solution.
+ *         (both cusp::array1d and cusp::array1d_view are valid).
+ * \tparam PrecValueType is the floating point type used in the preconditioner
+ *         (to support mixed-precision calculations).
  */
 template <typename Array, typename PrecValueType>
 class Solver
@@ -241,6 +255,8 @@ Solver<Array, PrecValueType>::~Solver()
  * This function performs the initial setup for the Spike solver. It prepares
  * the preconditioner based on the specified matrix A (which may be the system
  * matrix, or some approximation to it).
+ *
+ * \tparam Matrix is the sparse matrix type used in the preconditioner.
  */
 template <typename Array, typename PrecValueType>
 template <typename Matrix>
@@ -406,6 +422,9 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
  * An exception is thrown if this call was not preceeded by a call to
  * Solver::setup() or if reordering tracking was not enabled through the solver
  * options.
+ *
+ * \tparam Array1 is the vector type for the non-zero entries of the updated
+ *         matrix (both cusp::array1d and cusp::array1d_view are allowed).
  */
 template <typename Array, typename PrecValueType>
 template <typename Array1>
@@ -484,6 +503,10 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
  *
  * An exception is throw if this call was not preceeded by a call to
  * Solver::setup().
+ *
+ * \tparam SpmvOperator is a functor class which implements the operator()
+ *         to calculate sparse matrix-vector product. See spike::SpmvCusp
+ *         for an example.
  */
 template <typename Array, typename PrecValueType>
 template <typename SpmvOperator>

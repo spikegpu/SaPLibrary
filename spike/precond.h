@@ -1,3 +1,7 @@
+/** \file precond.h
+ *  \brief Definition of the Spike preconditioner class.
+ */
+
 #ifndef SPIKE_PRECOND_CUH
 #define SPIKE_PRECOND_CUH
 
@@ -23,6 +27,12 @@
 namespace spike {
 
 /// Spike preconditioner.
+/**
+ * This class implements the Spike preconditioner.
+ *
+ * \tparam PrecVector is the vector type used in the preconditioner.
+ *         (its underlying type defines the precision of the preconditioner).
+ */
 template <typename PrecVector>
 class Precond
 {

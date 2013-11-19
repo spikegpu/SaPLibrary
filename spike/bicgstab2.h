@@ -1,3 +1,7 @@
+/** \file bicgstab2.h
+ *  \brief BiCGStab(L) preconditioned iterative Krylov solver.
+ */
+
 #ifndef SPIKE_BICGSTAB_2_H
 #define SPIKE_BICGSTAB_2_H
 
@@ -53,11 +57,13 @@ void precondSolveWrapper(SolverVector&                       rhs,
 }
 
 
-// ----------------------------------------------------------------------------
-// bicgstabl()
-//
-// This function implements a preconditioned BiCGStab(l) Krylov method.
-// ----------------------------------------------------------------------------
+/// Preconditioned BiCGStab(L) Krylov method
+/**
+ * \tparam SpmvOperator is a functor class for sparse matrix-vector product.
+ * \tparam SolverVector is the vector type for the linear system solution.
+ * \tparam PrecVector is the vector type used in the preconditioner.
+ * \tparam L is the degree of the BiCGStab(L) method.
+ */
 template <typename SpmvOperator, typename SolverVector, typename PrecVector, int L>
 void bicgstabl(SpmvOperator&                       spmv,
                const SolverVector&                 b,
@@ -248,9 +254,7 @@ void bicgstabl(SpmvOperator&                       spmv,
 }
 
 
-// ----------------------------------------------------------------------------
-// Specializations of the generic BiCGStab(L) function.
-// ----------------------------------------------------------------------------
+/// Specializations of the generic spike::bicgstabl function for L=2
 template <typename SpmvOperator, typename SolverVector, typename PrecVector>
 void bicgstab2(SpmvOperator&                       spmv,
                const SolverVector&                 b,
@@ -264,6 +268,8 @@ void bicgstab2(SpmvOperator&                       spmv,
 	bicgstabl<SpmvOperator, SolverVector, PrecVector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
 }
 
+
+/// Specializations of the generic spike::bicgstabl function for L=4
 template <typename SpmvOperator, typename SolverVector, typename PrecVector>
 void bicgstab4(SpmvOperator&                       spmv,
                const SolverVector&                 b,
