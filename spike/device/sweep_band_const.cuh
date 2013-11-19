@@ -1,7 +1,7 @@
-// ============================================================================
-// This file contains the various CUDA kernels for forward/backward sweeps used
-// for partitions with equal bandwidths.
-// ============================================================================
+/** \file sweep_band_var.cuh
+ *  Various forward/backward sweep CUDA kernels used for the case of partitions
+    with equal bandwidths.
+ */
 
 #ifndef SWEEP_BAND_CONST_CUH
 #define SWEEP_BAND_CONST_CUH
@@ -12,13 +12,14 @@
 namespace spike {
 namespace device {
 
+
 // ----------------------------------------------------------------------------
 // CUDA kernels for performing forward elimination sweeps using an exiting
 // LU factorization of a full matrix.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimLNormal(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+forwardElimLNormal(int N, int k, int partition_size, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int offset = bidx*partition_size*partition_size;
@@ -38,9 +39,9 @@ forwardElimLNormal(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, int b
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimLNormal_g512(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+forwardElimLNormal_g512(int N, int k, int partition_size, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int offset = bidx*partition_size*partition_size;
@@ -74,13 +75,13 @@ forwardElimLNormal_g512(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, 
 // CUDA kernels for performing backward substitution sweeps using an exiting
 // LU factorization of a full matrix.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimUNormal(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+backwardElimUNormal(int N, int k, int partition_size, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int offset = bidx*partition_size*partition_size;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 
 	if(bidx+1 <= b_rest_num) {
 		for(int i=partition_size-1; i>=k; i--) {
@@ -105,13 +106,13 @@ backwardElimUNormal(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, int 
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimUNormal_g512(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB, int b_partition_size, int b_rest_num)
+backwardElimUNormal_g512(int N, int k, int partition_size, T *dA, T *dB, int b_partition_size, int b_rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x;
 	int offset = bidx*partition_size*partition_size;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int it_last = 2*k-1;
 
 	if(bidx + 1 <= b_rest_num) {
@@ -148,9 +149,9 @@ backwardElimUNormal_g512(int N, int k, int partition_size, REAL1 *dA, REAL2 *dB,
 // LU factorization of a banded matrix. These kernels can be used with one or
 // more RHS vectors and they can perform either a complete or a partial sweep.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_general(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -181,9 +182,9 @@ forwardElimL_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_g32(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1) + 1;
@@ -209,9 +210,9 @@ forwardElimL_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int res
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 
 	// The block ID indicates the partition and RHS we are working on.
@@ -249,9 +250,9 @@ forwardElimL(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_nu
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-preBck_sol_divide(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+preBck_sol_divide(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int first_row = blockIdx.y*partition_size;
 	int last_row;
@@ -269,9 +270,9 @@ preBck_sol_divide(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int re
 	dB[first_row + idx] /= dA[pivotIdx + idx * ((k<<1)+1)];
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_sol(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+bckElim_sol(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -304,9 +305,9 @@ bckElim_sol(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_sol_medium(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+bckElim_sol_medium(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1)+ 1;
@@ -333,9 +334,9 @@ bckElim_sol_medium(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int r
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-bckElim_sol_narrow(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+bckElim_sol_narrow(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -364,13 +365,13 @@ bckElim_sol_narrow(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int r
 // LU factorization of a banded matrix. These kernels can be used with one or
 // more RHS vectors and they can perform either a complete or a partial sweep.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_general(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = blockIdx.x*partition_size;
 	int last_row;
 	if(blockIdx.x < rest_num) {
@@ -407,13 +408,13 @@ backwardElimU_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, in
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_g32(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1)+ 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -445,13 +446,13 @@ backwardElimU_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int re
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -482,9 +483,9 @@ backwardElimU(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_n
 
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimUdWV(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int divide)
+backwardElimUdWV(int k, T *dA, T *dB, int partition_size, int odd, int divide)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -493,7 +494,7 @@ backwardElimUdWV(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int d
 
 	int j=k-1;
 	if(divide) {
-		__shared__ REAL2 shared_curB;
+		__shared__ T shared_curB;
 		for(int i=k-1+first_row; i>=first_row; i--, j--) {
 			if(tid == 0) {
 				shared_curB = (dB[bidy*k+j+offset] /= dA[i*col_width+k]);
@@ -511,9 +512,9 @@ backwardElimUdWV(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int d
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimLdWV(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int divide)
+forwardElimLdWV(int k, T *dA, T *dB, int partition_size, int odd, int divide)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -522,7 +523,7 @@ forwardElimLdWV(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int di
 
 	int j=0;
 	if(divide) {
-		__shared__ REAL2 shared_curB;
+		__shared__ T shared_curB;
 		for(int i=last_row-k; i<last_row; i++, j++) {
 			if(tid == 0)
 				shared_curB = (dB[bidy*k+j+offset] /= dA[i*col_width+k]);
@@ -538,9 +539,9 @@ forwardElimLdWV(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int di
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimLdWV_g32(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int divide)
+forwardElimLdWV_g32(int k, T *dA, T *dB, int partition_size, int odd, int divide)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -549,7 +550,7 @@ forwardElimLdWV_g32(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, in
 
 	int j=0;
 	if(divide) {
-		__shared__ REAL2 shared_curB;
+		__shared__ T shared_curB;
 		for(int i=last_row-k; i<last_row; i++, j++) {
 			if(tid == 0)
 				shared_curB = (dB[bidy*k+j+offset] /= dA[i*col_width+k]);
@@ -567,9 +568,9 @@ forwardElimLdWV_g32(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, in
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimUdWV_g32(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int divide)
+backwardElimUdWV_g32(int k, T *dA, T *dB, int partition_size, int odd, int divide)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -578,7 +579,7 @@ backwardElimUdWV_g32(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, i
 
 	int j=k-1;
 	if(divide) {
-		__shared__ REAL2 shared_curB;
+		__shared__ T shared_curB;
 		for(int i=k-1+first_row; i>=first_row; i--, j--) {
 			if(tid == 0) {
 				shared_curB = (dB[bidy*k+j+offset] /= dA[i*col_width+k]);
@@ -598,9 +599,9 @@ backwardElimUdWV_g32(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, i
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimLdWV_general(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int divide)
+forwardElimLdWV_general(int k, T *dA, T *dB, int partition_size, int odd, int divide)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -609,7 +610,7 @@ forwardElimLdWV_general(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd
 
 	int j=0;
 	if(divide) {
-		__shared__ REAL2 shared_curB;
+		__shared__ T shared_curB;
 		for(int i=last_row-k; i<last_row; i++, j++) {
 			if(tid == 0)
 				shared_curB = (dB[bidy*k+j+offset] /= dA[i*col_width+k]);
@@ -635,9 +636,9 @@ forwardElimLdWV_general(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimUdWV_general(int k, REAL1 *dA, REAL2 *dB, int partition_size, int odd, int divide)
+backwardElimUdWV_general(int k, T *dA, T *dB, int partition_size, int odd, int divide)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -646,7 +647,7 @@ backwardElimUdWV_general(int k, REAL1 *dA, REAL2 *dB, int partition_size, int od
 
 	int j=k-1;
 	if(divide) {
-		__shared__ REAL2 shared_curB;
+		__shared__ T shared_curB;
 		for(int i=k-1+first_row; i>=first_row; i--, j--) {
 			if(tid == 0) {
 				shared_curB = (dB[bidy*k+j+offset] /= dA[i*col_width+k]);
@@ -679,9 +680,9 @@ backwardElimUdWV_general(int k, REAL1 *dA, REAL2 *dB, int partition_size, int od
 
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_bottom_general(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_bottom_general(int N, int k, int delta, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -715,13 +716,13 @@ forwardElimL_bottom_general(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int p
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_bottom_general(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_bottom_general(int N, int k, int delta, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -758,9 +759,9 @@ backwardElimU_bottom_general(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int 
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_bottom_g32(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_bottom_g32(int N, int k, int delta, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1) + 1;
@@ -787,13 +788,13 @@ forwardElimL_bottom_g32(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int parti
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_bottom_g32(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_bottom_g32(int N, int k, int delta, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1)+ 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -826,9 +827,9 @@ backwardElimU_bottom_g32(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int part
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_bottom(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_bottom(int N, int k, int delta, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -853,13 +854,13 @@ forwardElimL_bottom(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition
 	}
 }
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_bottom(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_bottom(int N, int k, int delta, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -895,9 +896,9 @@ backwardElimU_bottom(int N, int k, int delta, REAL1 *dA, REAL2 *dB, int partitio
 // more RHS vectors and they can perform either a complete or a partial sweep.
 // Note that the last partition should be a UL factorization.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_LU_UL_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_LU_UL_general(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
@@ -944,9 +945,9 @@ forwardElimL_LU_UL_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_siz
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_LU_UL_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_LU_UL_g32(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1) + 1;
@@ -984,9 +985,9 @@ forwardElimL_LU_UL_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, i
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-forwardElimL_LU_UL(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+forwardElimL_LU_UL(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	// The block ID indicates the partition we are working on. Each thread is 
 	// responsible for one row (below the main diagonal).
@@ -1045,13 +1046,13 @@ forwardElimL_LU_UL(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int r
 // more RHS vectors and they can perform either a complete or a partial sweep.
 // Note that the last partition should be a UL factorization.
 // ----------------------------------------------------------------------------
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_LU_UL_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_LU_UL_general(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = blockIdx.x*partition_size;
 	int last_row;
 	if(blockIdx.x < rest_num) {
@@ -1112,13 +1113,13 @@ backwardElimU_LU_UL_general(int N, int k, REAL1 *dA, REAL2 *dB, int partition_si
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_LU_UL_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_LU_UL_g32(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1)+ 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -1170,13 +1171,13 @@ backwardElimU_LU_UL_g32(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, 
 }
 
 
-template <typename REAL1, typename REAL2>
+template <typename T>
 __global__ void
-backwardElimU_LU_UL(int N, int k, REAL1 *dA, REAL2 *dB, int partition_size, int rest_num)
+backwardElimU_LU_UL(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ REAL2 shared_curB;
+	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {

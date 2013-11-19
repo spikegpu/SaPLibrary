@@ -18,7 +18,7 @@ namespace spike {
 // ----------------------------------------------------------------------------
 struct Components
 {
-	typedef typename cusp::array1d<int, cusp::host_memory> VectorI;
+	typedef typename cusp::array1d<int, cusp::host_memory> IntVectorH;
 
 	Components(int n) : m_n(n) {
 		m_compIndices.resize(m_n);
@@ -47,7 +47,7 @@ struct Components
 			m_compIndices[i] = getComponentIndex(i);
 	
 		std::map<int, int> compIndicesMapping;
-		VectorI            compCounts(m_numComponents, 0);
+		IntVectorH         compCounts(m_numComponents, 0);
 	
 		int cur_count = 0;
 		for (int i = 0; i < m_n; i++) {
@@ -94,7 +94,7 @@ struct Components
 		}
 	}
 
-	VectorI     m_compIndices;
+	IntVectorH  m_compIndices;
 	int         m_n;
 	int         m_numComponents;
 };

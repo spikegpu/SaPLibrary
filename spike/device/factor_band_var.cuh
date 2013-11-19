@@ -1,20 +1,29 @@
-// ============================================================================
-// This file contains the various matrix factorization CUDA kernels used for
-// partitions of varying bandwidths.
-// ============================================================================
+/** \file factor_band_var.cuh
+ *  Various matrix factorization CUDA kernels used for the case of partitions
+ *  with varying bandwidths.
+ */
 
 #ifndef FACTOR_BAND_VAR_H
 #define FACTOR_BAND_VAR_H
 
 #include <cuda.h>
+#include <spike/common.h>
 
+/** \namespace spike::device
+ * \brief spike::device contains all CUDA kernels.
+ */
+
+/** \namespace spike::device::var
+ * \brief spike::device::var contains all CUDA kernels for the
+          variable bandwidth preconditioner.
+ */
 
 namespace spike {
 namespace device {
 namespace var {
 
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -59,7 +68,7 @@ bandLU(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -76,7 +85,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 
@@ -91,7 +100,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	for(int i=1; i<last_row-k; i++) {
 		offset += (k<<1)+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -106,7 +115,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 		if(r >= i || c >= i) return ;
 		offset += (k<<1) + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		if(c == 1) {
@@ -118,7 +127,7 @@ bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU_g32(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -183,7 +192,7 @@ bandLU_g32(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 {
@@ -204,7 +213,7 @@ bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	__shared__ T sharedA;
 
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 
@@ -224,7 +233,7 @@ bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	for(int i=1; i<last_row-k; i++) {
 		offset += two_k+1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
@@ -246,7 +255,7 @@ bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 		if(tid >= i_minus_1_square) return;
 		offset += two_k + 1;
 		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		}
 		__syncthreads();
 		for(int ttid = tid; ttid < i_minus_1; ttid+=blockDim.x) {
@@ -311,7 +320,7 @@ bandLU_critical_div_safe_general(T *dA, int start_row, int *ks, int *offsets, in
 	}
 	__shared__ T sharedA;
 	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], BURST_VALUE);
+		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 	for(;r<=last; r+=blockDim.x)
@@ -369,7 +378,7 @@ bandLU_post_divide_per_partition_general(T *dA, int k, int offset, int partSize)
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -386,7 +395,7 @@ fullLU_div(T *dA, int *ks, int *offsets, int cur_row)
 	dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div_safe(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -397,13 +406,13 @@ fullLU_div_safe(T *dA, int *ks, int *offsets, int cur_row)
 	int offset = offsets[bid] + cur_row * partition_size + cur_row;
 	__shared__ T sharedA;
 	if(tid == 0) {
-		sharedA = boostValue(dA[offset], dA[offset], BURST_VALUE);
+		sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	}
 	__syncthreads();
 	dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div_general(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -423,7 +432,7 @@ fullLU_div_general(T *dA, int *ks, int *offsets, int cur_row)
 		dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_div_safe_general(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -437,13 +446,13 @@ fullLU_div_safe_general(T *dA, int *ks, int *offsets, int cur_row)
 
 	__shared__ T sharedA;
 	if(tid == 0)
-		sharedA = boostValue(dA[offset], dA[offset], BURST_VALUE);
+		sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 	__syncthreads();
 	for(;tid<it_last;tid+=blockDim.x)
 		dA[tid + 1 + offset] /= sharedA;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -457,7 +466,7 @@ fullLU_sub(T *dA, int *ks, int *offsets, int cur_row)
 	dA[partition_size*r + c+offset] -= dA[partition_size*r + cur_row+offset] * dA[partition_size*cur_row + c+offset];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub_general(T *dA, int *ks, int *offsets, int cur_row)
 {
@@ -474,7 +483,7 @@ fullLU_sub_general(T *dA, int *ks, int *offsets, int cur_row)
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub_spec(T *dA, int *ks, int *offsets)
 {
@@ -490,7 +499,7 @@ fullLU_sub_spec(T *dA, int *ks, int *offsets)
 	dA[partition_size*r+c+offset] = tmp;
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_sub_spec_general(T *dA, int *ks, int *offsets)
 {
@@ -509,7 +518,7 @@ fullLU_sub_spec_general(T *dA, int *ks, int *offsets)
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_post_divide(T *dA, int *ks, int *offsets) {
 	int k = ks[blockIdx.y];
@@ -520,7 +529,7 @@ fullLU_post_divide(T *dA, int *ks, int *offsets) {
 	dA[offset + (k<<1)*(blockIdx.x+k+1) + threadIdx.x + k] /= dA[offset + (k<<1)*(threadIdx.x+k) + threadIdx.x + k];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
 fullLU_post_divide_general(T *dA, int *ks, int *offsets) {
 		int k = ks[blockIdx.y];
@@ -530,6 +539,21 @@ fullLU_post_divide_general(T *dA, int *ks, int *offsets) {
 
 	for (int tid = threadIdx.x; tid <= blockIdx.x; tid += blockDim.x)
 		dA[offset + (k<<1)*(blockIdx.x+k+1) + tid + k] /= dA[offset + (k<<1)*(tid+k) + tid + k];
+}
+
+template <typename T>
+__global__ void
+boostLastPivot(T *dA, int start_row, int *ks, int *offsets, int partition_size, int rest_num)
+{
+	int offset = offsets[blockIdx.x];
+	int k = ks[blockIdx.x];
+	if(blockIdx.x < rest_num)
+		offset += start_row * ((k<<1) + 1);
+	else {
+		start_row--;
+		offset += start_row * ((k<<1) + 1);
+	}
+	boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 }
 
 

@@ -29,11 +29,13 @@
 // Typedefs
 // -----------------------------------------------------------------------------
 typedef double REAL;
+typedef float  PREC_REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename Vector::view                                     VectorView;
 
-typedef typename spike::Solver<Matrix, Vector::view>              SpikeSolver;
+typedef typename spike::Solver<VectorView, PREC_REAL>             SpikeSolver;
 typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
 
 
@@ -60,8 +62,8 @@ int main(int argc, char** argv)
 	// Create the extended RHS vector and two views into it.
 	// Fill the first half with 1s and the second half with 2s.
 	Vector        b(2 * n);
-	Vector::view  b1(b.begin(), b.begin() + n);
-	Vector::view  b2(b.begin() + n, b.end());
+	VectorView    b1(b.begin(), b.begin() + n);
+	VectorView    b2(b.begin() + n, b.end());
 
 	cusp::blas::fill(b1, 1);
 	cusp::blas::fill(b2, 2);
@@ -69,8 +71,8 @@ int main(int argc, char** argv)
 	// Create the extended solution vector, initialized to 0, and
 	// two views into it.
 	Vector        x(2 * n, 0);
-	Vector::view  x1(x.begin(), x.begin() + n);
-	Vector::view  x2(x.begin() + n, x.end());
+	VectorView  x1(x.begin(), x.begin() + n);
+	VectorView  x2(x.begin() + n, x.end());
 
 	// Create the SPIKE Solver object and the SPMV functor and perform the
 	// solver setup.

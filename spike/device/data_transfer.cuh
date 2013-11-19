@@ -1,3 +1,8 @@
+/** \file data_transfer.cuh
+ *
+ * Data transfer CUDA kernels.
+ */
+
 #ifndef DATA_TRANSFER_CUH
 #define DATA_TRANSFER_CUH
 
@@ -6,9 +11,11 @@ namespace spike {
 namespace device {
 
 
-template<typename T>
+template <typename T>
 __global__ void
-assembleReducedMat(int k, T *dWV, T *d_comp)
+assembleReducedMat(int k,
+                   T*  dWV,
+                   T*  d_comp)
 {
 	int tid = threadIdx.x, bid = blockIdx.x;
 	int r = tid/k, c = tid%k;
@@ -25,9 +32,11 @@ assembleReducedMat(int k, T *dWV, T *d_comp)
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-assembleReducedMat_g32(int k, T *dWV, T *d_comp)
+assembleReducedMat_g32(int k,
+                       T*  dWV,
+                       T*  d_comp)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k_square = k*k;
@@ -46,9 +55,11 @@ assembleReducedMat_g32(int k, T *dWV, T *d_comp)
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-assembleReducedMat_general(int k, T *dWV, T *d_comp)
+assembleReducedMat_general(int k,
+                           T*  dWV,
+                           T*  d_comp)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int k_square = k*k;
@@ -69,9 +80,16 @@ assembleReducedMat_general(int k, T *dWV, T *d_comp)
 }
 
 
-template <typename REAL>
+template <typename T>
 __global__ void
-copydAtodA2(int N, int k, REAL *dA, REAL *dA2,int num_of_rows, int partition_size, int partition_num, int rest_num)
+copydAtodA2(int  N,
+            int  k,
+            T*   dA,
+            T*   dA2,
+            int  num_of_rows,
+            int  partition_size,
+            int  partition_num,
+            int  rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int two_k = (k<<1);
@@ -82,9 +100,16 @@ copydAtodA2(int N, int k, REAL *dA, REAL *dA2,int num_of_rows, int partition_siz
 }
 
 
-template <typename REAL>
+template <typename T>
 __global__ void
-copydAtodA2_general(int N, int k, REAL *dA, REAL *dA2,int num_of_rows, int partition_size, int partition_num, int rest_num)
+copydAtodA2_general(int  N,
+                    int  k,
+                    T*   dA,
+                    T*   dA2,
+                    int  num_of_rows,
+                    int  partition_size,
+                    int  partition_num,
+                    int  rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int two_k = (k<<1);
@@ -99,9 +124,15 @@ copydAtodA2_general(int N, int k, REAL *dA, REAL *dA2,int num_of_rows, int parti
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copydWV_general(int k, T *dA, T *dWV, T *d_spike, int partition_size, int partition_num, int rest_num)
+copydWV_general(int k,
+                T*  dA,
+                T*  dWV,
+                T*  d_spike,
+                int partition_size,
+                int partition_num,
+                int rest_num)
 {
 	int tid = threadIdx.x, r = blockIdx.x, bidy = blockIdx.y;
 	int k_square = k*k;
@@ -121,9 +152,15 @@ copydWV_general(int k, T *dA, T *dWV, T *d_spike, int partition_size, int partit
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copydWV_g32(int k, T *dA, T *dWV, T *d_spike, int partition_size, int partition_num, int rest_num)
+copydWV_g32(int k,
+            T*  dA,
+            T*  dWV,
+            T*  d_spike,
+            int partition_size,
+            int partition_num,
+            int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k_square = k*k;
@@ -139,9 +176,15 @@ copydWV_g32(int k, T *dA, T *dWV, T *d_spike, int partition_size, int partition_
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copydWV(int k, T *dA, T *dWV, T *d_spike, int partition_size, int partition_num, int rest_num)
+copydWV(int k,
+        T*  dA,
+        T*  dWV,
+        T*  d_spike,
+        int partition_size,
+        int partition_num,
+        int rest_num)
 {
 	int tid = threadIdx.x, bid = blockIdx.x;
 	int k_square = k*k;
@@ -156,9 +199,17 @@ copydWV(int k, T *dA, T *dWV, T *d_spike, int partition_size, int partition_num,
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copydAtoPartialA(int N,int k, T *dA, T *dA2, T *d_partial_A, int partition_size, int partition_num, int rest_num, int num_of_rows)
+copydAtoPartialA(int N,
+                 int k,
+                 T*  dA,
+                 T*  dA2,
+                 T*  d_partial_A,
+                 int partition_size,
+                 int partition_num,
+                 int rest_num,
+                 int num_of_rows)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	if(bidy * 2 < gridDim.y) {
@@ -175,9 +226,17 @@ copydAtoPartialA(int N,int k, T *dA, T *dA2, T *d_partial_A, int partition_size,
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copydAtoPartialA_general(int N,int k, T *dA, T *dA2, T *d_partial_A, int partition_size, int partition_num, int rest_num, int num_of_rows)
+copydAtoPartialA_general(int N,
+                         int k,
+                         T*  dA,
+                         T*  dA2,
+                         T*  d_partial_A,
+                         int partition_size,
+                         int partition_num,
+                         int rest_num,
+                         int num_of_rows)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int two_k_plus_1 = 2*k+1;
@@ -199,9 +258,15 @@ copydAtoPartialA_general(int N,int k, T *dA, T *dA2, T *d_partial_A, int partiti
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copyWVFromOrToExtendedV(int N, int k, int partition_size, int rest_num, T *dWV, T *d_eV, bool from)
+copyWVFromOrToExtendedV(int N,
+                        int k,
+                        int partition_size,
+                        int rest_num,
+                        T*  dWV,
+                        T*  d_eV,
+bool from)
 {
 	int bidx = blockIdx.x, bidy = blockIdx.y;
 	int offset = 0, my_partition_size = 0;
@@ -220,9 +285,15 @@ copyWVFromOrToExtendedV(int N, int k, int partition_size, int rest_num, T *dWV, 
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copyWVFromOrToExtendedV_general(int N, int k, int partition_size, int rest_num, T *dWV, T *d_eV, bool from)
+copyWVFromOrToExtendedV_general(int  N,
+                                int  k,
+                                int  partition_size,
+                                int  rest_num,
+                                T*   dWV,
+                                T*   d_eV,
+                                bool from)
 {
 	int bidx = blockIdx.x, bidy = blockIdx.y;
 	int offset = 0, my_partition_size = 0;
@@ -244,9 +315,17 @@ copyWVFromOrToExtendedV_general(int N, int k, int partition_size, int rest_num, 
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
-copyWVFromOrToExtendedWVTranspose_general(int row_size, int k, int rightWidth, int partition_size, int rest_num, int column_deltaW, T *dWV, T *d_eWV, bool from)
+copyWVFromOrToExtendedWVTranspose_general(int  row_size,
+                                          int  k,
+                                          int  rightWidth,
+                                          int  partition_size,
+                                          int  rest_num,
+                                          int  column_deltaW,
+                                          T*   dWV,
+                                          T*   d_eWV,
+                                          bool from)
 {
 	int bidx = blockIdx.x, bidy = blockIdx.y;
 	int offset = 0, my_partition_size = 0;
@@ -284,9 +363,15 @@ copyWVFromOrToExtendedWVTranspose_general(int row_size, int k, int rightWidth, i
 	}
 }
 
-template<typename T>
+template <typename T>
 __global__ void
-copyWVFromOrToExtendedW(int N, int k, int partition_size, int rest_num, T *dWV, T *d_eW, bool from)
+copyWVFromOrToExtendedW(int  N,
+                        int  k,
+                        int  partition_size,
+                        int  rest_num,
+                        T*   dWV,
+                        T*   d_eW,
+                        bool from)
 {
 	int bidx = blockIdx.x, bidy = blockIdx.y;
 	int offset = 0;
@@ -304,9 +389,15 @@ copyWVFromOrToExtendedW(int N, int k, int partition_size, int rest_num, T *dWV, 
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copyWVFromOrToExtendedW_general(int N, int k, int partition_size, int rest_num, T *dWV, T *d_eW, bool from)
+copyWVFromOrToExtendedW_general(int  N,
+                                int  k,
+                                int  partition_size,
+                                int  rest_num,
+                                T*   dWV,
+                                T*   d_eW,
+                                bool from)
 {
 	int bidx = blockIdx.x, bidy = blockIdx.y;
 	int offset = 0;
@@ -327,9 +418,14 @@ copyWVFromOrToExtendedW_general(int N, int k, int partition_size, int rest_num, 
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-copyFromCOOMatrixToBandedMatrix(int nnz, int bandwidth, int *rows, int *cols, T *vals, T *dB)
+copyFromCOOMatrixToBandedMatrix(int  nnz,
+                                int  bandwidth,
+                                int* rows,
+                                int* cols,
+                                T*   vals,
+                                T*   dB)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
@@ -339,13 +435,13 @@ copyFromCOOMatrixToBandedMatrix(int nnz, int bandwidth, int *rows, int *cols, T 
 	dB[l * (2 * bandwidth + 1) + bandwidth + j - l] = vals[idx];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
-assembleReducedMat_var_bandwidth(int *ks,
-							     int *offsets_src,
-							     int *offsets_dst,
-								 T *dWV,
-								 T *d_comp)
+assembleReducedMat_var_bandwidth(int* ks,
+                                 int* offsets_src,
+                                 int* offsets_dst,
+                                 T*   dWV,
+                                 T*   d_comp)
 {
 	int tid = threadIdx.x, bid = blockIdx.x;
 	int k = ks[bid];
@@ -365,13 +461,13 @@ assembleReducedMat_var_bandwidth(int *ks,
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-assembleReducedMat_var_bandwidth_g32(int *ks,
-							         int *offsets_src,
-									 int *offsets_dst,
-									 T *dWV,
-									 T *d_comp)
+assembleReducedMat_var_bandwidth_g32(int* ks,
+                                     int* offsets_src,
+                                     int* offsets_dst,
+                                     T*   dWV,
+                                     T*   d_comp)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k = ks[bidy];
@@ -392,13 +488,13 @@ assembleReducedMat_var_bandwidth_g32(int *ks,
 }
 
 
-template<typename T>
+template <typename T>
 __global__ void
-assembleReducedMat_var_bandwidth_general(int *ks,
-							         int *offsets_src,
-									 int *offsets_dst,
-									 T *dWV,
-									 T *d_comp)
+assembleReducedMat_var_bandwidth_general(int* ks,
+                                         int* offsets_src,
+                                         int* offsets_dst,
+                                         T*   dWV,
+                                         T*   d_comp)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int k = ks[bidy];
@@ -420,8 +516,13 @@ assembleReducedMat_var_bandwidth_general(int *ks,
 	}
 }
 
-template<typename T>
-__global__ void matrixVReordering(int k, T *WV, T *WV_spare, int *perms, int *widths) {
+template <typename T>
+__global__ void matrixVReordering(int  k,
+                                  T*   WV,
+                                  T*   WV_spare,
+                                  int* perms,
+                                  int* widths)
+{
 	int cur_width = widths[blockIdx.y];
 	if (blockIdx.x >= cur_width) return;
 	int cur_perm = perms[blockIdx.y*k + blockIdx.x];
@@ -430,8 +531,13 @@ __global__ void matrixVReordering(int k, T *WV, T *WV_spare, int *perms, int *wi
 		WV_spare[blockIdx.y*k*k*2 + cur_perm*k + tid] = WV[blockIdx.y*k*k*2 + blockIdx.x*k + tid];
 }
 
-template<typename T>
-__global__ void matrixWReordering(int k, T *WV, T *WV_spare, int *perms, int *widths) {
+template <typename T>
+__global__ void matrixWReordering(int  k,
+                                  T*   WV,
+                                  T*   WV_spare,
+                                  int* perms,
+                                  int* widths)
+{
 	int cur_width = widths[blockIdx.y];
 	if (blockIdx.x < k-cur_width) return;
 	int cur_perm = perms[blockIdx.y*k + blockIdx.x];
@@ -440,16 +546,24 @@ __global__ void matrixWReordering(int k, T *WV, T *WV_spare, int *perms, int *wi
 		WV_spare[(2*blockIdx.y+1)*k*k + cur_perm*k + tid] = WV[(2*blockIdx.y+1)*k*k + blockIdx.x*k + tid];
 }
 
-template<typename T>
-__global__ void matrixVReordering_perPartition(int k, T *WV, T *WV_spare, int *perms) {
+template <typename T>
+__global__ void matrixVReordering_perPartition(int  k,
+                                               T*   WV,
+                                               T*   WV_spare,
+                                               int* perms)
+{
 	int cur_perm = perms[blockIdx.x];
 
 	for (int tid = threadIdx.x; tid < k; tid+=blockDim.x)
 		WV_spare[cur_perm*k + tid] = WV[blockIdx.x*k + tid];
 }
 
-template<typename T>
-__global__ void matrixWReordering_perPartition(int k, T *WV, T *WV_spare, int *perms) {
+template <typename T>
+__global__ void matrixWReordering_perPartition(int  k,
+                                               T*   WV,
+                                               T*   WV_spare,
+                                               int* perms)
+{
 	int cur_perm = perms[k-1-blockIdx.x];
 
 	for (int tid = threadIdx.x; tid < k; tid+=blockDim.x)

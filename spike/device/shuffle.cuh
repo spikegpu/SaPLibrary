@@ -7,7 +7,7 @@ namespace spike {
 namespace device {
 
 
-template<typename T>
+template <typename T>
 __global__ void
 permute(int  N, 
         T*   ori_array,
@@ -20,12 +20,12 @@ permute(int  N,
 	final_array[per_array[idx] + blockIdx.y*N] = ori_array[idx + blockIdx.y * N];
 }
 
-template<typename T>
+template <typename T>
 __global__ void
-columnPermute(int N,
-			  int g_k,
-			  T* ori_array,
-			  T* final_array,
+columnPermute(int  N,
+			  int  g_k,
+			  T*   ori_array,
+			  T*   final_array,
 			  int* per_array)
 {
 	int idx = blockIdx.y + gridDim.y * blockIdx.z;

@@ -40,6 +40,10 @@ typedef long long int64_t;
 // ----------------------------------------------------------------------------
 
 
+#define BURST_VALUE (1e-7)
+#define BURST_NEW_VALUE (1e-4)
+
+
 namespace spike {
 
 const unsigned int BLOCK_SIZE = 512;
@@ -80,32 +84,6 @@ void kernelConfigAdjust(int &numThreads, int &numBlockX, int &numBlockY, const i
 	}
 }
 
-template<typename T>
-struct Multiplier: public thrust::unary_function<T, T>
-{
-	__host__ __device__
-	T operator() (thrust::tuple<T, T> tu) {
-		return thrust::get<0>(tu) * thrust::get<1>(tu);
-	}
-};
-
-template<typename T>
-struct ExpOp: public thrust::unary_function<T, T>
-{
-	__host__ __device__
-	T operator() (T a) {
-		return exp(a);
-	}
-};
-
-template<typename T>
-struct NotTrue: public thrust::unary_function<T, T>
-{
-	__host__ __device__
-	bool operator() (T a) {
-		return !a;
-	}
-};
 
 } // namespace spike
 
