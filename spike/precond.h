@@ -1307,19 +1307,29 @@ Precond<PrecVector>::partBandedLU_one()
 			// if (blockX > m_n - st_row - 1)
 				// blockX = m_n - st_row - 1;
 			if (threadsNum > 1024) {
-				if (m_safeFactorization)
-					device::bandLU_critical_div_onePart_safe_general<PrecValueType><<<1, 512>>>(dB, st_row, m_k, threadsNum);
-				else
-					device::bandLU_critical_div_onePart_general<PrecValueType><<<threadsNum/512+1, 512>>>(dB, st_row, m_k, threadsNum);
+				if (st_row == 0) {
+					if (m_safeFactorization)
+						device::bandLU_critical_div_onePart_safe_general<PrecValueType><<<1, 512>>>(dB, st_row, m_k, threadsNum);
+					else
+						device::bandLU_critical_div_onePart_general<PrecValueType><<<threadsNum/512+1, 512>>>(dB, st_row, m_k, threadsNum);
+				}
 
-				device::bandLU_critical_sub_onePart_general<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum);
+				if (m_safeFactorization)
+					device::bandLU_critical_sub_div_onePart_safe_general<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum, m_ks_col_host[st_row + 1]);
+				else
+					device::bandLU_critical_sub_div_onePart_general<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum, m_ks_col_host[st_row + 1]);
 			} else {
-				if (m_safeFactorization)
-					device::bandLU_critical_div_onePart_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
-				else
-					device::bandLU_critical_div_onePart<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
+				if (st_row == 0) {
+					if (m_safeFactorization)
+						device::bandLU_critical_div_onePart_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
+					else
+						device::bandLU_critical_div_onePart<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
+				}
 
-				device::bandLU_critical_sub_onePart<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k);
+				if (m_safeFactorization)
+					device::bandLU_critical_sub_div_onePart_safe<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k, m_ks_col_host[st_row+1]);
+				else
+					device::bandLU_critical_sub_div_onePart<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k, m_ks_col_host[st_row + 1]);
 			}
 		}
 	} else if (m_k > 27) {
