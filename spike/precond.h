@@ -1307,19 +1307,29 @@ Precond<PrecVector>::partBandedLU_one()
 			// if (blockX > m_n - st_row - 1)
 				// blockX = m_n - st_row - 1;
 			if (threadsNum > 1024) {
-				if (m_safeFactorization)
-					device::bandLU_critical_div_onePart_safe_general<PrecValueType><<<1, 512>>>(dB, st_row, m_k, threadsNum);
-				else
-					device::bandLU_critical_div_onePart_general<PrecValueType><<<threadsNum/512+1, 512>>>(dB, st_row, m_k, threadsNum);
+				if (st_row == 0) {
+					if (m_safeFactorization)
+						device::bandLU_critical_div_onePart_safe_general<PrecValueType><<<1, 512>>>(dB, st_row, m_k, threadsNum);
+					else
+						device::bandLU_critical_div_onePart_general<PrecValueType><<<threadsNum/512+1, 512>>>(dB, st_row, m_k, threadsNum);
+				}
 
-				device::bandLU_critical_sub_onePart_general<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum);
+				if (m_safeFactorization)
+					device::bandLU_critical_sub_div_onePart_safe_general<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum, m_ks_col_host[st_row + 1]);
+				else
+					device::bandLU_critical_sub_div_onePart_general<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum, m_ks_col_host[st_row + 1]);
 			} else {
-				if (m_safeFactorization)
-					device::bandLU_critical_div_onePart_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
-				else
-					device::bandLU_critical_div_onePart<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
+				if (st_row == 0) {
+					if (m_safeFactorization)
+						device::bandLU_critical_div_onePart_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
+					else
+						device::bandLU_critical_div_onePart<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k);
+				}
 
-				device::bandLU_critical_sub_onePart<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k);
+				if (m_safeFactorization)
+					device::bandLU_critical_sub_div_onePart_safe<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k, m_ks_col_host[st_row+1]);
+				else
+					device::bandLU_critical_sub_div_onePart<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k, m_ks_col_host[st_row + 1]);
 			}
 		}
 	} else if (m_k > 27) {
@@ -1482,6 +1492,11 @@ Precond<PrecVector>::partBandedLU_var()
 		int threadsNum = adjustNumThreads(cusp::blas::nrm1(m_ks) / m_numPartitions);
 		int last = 0;
 
+		IntVector ks_col = m_ks_col_host;
+		IntVector ks_row = m_ks_row_host;
+		int *ks_col_ptr = thrust::raw_pointer_cast(&ks_col[0]);
+		int *ks_row_ptr = thrust::raw_pointer_cast(&ks_row[0]);
+
 		for (int st_row = 0; st_row < final_partition_size - 1; st_row++) {
 			if (st_row == 0) {
 				if (remainder == 0) continue;
@@ -1506,31 +1521,36 @@ Precond<PrecVector>::partBandedLU_var()
 				device::var::bandLU_critical_sub_general<PrecValueType><<<tmpGrids, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder, last);
 			} else {
 				blockY = 0;
-				last = 0;
+				// last = 0;
 				int corres_row = st_row;
 				for (int i = 0; i < remainder; i++) {
 					if (blockY < m_ks_row_host[corres_row])
 						blockY = m_ks_row_host[corres_row];
-					if (last < m_ks_col_host[corres_row])
-						last = m_ks_col_host[corres_row];
+					//if (last < m_ks_col_host[corres_row])
+						//last = m_ks_col_host[corres_row];
 					corres_row += partSize + 1;
 				}
 				corres_row --;
 				for (int i = remainder; i < m_numPartitions; i++) {
 					if (blockY < m_ks_row_host[corres_row])
 						blockY = m_ks_row_host[corres_row];
-					if (last < m_ks_col_host[corres_row])
-						last = m_ks_col_host[corres_row];
+					//if (last < m_ks_col_host[corres_row])
+						//last = m_ks_col_host[corres_row];
 					corres_row += partSize;
 				}
 
-				if (m_safeFactorization)
-					device::var::bandLU_critical_div_safe_general<PrecValueType><<<m_numPartitions, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder);
-				else
-					device::var::bandLU_critical_div_general<PrecValueType><<<m_numPartitions, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder);
+				if (st_row == 1) {
+					if (m_safeFactorization)
+						device::var::bandLU_critical_div_safe_general<PrecValueType><<<m_numPartitions, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder);
+					else
+						device::var::bandLU_critical_div_general<PrecValueType><<<m_numPartitions, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder);
+				}
 
 				dim3 tmpGrids(blockY, m_numPartitions);
-				device::var::bandLU_critical_sub_general<PrecValueType><<<tmpGrids, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder, last);
+				if (m_safeFactorization)
+					device::var::bandLU_critical_sub_div_safe_general<PrecValueType><<<tmpGrids, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder, ks_col_ptr, ks_row_ptr);
+				else
+					device::var::bandLU_critical_sub_div_general<PrecValueType><<<tmpGrids, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, partSize, remainder, ks_col_ptr, ks_row_ptr);
 			}
 		}
 	} else if (tmp_k > 27){
