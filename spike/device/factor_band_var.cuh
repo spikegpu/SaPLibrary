@@ -586,6 +586,100 @@ fullLU_sub_general(T *dA, int *ks, int *offsets, int cur_row)
 	}
 }
 
+template <typename T>
+__global__ void
+fullLU_sub_div(T *dA, int *ks, int *offsets, int cur_row)
+{
+	int k = ks[blockIdx.y];
+	int partition_size = (2*k);
+	int c = threadIdx.x + cur_row + 1, r = blockIdx.x + cur_row + 1;
+	if (r >= partition_size || c >= partition_size) return;
+
+	int offset = offsets[blockIdx.y];
+
+	dA[partition_size*r + c+offset] -= dA[partition_size*r + cur_row+offset] * dA[partition_size*cur_row + c+offset];
+
+	if (blockIdx.x == 0) {
+		cur_row++;
+		if (c == partition_size - 1) return;
+		__syncthreads();
+		dA[partition_size*cur_row + cur_row + threadIdx.x + 1 + offset] /= dA[partition_size * cur_row + cur_row + offset];
+	}
+}
+
+template <typename T>
+__global__ void
+fullLU_sub_div_general(T *dA, int *ks, int *offsets, int cur_row)
+{
+	int k = ks[blockIdx.y];
+	int it_last = 2*k-1-cur_row;
+	if (threadIdx.x >= it_last || blockIdx.x >= it_last) return;
+	int c = threadIdx.x + cur_row + 1, r = blockIdx.x + cur_row + 1;
+	int partition_size = 2*k;
+	int offset = offsets[blockIdx.y];
+
+	for(int tid = threadIdx.x;tid<it_last;tid+=blockDim.x, c+=blockDim.x)
+		dA[partition_size*r + c+offset] -= dA[partition_size*r + cur_row+offset] * dA[partition_size*cur_row + c+offset];
+
+	if (blockIdx.x == 0) {
+		cur_row++;
+		__syncthreads();
+		T tmp = dA[partition_size * cur_row + cur_row + offset];
+		for(int tid = threadIdx.x + 1; tid < it_last; tid+=blockDim.x)
+			dA[partition_size*cur_row + cur_row + tid + offset] /= tmp;
+	}
+}
+
+template <typename T>
+__global__ void
+fullLU_sub_div_safe(T *dA, int *ks, int *offsets, int cur_row)
+{
+	int k = ks[blockIdx.y];
+	int partition_size = (2*k);
+	int c = threadIdx.x + cur_row + 1, r = blockIdx.x + cur_row + 1;
+	if (r >= partition_size || c >= partition_size) return;
+
+	int offset = offsets[blockIdx.y];
+
+	dA[partition_size*r + c+offset] -= dA[partition_size*r + cur_row+offset] * dA[partition_size*cur_row + c+offset];
+
+	if (blockIdx.x == 0) {
+		cur_row++;
+		if (c == partition_size - 1) return;
+
+		__shared__ T sharedA;
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[partition_size * cur_row + cur_row + offset], dA[partition_size * cur_row + cur_row +offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+		dA[partition_size*cur_row + cur_row + threadIdx.x + 1 + offset] /= sharedA;
+	}
+}
+
+template <typename T>
+__global__ void
+fullLU_sub_div_safe_general(T *dA, int *ks, int *offsets, int cur_row)
+{
+	int k = ks[blockIdx.y];
+	int it_last = 2*k-1-cur_row;
+	if (threadIdx.x >= it_last || blockIdx.x >= it_last) return;
+	int c = threadIdx.x + cur_row + 1, r = blockIdx.x + cur_row + 1;
+	int partition_size = 2*k;
+	int offset = offsets[blockIdx.y];
+
+	for(int tid = threadIdx.x;tid<it_last;tid+=blockDim.x, c+=blockDim.x)
+		dA[partition_size*r + c+offset] -= dA[partition_size*r + cur_row+offset] * dA[partition_size*cur_row + c+offset];
+
+	if (blockIdx.x == 0) {
+		cur_row++;
+		__shared__ T sharedA;
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[partition_size * cur_row + cur_row + offset], dA[partition_size * cur_row + cur_row +offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+		for(int tid = threadIdx.x + 1; tid < it_last; tid+=blockDim.x)
+			dA[partition_size*cur_row + cur_row + tid + offset] /= sharedA;
+	}
+}
+
 
 template <typename T>
 __global__ void

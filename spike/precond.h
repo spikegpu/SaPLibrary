@@ -1225,26 +1225,34 @@ Precond<PrecVector>::partFullLU_var()
 			int  threads = two_k-1-i;
 			dim3 grids(two_k-1-i, m_numPartitions-1);
 
-			if(threads > 1024) {
-				device::var::fullLU_div_safe_general<PrecValueType><<<m_numPartitions-1, 512>>>(d_R, p_spike_ks, p_ROffsets, i);
-				device::var::fullLU_sub_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks, p_ROffsets, i);
-			} else {
-				device::var::fullLU_div_safe<PrecValueType><<<m_numPartitions-1, threads>>>(d_R, p_spike_ks, p_ROffsets, i);
-				device::var::fullLU_sub<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks, p_ROffsets, i);
+			if (i == m_k) {
+				if(threads > 1024)
+					device::var::fullLU_div_safe_general<PrecValueType><<<m_numPartitions-1, 512>>>(d_R, p_spike_ks,  p_ROffsets, i);
+				else
+					device::var::fullLU_div_safe<PrecValueType><<<m_numPartitions-1, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
 			}
+
+			if (threads > 1024)
+				device::var::fullLU_sub_div_safe_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks,  p_ROffsets, i);
+			else
+				device::var::fullLU_sub_div_safe<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
 		}
 	} else {
 		for(int i = m_k; i < two_k-1; i++) {
 			int  threads = two_k-1-i;
 			dim3 grids(two_k-1-i, m_numPartitions-1);
 
-			if(threads > 1024) {
-				device::var::fullLU_div_general<PrecValueType><<<m_numPartitions-1, 512>>>(d_R, p_spike_ks,  p_ROffsets, i);
-				device::var::fullLU_sub_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks,  p_ROffsets, i);
-			} else {
-				device::var::fullLU_div<PrecValueType><<<m_numPartitions-1, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
-				device::var::fullLU_sub<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
+			if (i == m_k) {
+				if(threads > 1024)
+					device::var::fullLU_div_general<PrecValueType><<<m_numPartitions-1, 512>>>(d_R, p_spike_ks,  p_ROffsets, i);
+				else
+					device::var::fullLU_div<PrecValueType><<<m_numPartitions-1, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
 			}
+
+			if (threads > 1024)
+				device::var::fullLU_sub_div_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks,  p_ROffsets, i);
+			else
+				device::var::fullLU_sub_div<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
 		}
 	}
 
