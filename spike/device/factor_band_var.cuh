@@ -778,6 +778,49 @@ blockedFullLU_phase1_general(T *dA, int *ks, int *offsets, int cur_row, int b)
 
 template <typename T>
 __global__ void
+blockedFullLU_phase1_safe_general(T *dA, int *ks, int *offsets, int cur_row, int b)
+{
+	int k = ks[blockIdx.x];
+	int partition_size = (2*k);
+
+	int offset = offsets[blockIdx.x] + cur_row * partition_size + cur_row;
+
+	int last_row = cur_row + b;
+	if (last_row > partition_size)
+		last_row = partition_size;
+
+	__shared__ T sharedA;
+
+	for (int i = 0; i < b; i++) {
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid < partition_size - cur_row; tid += blockDim.x)
+			dA[tid + offset] /= sharedA;
+
+		__syncthreads();
+
+		int element_count = (last_row - 1 - cur_row) * (partition_size - 1 - cur_row);
+
+		if (element_count == 0) return;
+
+		for (int tid = threadIdx.x; tid < element_count; tid += blockDim.x) {
+			int r = tid / (partition_size - 1 - cur_row) + 1;
+			int c = tid % (partition_size - 1 - cur_row) + 1;
+
+			dA[offset + r * partition_size + c] -= dA[offset + r * partition_size] * dA[offset + c];
+		}
+
+		__syncthreads();
+
+		offset += partition_size + 1;
+		cur_row ++;
+	}
+}
+
+template <typename T>
+__global__ void
 blockedFullLU_phase2_general(T *dA, int *ks, int *offsets, int cur_row, int b)
 {
 	int bid = blockIdx.x + b;
@@ -785,7 +828,7 @@ blockedFullLU_phase2_general(T *dA, int *ks, int *offsets, int cur_row, int b)
 
 	int offset = offsets[blockIdx.y] + cur_row * k * 2 + cur_row;
 
-	__shared__  T sharedElem[32];
+	extern __shared__  T sharedElem[];
 
 	sharedElem[threadIdx.x] = dA[offset + bid * k * 2 + threadIdx.x];
 

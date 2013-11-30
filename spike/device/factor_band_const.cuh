@@ -1012,6 +1012,134 @@ bandLU_critical_sub_div_onePart_safe_general(T *dA, int start_row, int k, int la
 
 template <typename T>
 __global__ void
+blockedBandLU_critical_phase1(T *dA, int start_row, int k, int *last, int b)
+{
+	int pivotIdx;
+	int last_row = start_row + b;
+
+	pivotIdx = start_row * ((k<<1) + 1) + k;
+	for (int row = start_row; row < last_row;  row++) {
+
+		int cur_last = last[row];
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx + tid] /= dA[pivotIdx];
+
+		__syncthreads();
+
+		if (row == last_row - 1) break;
+		if (cur_last == 0) {
+			pivotIdx += ((k<<1) + 1);
+			continue;
+		}
+
+		int num_elements = (last_row - row - 1) * cur_last;
+
+		for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+			int r = tid / cur_last + 1;
+			int c = tid % cur_last + 1;
+
+			dA[pivotIdx + c + r * (k << 1)] -= dA[pivotIdx + c] * dA[pivotIdx + r * (k << 1)];
+		}
+
+		__syncthreads();
+
+		pivotIdx += ((k<<1) + 1);
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_phase1_safe(T *dA, int start_row, int k, int *last, int b)
+{
+	int pivotIdx;
+	int last_row = start_row + b;
+
+	pivotIdx = start_row * ((k<<1) + 1) + k;
+
+	__shared__ T sharedA;
+
+	for (int row = start_row; row < last_row;  row++) {
+
+		int cur_last = last[row];
+
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx + tid] /= sharedA;
+
+		__syncthreads();
+
+		if (row == last_row - 1) break;
+		if (cur_last == 0) {
+			pivotIdx += ((k<<1) + 1);
+			continue;
+		}
+
+		int num_elements = (last_row - row - 1) * cur_last;
+
+		for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+			int r = tid / cur_last + 1;
+			int c = tid % cur_last + 1;
+
+			dA[pivotIdx + c + r * (k << 1)] -= dA[pivotIdx + c] * dA[pivotIdx + r * (k << 1)];
+		}
+
+		__syncthreads();
+
+		pivotIdx += ((k<<1) + 1);
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_phase2(T *dA, int start_row, int k, int b)
+{
+	int bid = blockIdx.x + b;
+	int pivotIdx = start_row * ((k<<1) + 1) + k;
+
+	extern __shared__ T sharedElem[];
+
+	sharedElem[threadIdx.x] = (T)0;
+
+	if (threadIdx.x + k < bid) return;
+
+	sharedElem[threadIdx.x] = dA[pivotIdx + bid * (k << 1) + threadIdx.x];
+
+	__syncthreads();
+
+	for (int i = 1; i < b; i++) {
+		if (threadIdx.x >= i)
+			sharedElem[threadIdx.x] -= sharedElem[i-1] * dA[pivotIdx + (i-1) * (k<<1) + threadIdx.x];
+
+		__syncthreads();
+	}
+
+	dA[pivotIdx + bid * (k << 1) + threadIdx.x] = sharedElem[threadIdx.x];
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_phase3(T *dA, int start_row, int k, int cur_last, int b)
+{
+	int pivotIdx = start_row * ((k<<1) + 1) + k;
+	int bid = blockIdx.x;
+
+	for (int tid = threadIdx.x; tid < cur_last; tid += blockDim.x) {
+		T tmp = dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid];
+		for (int i = 0; i < b; i++)
+			if (tid - i + b <= k && i + k >= b + bid)
+				tmp -= dA[pivotIdx + tid + i * (k << 1) + b] * dA[pivotIdx + (b+bid) * (k << 1) + i];
+
+		dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid] = tmp;
+	}
+}
+
+template <typename T>
+__global__ void
 bandUL_critical_div(T *dA, int start_row, int k, int partition_size, int rest_num)
 {
 	int r = threadIdx.x + 1;
