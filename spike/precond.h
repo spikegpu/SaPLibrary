@@ -205,6 +205,7 @@ private:
 	void partFullLU();
 	void partFullLU_const();
 	void partFullLU_var();
+	void partBlockedFullLU_var();
 
 	void partFullFwdSweep(PrecVector& v);
 	void partFullBckSweep(PrecVector& v);
@@ -1143,8 +1144,10 @@ Precond<PrecVector>::partFullLU()
 {
 	if (!m_variableBandwidth)
 		partFullLU_const();
-	else
-		partFullLU_var();
+	else {
+		//partFullLU_var();
+		partBlockedFullLU_var();
+	}
 }
 
 
@@ -1254,6 +1257,63 @@ Precond<PrecVector>::partFullLU_var()
 			else
 				device::var::fullLU_sub_div<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks,  p_ROffsets, i);
 		}
+	}
+
+	{
+		dim3 grids(m_k-1, m_numPartitions-1);
+		if (m_k >= 1024)
+			device::var::fullLU_post_divide_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks, p_ROffsets);
+		else
+			device::var::fullLU_post_divide<PrecValueType><<<grids, m_k-1>>>(d_R, p_spike_ks, p_ROffsets);
+	}
+}
+
+template <typename PrecVector>
+void
+Precond<PrecVector>::partBlockedFullLU_var()
+{
+	PrecValueType* d_R        = thrust::raw_pointer_cast(&m_R[0]);
+	int*           p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
+	int*           p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
+	
+	int        two_k = 2 * m_k;
+
+	// The first k rows of each diagonal block do not need a division step and
+	// always use a pivot = 1.
+	{
+		dim3 grids(m_k, m_numPartitions-1);
+
+		if( m_k > 1024)
+			device::var::fullLU_sub_spec_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks, p_ROffsets);
+		else
+			device::var::fullLU_sub_spec<PrecValueType><<<grids, m_k>>>(d_R, p_spike_ks, p_ROffsets);
+	}
+
+	// The following k rows of each diagonal block require first a division by
+	// the pivot.
+	const int BLOCK_FACTOR = 8;
+	for(int i = m_k; i < two_k-1; i += BLOCK_FACTOR) {
+		int  left_rows = two_k - i;
+		int  threads = (two_k-1-i) * (left_rows < BLOCK_FACTOR ? (left_rows - 1) : (BLOCK_FACTOR - 1));
+
+		dim3 grids(two_k-BLOCK_FACTOR-i, m_numPartitions-1);
+
+		if(threads > 1024)
+			device::var::blockedFullLU_phase1_general<PrecValueType><<<m_numPartitions-1, 512>>>(d_R, p_spike_ks,  p_ROffsets, i, left_rows < BLOCK_FACTOR ? left_rows : BLOCK_FACTOR);
+		else
+			device::var::blockedFullLU_phase1_general<PrecValueType><<<m_numPartitions-1, threads>>>(d_R, p_spike_ks,  p_ROffsets, i, left_rows < BLOCK_FACTOR ? left_rows : BLOCK_FACTOR);
+
+		if (left_rows <= BLOCK_FACTOR)
+			break;
+
+		device::var::blockedFullLU_phase2_general<PrecValueType><<<grids, BLOCK_FACTOR>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
+
+		threads = two_k - BLOCK_FACTOR - i;
+
+		if (threads > 1024)
+			device::var::blockedFullLU_phase3_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
+		else
+			device::var::blockedFullLU_phase3_general<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
 	}
 
 	{
