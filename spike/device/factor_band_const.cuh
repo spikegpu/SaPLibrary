@@ -1103,11 +1103,11 @@ blockedBandLU_critical_phase2(T *dA, int start_row, int k, int b)
 
 	extern __shared__ T sharedElem[];
 
-	sharedElem[threadIdx.x] = (T)0;
-
-	if (threadIdx.x + k < bid) return;
-
-	sharedElem[threadIdx.x] = dA[pivotIdx + bid * (k << 1) + threadIdx.x];
+	if (threadIdx.x + k < bid) {
+		sharedElem[threadIdx.x] = (T)0;
+		return;
+	} else
+		sharedElem[threadIdx.x] = dA[pivotIdx + bid * (k << 1) + threadIdx.x];
 
 	__syncthreads();
 

@@ -1469,8 +1469,7 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 			int col_max = thrust::reduce(m_ks_col_host.begin() + st_row, m_ks_col_host.begin() + last_row, 0, thrust::maximum<int>());
 
 			threadsNum = col_max * (last_row - st_row - 1);
-			// if (threadsNum > m_n - st_row - 1)
-				// threadsNum = m_n - st_row - 1;
+
 			int blockX = 0;
 			for (int i = st_row; i < last_row; i++)
 				if (blockX < i + m_ks_row_host[i])
@@ -1480,14 +1479,14 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 
 			if (m_safeFactorization) {
 				if (threadsNum > 1024)
-					device::blockedBandLU_critical_phase1_safe<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, (last_row - st_row < BLOCK_FACTOR ? last_row - st_row : BLOCK_FACTOR));
+					device::blockedBandLU_critical_phase1_safe<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
 				else
-					device::blockedBandLU_critical_phase1_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k, ks_col_ptr, (last_row - st_row < BLOCK_FACTOR ? last_row - st_row : BLOCK_FACTOR));
+					device::blockedBandLU_critical_phase1_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
 			} else {
 				if (threadsNum > 1024)
-					device::blockedBandLU_critical_phase1<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, (last_row - st_row < BLOCK_FACTOR ? last_row - st_row : BLOCK_FACTOR));
+					device::blockedBandLU_critical_phase1<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
 				else
-					device::blockedBandLU_critical_phase1<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k, ks_col_ptr, (last_row - st_row < BLOCK_FACTOR ? last_row - st_row : BLOCK_FACTOR));
+					device::blockedBandLU_critical_phase1<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
 			}
 
 			if (m_n == last_row) break;
