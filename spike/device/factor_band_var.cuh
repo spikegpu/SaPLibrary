@@ -741,6 +741,129 @@ fullLU_post_divide_general(T *dA, int *ks, int *offsets) {
 
 template <typename T>
 __global__ void
+blockedFullLU_phase1_general(T *dA, int *ks, int *offsets, int cur_row, int b)
+{
+	int k = ks[blockIdx.x];
+	int partition_size = (2*k);
+
+	int offset = offsets[blockIdx.x] + cur_row * partition_size + cur_row;
+
+	int last_row = cur_row + b;
+	if (last_row > partition_size)
+		last_row = partition_size;
+
+	for (int i = 0; i < b; i++) {
+		for (int tid = threadIdx.x + 1; tid < partition_size - cur_row; tid += blockDim.x)
+			dA[tid + offset] /= dA[offset];
+
+		__syncthreads();
+
+		int element_count = (last_row - 1 - cur_row) * (partition_size - 1 - cur_row);
+
+		if (element_count == 0) return;
+
+		for (int tid = threadIdx.x; tid < element_count; tid += blockDim.x) {
+			int r = tid / (partition_size - 1 - cur_row) + 1;
+			int c = tid % (partition_size - 1 - cur_row) + 1;
+
+			dA[offset + r * partition_size + c] -= dA[offset + r * partition_size] * dA[offset + c];
+		}
+
+		__syncthreads();
+
+		offset += partition_size + 1;
+		cur_row ++;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedFullLU_phase1_safe_general(T *dA, int *ks, int *offsets, int cur_row, int b)
+{
+	int k = ks[blockIdx.x];
+	int partition_size = (2*k);
+
+	int offset = offsets[blockIdx.x] + cur_row * partition_size + cur_row;
+
+	int last_row = cur_row + b;
+	if (last_row > partition_size)
+		last_row = partition_size;
+
+	__shared__ T sharedA;
+
+	for (int i = 0; i < b; i++) {
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid < partition_size - cur_row; tid += blockDim.x)
+			dA[tid + offset] /= sharedA;
+
+		__syncthreads();
+
+		int element_count = (last_row - 1 - cur_row) * (partition_size - 1 - cur_row);
+
+		if (element_count == 0) return;
+
+		for (int tid = threadIdx.x; tid < element_count; tid += blockDim.x) {
+			int r = tid / (partition_size - 1 - cur_row) + 1;
+			int c = tid % (partition_size - 1 - cur_row) + 1;
+
+			dA[offset + r * partition_size + c] -= dA[offset + r * partition_size] * dA[offset + c];
+		}
+
+		__syncthreads();
+
+		offset += partition_size + 1;
+		cur_row ++;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedFullLU_phase2_general(T *dA, int *ks, int *offsets, int cur_row, int b)
+{
+	int bid = blockIdx.x + b;
+	int k = ks[blockIdx.y];
+
+	int offset = offsets[blockIdx.y] + cur_row * k * 2 + cur_row;
+
+	extern __shared__  T sharedElem[];
+
+	sharedElem[threadIdx.x] = dA[offset + bid * k * 2 + threadIdx.x];
+
+	__syncthreads();
+
+	for (int i = 1; i < b; i++) {
+		if (threadIdx.x >= i)
+			sharedElem[threadIdx.x] -= sharedElem[i-1] * dA[offset + (i-1) * k * 2 + threadIdx.x];
+		__syncthreads();
+	}
+
+	dA[offset + bid * k * 2 + threadIdx.x] = sharedElem[threadIdx.x];
+}
+
+template <typename T>
+__global__ void
+blockedFullLU_phase3_general(T *dA, int *ks, int *offsets, int cur_row, int b) {
+	int k = ks[blockIdx.y];
+	int partition_size = (k << 1);
+	int offset = offsets[blockIdx.y] + cur_row * k * 2 + cur_row;
+
+	int bid = blockIdx.x + b;
+
+	for (int tid = threadIdx.x + b;  tid < partition_size - cur_row; tid += blockDim.x) {
+		T tmp = dA[offset + bid * partition_size + tid];
+
+		for (int i = 0; i < b; i++)
+			tmp -= dA[offset + i * partition_size + tid] * dA[offset + bid * partition_size + i];
+
+		dA[offset + bid * partition_size + tid] = tmp;
+	}
+}
+
+template <typename T>
+__global__ void
 boostLastPivot(T *dA, int start_row, int *ks, int *offsets, int partition_size, int rest_num)
 {
 	int offset = offsets[blockIdx.x];
