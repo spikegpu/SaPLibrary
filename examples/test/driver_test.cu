@@ -61,7 +61,7 @@ using std::vector;
 enum {OPT_HELP, OPT_PART,
       OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
       OPT_TOL, OPT_MAXIT,
-      OPT_DROPOFF_FRAC, 
+      OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE, 
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT,
@@ -81,6 +81,8 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_MAXIT,         "--max-num-iterations", SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "-d",                   SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
+	{ OPT_MAX_BANDWIDTH, "-b",                   SO_REQ_CMB },
+	{ OPT_MAX_BANDWIDTH, "--max-bandwidth",      SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
 	{ OPT_RHSFILE,       "-r",                   SO_REQ_CMB },
@@ -550,6 +552,9 @@ GetProblemSpecs(int             argc,
 				break;
 			case OPT_DROPOFF_FRAC:
 				opts.dropOffFraction = atof(args.OptionArg());
+				break;
+			case OPT_MAX_BANDWIDTH:
+				opts.maxBandwidth = atoi(args.OptionArg());
 				break;
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
