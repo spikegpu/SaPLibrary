@@ -965,11 +965,38 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		                           typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
+
+		transfer_timer.Start();
+		m_B = B;
+		transfer_timer.Stop();
+		m_time_transfer += transfer_timer.getElapsed();
 	} else {
 		assemble_timer.Start();
-		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, B, typeMap, bandedMatMap);
+		PrecMatrixCooH Acooh = A;
+		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, Acooh, typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
+
+		transfer_timer.Start();
+		PrecMatrixCoo Acoo = Acooh;
+		m_B.resize((size_t)(2 * m_k + 1) * m_n);
+
+		transfer_timer.Stop();
+		m_time_transfer += transfer_timer.getElapsed();
+
+		int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
+		kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
+		dim3 grids(gridX, gridY);
+
+		int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
+		int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
+		PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
+		PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
+
+		m_timer.Start();
+		device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, m_k, d_rows, d_cols, d_vals, dB);
+		m_timer.Stop();
+		m_time_toBanded = m_timer.getElapsed();
 	}
 
 	transfer_timer.Start();
@@ -982,8 +1009,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_mc64RowScale = mc64RowScale;
 		m_mc64ColScale = mc64ColScale;
 	}
-
-	m_B = B;
 
 	if (m_variableBandwidth) {
 		m_ks = m_ks_host;

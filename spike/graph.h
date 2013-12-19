@@ -148,7 +148,7 @@ public:
 	void       assembleBandedMatrix(int         bandwidth,
 	                                IntVector&  ks_col,
 	                                IntVector&  ks_row,
-	                                Vector&     B,
+									MatrixCoo&  Acoo,
 	                                MatrixMap&  typeMap,
 	                                MatrixMap&  bandedMatMap);
 
@@ -679,15 +679,10 @@ void
 Graph<T>::assembleBandedMatrix(int         bandwidth,
                                IntVector&  ks_col,
                                IntVector&  ks_row,
-                               Vector&     B,
+							   MatrixCoo&  Acoo,
                                MatrixMap&  typeMap,
                                MatrixMap&  bandedMatMap)
 {
-	// Drop all edges from begin() to 'first'; i.e., keep all edges from
-	// 'first' to end().
-	size_t Bsize = (size_t) (2 * bandwidth + 1) * m_n;
-	B.resize(Bsize);
-
 	ks_col.resize(m_n, 0);
 	ks_row.resize(m_n, 0);
 
@@ -697,15 +692,22 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 		bandedMatMap.resize(m_nnz);
 	}
 
+	size_t idx = 0;
+	Acoo.resize(m_n, m_n, m_edges.end() - m_first);
+	Acoo.num_entries = m_edges.end() - m_first;
+
 	if (m_trackReordering) {
-		for (EdgeIterator it = m_first; it != m_edges.end(); ++it) {
+		for (EdgeIterator it = m_first; it != m_edges.end(); ++it, idx++) {
 			int j = it->m_from;
 			int l = it->m_to;
 
 			size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
-			B[i] = it->m_val;
 			typeMap[it->m_ori_idx] = 1;
 			bandedMatMap[it->m_ori_idx] = i;
+
+			Acoo.row_indices[idx] = it->m_from;
+			Acoo.column_indices[idx] = it->m_to;
+			Acoo.values[idx] = it->m_val;
 
 			if (ks_col[l] < j - l)
 				ks_col[l] = j - l;
@@ -713,12 +715,13 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 				ks_row[j] = l-j;
 		}
 	} else {
-		for (EdgeIterator it = m_first; it != m_edges.end(); ++it) {
+		for (EdgeIterator it = m_first; it != m_edges.end(); ++it, ++idx) {
 			int j = it->m_from;
 			int l = it->m_to;
 
-			size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
-			B[i] = it->m_val;
+			Acoo.row_indices[idx] = it->m_from;
+			Acoo.column_indices[idx] = it->m_to;
+			Acoo.values[idx] = it->m_val;
 
 			if (ks_col[l] < j - l)
 				ks_col[l] = j - l;
