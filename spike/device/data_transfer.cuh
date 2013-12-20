@@ -437,6 +437,38 @@ copyFromCOOMatrixToBandedMatrix(int  nnz,
 
 template <typename T>
 __global__ void
+copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
+												  int* ks,
+												  int* rows,
+												  int* cols,
+												  T*   vals,
+												  T*   dB,
+												  int* offsets,
+												  int  partSize,
+												  int  remainder)
+{
+	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
+	int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
+	if(idx >= nnz) return;
+
+	int j = rows[idx], l = cols[idx];
+
+	int curPartNum = l / (partSize + 1);
+	int l_in_part;
+	if (curPartNum >= remainder) {
+		l_in_part = l - remainder * (partSize + 1);
+		curPartNum = remainder + l_in_part / partSize;
+		l_in_part %= partSize;
+	} else {
+		l_in_part = l % (partSize + 1);
+	}
+
+	int bandwidth = ks[curPartNum];
+	dB[offsets[curPartNum] + l_in_part * (2 * bandwidth + 1) + bandwidth + j - l] = vals[idx];
+}
+
+template <typename T>
+__global__ void
 assembleReducedMat_var_bandwidth(int* ks,
                                  int* offsets_src,
                                  int* offsets_dst,

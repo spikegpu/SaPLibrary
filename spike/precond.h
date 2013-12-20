@@ -960,19 +960,38 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_time_reorder += reorder_timer.getElapsed();
 
 		assemble_timer.Start();
-		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, B,
+		PrecMatrixCooH Acooh;
+		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, Acooh,
 		                           m_ks_host, m_BOffsets_host, 
 		                           typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 
-		transfer_timer.Start();
-		m_B = B;
-		transfer_timer.Stop();
-		m_time_transfer += transfer_timer.getElapsed();
+		m_timer.Start();
+		PrecMatrixCoo Acoo = Acooh;
+		m_B.resize(m_BOffsets_host[m_numPartitions], 0);
+		int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
+		kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
+		dim3 grids(gridX, gridY);
+
+		int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
+		int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
+		PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
+		PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
+
+		m_ks = m_ks_host;
+		m_BOffsets = m_BOffsets_host;
+
+		int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
+		int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
+
+		device::copyFromCOOMatrixToBandedMatrix_variableBandwidth<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions);
+
+		m_timer.Stop();
+		m_time_toBanded = m_timer.getElapsed();
 	} else {
 		assemble_timer.Start();
-		PrecMatrixCooH Acooh = A;
+		PrecMatrixCooH Acooh;
 		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, Acooh, typeMap, bandedMatMap);
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
@@ -984,6 +1003,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		transfer_timer.Stop();
 		m_time_transfer += transfer_timer.getElapsed();
 
+		m_timer.Start();
 		int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
 		kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
 		dim3 grids(gridX, gridY);
@@ -993,7 +1013,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
 		PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
 
-		m_timer.Start();
 		device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, m_k, d_rows, d_cols, d_vals, dB);
 		m_timer.Stop();
 		m_time_toBanded = m_timer.getElapsed();
@@ -1011,12 +1030,10 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	}
 
 	if (m_variableBandwidth) {
-		m_ks = m_ks_host;
 		m_offDiagWidths_left = m_offDiagWidths_left_host;
 		m_offDiagWidths_right = m_offDiagWidths_right_host;
 		m_offDiagPerms_left = offDiagPerms_left;
 		m_offDiagPerms_right = offDiagPerms_right;
-		m_BOffsets = m_BOffsets_host;
 
 		m_spike_ks.resize(m_numPartitions - 1);
 		m_ROffsets.resize(m_numPartitions - 1);
@@ -1473,11 +1490,19 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 {
 	PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
 
-	if (m_ks_col_host.size() != m_n)
+	if (m_ks_col_host.size() != m_n) {
 		m_ks_col_host.resize(m_n, m_k);
 
-	if (m_ks_row_host.size() != m_n)
+		for (int i = m_n - 1; i >= m_n - m_k; i--)
+			m_ks_col_host[i] = m_n - 1 - i;
+	}
+
+	if (m_ks_row_host.size() != m_n) {
 		m_ks_row_host.resize(m_n, m_k);
+
+		for (int i = m_n - 1; i >= m_n - m_k; i--)
+			m_ks_row_host[i] = m_n - 1 - i;
+	}
 
 	if(m_k >= CRITICAL_THRESHOLD) {
 		int threadsNum = 0;
@@ -1540,7 +1565,6 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 			device::bandLU<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
 	}
-
 
 	if (m_safeFactorization)
 		device::boostLastPivot<PrecValueType><<<1, 1>>>(dB, m_n, m_k, m_n, 0);

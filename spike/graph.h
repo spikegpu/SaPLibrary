@@ -156,7 +156,7 @@ public:
 	                                int         numPartitions,
 	                                IntVector&  ks_col,
 	                                IntVector&  ks_row,
-	                                Vector&     B,
+									MatrixCoo&  Acoo,
 	                                IntVector&  ks,
 	                                IntVector&  BOffsets,
 	                                MatrixMap&  typeMap,
@@ -694,6 +694,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 
 	size_t idx = 0;
 	Acoo.resize(m_n, m_n, m_edges.end() - m_first);
+	Acoo.num_rows = Acoo.num_cols = m_n;
 	Acoo.num_entries = m_edges.end() - m_first;
 
 	if (m_trackReordering) {
@@ -744,7 +745,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
                                int         numPartitions,
                                IntVector&  ks_col,
                                IntVector&  ks_row,
-                               Vector&     B,
+							   MatrixCoo&  Acoo,
                                IntVector&  ks,
                                IntVector&  BOffsets,
                                MatrixMap&  typeMap,
@@ -759,6 +760,10 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	int remainder = m_n % numPartitions;
 
 	EdgeIterator toStart = m_major_edges.begin(), toEnd = m_major_edges.end();
+
+	Acoo.resize(m_n, m_n, toEnd - toStart);
+	Acoo.num_rows = Acoo.num_cols = m_n;
+	Acoo.num_entries = toEnd - toStart;
 
 	for (EdgeIterator it = toStart; it != toEnd; ++it) {
 		int j = it->m_from;
@@ -777,8 +782,6 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			BOffsets[i+1] = BOffsets[i] + (partSize) * (2 * ks[i] + 1);
 	}
 
-	B.resize(BOffsets[numPartitions]);
-
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
 			typeMap.resize(m_nnz);
@@ -788,7 +791,8 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	ks_col.resize(m_n, 0);
 	ks_row.resize(m_n, 0);
 
-	for (EdgeIterator it = toStart; it != toEnd; ++it) {
+	size_t idx = 0;
+	for (EdgeIterator it = toStart; it != toEnd; ++it, ++idx) {
 		int j = it->m_from;
 		int l = it->m_to;
 
@@ -804,7 +808,10 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 
 		int K = ks[curPartNum];
 		int i = BOffsets[curPartNum] + l_in_part * (2 * K + 1) + K + j - l;
-		B[i] = it->m_val;
+
+		Acoo.row_indices[idx] = it->m_from;
+		Acoo.column_indices[idx] = it->m_to;
+		Acoo.values[idx] = it->m_val;
 
 		if (ks_col[l] < j - l)
 			ks_col[l] = j - l;
