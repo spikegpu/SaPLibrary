@@ -1050,6 +1050,100 @@ blockedBandLU_critical_phase1(T *dA, int start_row, int k, int *last, int b)
 
 template <typename T>
 __global__ void
+blockedBandLUforSPD_critical_phase1_safe(T *dA, int start_row, int k, int *last, int b)
+{
+	int pivotIdx;
+	int last_row = start_row + b;
+
+	pivotIdx = start_row * ((k<<1) + 1) + k;
+
+	__shared__ T sharedA;
+
+	for (int row = start_row; row < last_row;  row++) {
+
+		int cur_last = last[row];
+
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx + tid] /= sharedA;
+
+		__syncthreads();
+
+		if (row == last_row - 1) break;
+		if (cur_last == 0) {
+			pivotIdx += (k<<1) + 1;
+			continue;
+		}
+
+		int num_elements = (last_row - row - 1) * cur_last;
+
+		for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+			int r = tid / cur_last + 1;
+			int c = tid % cur_last + 1;
+
+			if (r <= c)
+				dA[pivotIdx + c + r * (k<<1)] -= dA[pivotIdx + c] * dA[pivotIdx + r] * sharedA;
+		}
+
+		__syncthreads();
+
+		pivotIdx += ((k<<1) + 1);
+	}
+}
+
+template <typename T>
+__global__ void
+blockedCholesky_critical_phase1_safe(T *dA, int start_row, int k, int *last, int b)
+{
+	int pivotIdx;
+	int last_row = start_row + b;
+
+	pivotIdx = start_row * (k + 1);
+
+	__shared__ T sharedA;
+
+	for (int row = start_row; row < last_row;  row++) {
+
+		int cur_last = last[row];
+
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx + tid] /= sharedA;
+
+		__syncthreads();
+
+		if (row == last_row - 1) break;
+		if (cur_last == 0) {
+			pivotIdx += k + 1;
+			continue;
+		}
+
+		int num_elements = (last_row - row - 1) * cur_last;
+
+		for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+			int r = tid / cur_last + 1;
+			int c = tid % cur_last + 1;
+
+			if (r <= c)
+				dA[pivotIdx + c + r * k] -= dA[pivotIdx + c] * dA[pivotIdx + r] * sharedA;
+		}
+
+		__syncthreads();
+
+		pivotIdx += k + 1;
+	}
+}
+
+template <typename T>
+__global__ void
 blockedBandLU_critical_phase1_safe(T *dA, int start_row, int k, int *last, int b)
 {
 	int pivotIdx;
@@ -1136,6 +1230,70 @@ blockedBandLU_critical_phase3(T *dA, int start_row, int k, int cur_last, int b)
 
 		dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid] = tmp;
 	}
+}
+
+template <typename T>
+__global__ void
+blockedCholesky_critical_phase2(T *dA, int start_row, int k, int cur_last, int b)
+{
+	int pivotIdx = start_row * (k + 1);
+	int bid = blockIdx.x;
+
+	extern __shared__ T pivots[];
+
+	if (threadIdx.x < b)
+		pivots[threadIdx.x] = dA[pivotIdx + threadIdx.x * (k+1)];
+
+	__syncthreads();
+
+	for (int tid = threadIdx.x + bid; tid < cur_last; tid += blockDim.x) {
+		T tmp = dA[pivotIdx + b * (k + 1) + tid + k * bid];
+		for (int i = 0; i < b; i++)
+			if (tid - i + b <= k && i + k >= b + bid)
+				tmp -= dA[pivotIdx + tid + i * k + b] * dA[pivotIdx + (b+bid)  + i * k] * pivots[i];
+
+		dA[pivotIdx + b * (k+1) + tid + k * bid] = tmp;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandLUforSPD_critical_phase2(T *dA, int start_row, int k, int cur_last, int b)
+{
+	int pivotIdx = start_row * ((k<<1) + 1) + k;
+	int bid = blockIdx.x;
+
+	extern __shared__ T pivots[];
+
+	if (threadIdx.x < b)
+		pivots[threadIdx.x] = dA[pivotIdx + threadIdx.x * ((k<<1)+1)];
+
+	__syncthreads();
+
+	for (int tid = threadIdx.x + bid; tid < cur_last; tid += blockDim.x) {
+		T tmp = dA[pivotIdx + b * ((k<<1) + 1) + tid + (k<<1) * bid];
+		for (int i = 0; i < b; i++)
+			if (tid - i + b <= k && i + k >= b + bid)
+				tmp -= dA[pivotIdx + tid + i * (k<<1) + b] * dA[pivotIdx + (b+bid)  + i * (k<<1)] * pivots[i];
+
+		dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid] = tmp;
+	}
+}
+
+template <typename T>
+__global__ void
+getUfromLforSPD(T *dA, int n, int k)
+{
+	int idx = threadIdx.x + (blockIdx.x+blockIdx.y * gridDim.x) * blockDim.x;
+
+	if (idx >= n * k) return;
+
+	int r = idx / k;
+	int c = idx % k;
+
+	if (r + c + 1 >= n) return;
+
+	dA[k + (c+1+r)*(k<<1) + r] = dA[k + c + 1 + r * ((k << 1) + 1)];
 }
 
 template <typename T>

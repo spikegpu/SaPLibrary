@@ -181,6 +181,67 @@ forwardElimL_general(int N, int k, T *dA, T *dB, int partition_size, int rest_nu
 	}
 }
 
+template <typename T>
+__global__ void
+fwdElim_sol_forSPD(int N, int k, T *dA, T *dB, int partSize, int remainder)
+{
+	int col_width = k + 1;
+	int first_row = blockIdx.x * partSize;
+	int last_row;
+	if(blockIdx.x < remainder) {
+		first_row += blockIdx.x;
+		last_row = first_row + partSize + 1;
+	} else {
+		first_row += remainder;
+		last_row = first_row + partSize;
+	}
+
+	int it_last = k;
+
+	for(int i=first_row; i<last_row-k; i++) {
+		for(int ttid = threadIdx.x; ttid<it_last; ttid+=blockDim.x)
+			dB[i+ttid+1] -= dB[i] * dA[i*col_width + ttid + 1];
+		__syncthreads();
+	}
+	for(int i=last_row-k; i<last_row-1; i++) {
+		if(threadIdx.x >= last_row-i-1) return;
+		if(it_last > last_row-i-1)
+			it_last = last_row-i-1;
+		for(int ttid = threadIdx.x; ttid < it_last; ttid+=blockDim.x)
+			dB[i+ttid+1] -= dB[i] * dA[i*col_width + ttid + 1];
+		__syncthreads();
+	}
+}
+
+template <typename T>
+__global__ void
+fwdElim_sol_medium_forSPD(int N, int k, T *dA, T *dB, int partSize, int remainder)
+{
+	int col_width = k + 1;
+	int first_row = blockIdx.x * partSize;
+	int last_row;
+	if(blockIdx.x < remainder) {
+		first_row += blockIdx.x;
+		last_row = first_row + partSize + 1;
+	} else {
+		first_row += remainder;
+		last_row = first_row + partSize;
+	}
+
+	int ttid = threadIdx.x;
+
+	for(int i=first_row; i<last_row-k; i++) {
+		// if (ttid < ks_col[i])
+		dB[i+ttid+1] -= dB[i] * dA[i*col_width + ttid + 1];
+		__syncthreads();
+	}
+	for(int i=last_row-k; i<last_row-1; i++) {
+		if (ttid >= last_row-i-1) return;
+		// if (ttid < ks_col[i])
+		dB[i+ttid+1] -= dB[i] * dA[i*col_width + ttid + 1];
+		__syncthreads();
+	}
+}
 
 template <typename T>
 __global__ void
@@ -300,6 +361,70 @@ bckElim_sol(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 			it_last = i-first_row;
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
 			dB[bidy*N+i-ttid-1] -= dB[bidy*N+i] * dA[i*col_width + k - ttid - 1];
+		__syncthreads();
+	}
+}
+
+template <typename T>
+__global__ void
+bckElim_sol_forSPD(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
+{
+	int tid = threadIdx.x;
+	int col_width = k + 1;
+
+	int first_row = blockIdx.x*partition_size;
+	int last_row;
+	if(blockIdx.x < rest_num) {
+		first_row += blockIdx.x;
+		last_row = first_row + partition_size + 1;
+	} else {
+		first_row += rest_num;
+		last_row = first_row + partition_size;
+	}
+
+	int it_last = k;
+
+	for(int i=last_row-1; i>=k+first_row; i--) {
+		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
+			dB[i-ttid-1] -= dB[i] * dA[i*col_width-(ttid+1) * k];
+		__syncthreads();
+	}
+
+	for(int i=k-1+first_row; i>=first_row; i--) {
+		if(tid>=i-first_row) return;
+		if(it_last > i-first_row)
+			it_last = i-first_row;
+		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
+			dB[i-ttid-1] -= dB[i] * dA[i*col_width - (ttid + 1) * k];
+		__syncthreads();
+	}
+}
+
+template <typename T>
+__global__ void
+bckElim_sol_medium_forSPD(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
+{
+	int tid = threadIdx.x;
+	int col_width = k + 1;
+
+	int first_row = blockIdx.x*partition_size;
+	int last_row;
+	if(blockIdx.x < rest_num) {
+		first_row += blockIdx.x;
+		last_row = first_row + partition_size + 1;
+	} else {
+		first_row += rest_num;
+		last_row = first_row + partition_size;
+	}
+
+	for(int i=last_row-1; i>=k+first_row; i--) {
+		dB[i-tid-1] -= dB[i] * dA[i*col_width-(tid+1) * k];
+		__syncthreads();
+	}
+
+	for(int i=k-1+first_row; i>=first_row; i--) {
+		if(tid>=i-first_row) return;
+		dB[i-tid-1] -= dB[i] * dA[i*col_width - (tid + 1) * k];
 		__syncthreads();
 	}
 }

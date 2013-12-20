@@ -402,6 +402,56 @@ bandLU_critical_sub_div_general(T *dA, int start_row, int *ks, int *offsets, int
 
 template <typename T>
 __global__ void
+bandLU_critical_sub_div_forSPD_general(T *dA, int start_row, int *ks, int *offsets, int partition_size, int rest_num, int *ks_col, int *ks_row)
+{
+	int k = ks[blockIdx.y];
+	int r = threadIdx.x + 1, c = blockIdx.x + 1;
+	if (r > k || c > k) return;
+	int bid = blockIdx.y;
+	int pivotIdx = offsets[bid] + k;
+
+	int currow = start_row + partition_size * bid;
+	if (bid < rest_num)
+		currow += bid;
+	else
+		currow += rest_num - 1;
+
+	if (c > ks_row[currow] && c != 1) return;
+
+	int last = ks_col[currow];
+	if (last > k)
+		last = k;
+	if (last > partition_size - start_row)
+		last = partition_size - start_row;
+	if (bid >= rest_num)
+		start_row --;
+	pivotIdx += (start_row) * ((k<<1) + 1);
+
+	T tmp = dA[pivotIdx + c] * dA[pivotIdx];
+	for(r = last - threadIdx.x; r >= c; r -= blockDim.x)
+		dA[c*(k<<1)+ (r+pivotIdx)] -= dA[r+pivotIdx] * tmp;
+
+	if (c == 1) {
+		start_row++;
+		currow++;
+		if (bid < rest_num) {
+			if (start_row > partition_size)
+				return;
+		} else {
+			if (start_row >= partition_size)
+				return;
+		}
+		last = ks_col[currow];
+		pivotIdx += ((k<<1) + 1);
+
+		__syncthreads();
+		for (r = threadIdx.x + 1; r <= last; r += blockDim.x)
+			dA[r+pivotIdx] /= dA[pivotIdx];
+	}
+}
+
+template <typename T>
+__global__ void
 bandLU_critical_sub_div_safe_general(T *dA, int start_row, int *ks, int *offsets, int partition_size, int rest_num, int *ks_col, int *ks_row)
 {
 	int k = ks[blockIdx.y];
@@ -452,6 +502,81 @@ bandLU_critical_sub_div_safe_general(T *dA, int start_row, int *ks, int *offsets
 		for (r = threadIdx.x + 1; r <= last; r += blockDim.x)
 			dA[r+pivotIdx] /= sharedA;
 	}
+}
+
+template <typename T>
+__global__ void
+bandLU_critical_sub_div_forSPD_safe_general(T *dA, int start_row, int *ks, int *offsets, int partition_size, int rest_num, int *ks_col, int *ks_row)
+{
+	int k = ks[blockIdx.y];
+	int r = threadIdx.x + 1, c = blockIdx.x + 1;
+	if (r > k || c > k) return;
+	int bid = blockIdx.y;
+	int pivotIdx = offsets[bid] + k;
+
+	int currow = start_row + partition_size * bid;
+	if (bid < rest_num)
+		currow += bid;
+	else
+		currow += rest_num - 1;
+
+	if (c > ks_row[currow] && c != 1) return;
+
+	int last = ks_col[currow];
+	if (last > k)
+		last = k;
+	if (last > partition_size - start_row)
+		last = partition_size - start_row;
+	if (bid >= rest_num)
+		start_row --;
+	pivotIdx += (start_row) * ((k<<1) + 1);
+
+	T tmp = dA[pivotIdx + c] * dA[pivotIdx];
+	for(r = last - threadIdx.x; r >= c; r -= blockDim.x)
+		dA[c*(k<<1)+ (r+pivotIdx)] -= dA[r+pivotIdx] * tmp;
+
+	if (c == 1) {
+		start_row++;
+		currow++;
+		if (bid < rest_num) {
+			if (start_row > partition_size)
+				return;
+		} else {
+			if (start_row >= partition_size)
+				return;
+		}
+		last = ks_col[currow];
+		pivotIdx += ((k<<1) + 1);
+
+		__shared__ T sharedA;
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+
+		__syncthreads();
+		for (r = threadIdx.x + 1; r <= last; r += blockDim.x)
+			dA[r+pivotIdx] /= sharedA;
+	}
+}
+
+template <typename T>
+__global__ void
+getUfromLforSPD(T *dA, int partSize, int remainder, int *ks, int *offsets)
+{
+	int idx = threadIdx.x + (blockIdx.x+blockIdx.y * gridDim.x) * blockDim.x;
+	int k = ks[blockIdx.z];
+	if (blockIdx.z < remainder)
+		partSize++;
+
+	if (idx >= partSize * k) return;
+
+	int offset = offsets[blockIdx.z];
+
+	int r = idx / k;
+	int c = idx % k;
+
+	if (r + c + 1 >= partSize) return;
+
+	dA[offset + k + (c+1+r)*(k<<1) + r] = dA[offset + k + c + 1 + r * ((k << 1) + 1)];
 }
 
 // ============================================================
