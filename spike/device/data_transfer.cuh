@@ -425,14 +425,25 @@ copyFromCOOMatrixToBandedMatrix(int  nnz,
                                 int* rows,
                                 int* cols,
                                 T*   vals,
-                                T*   dB)
+                                T*   dB,
+								bool saveMem)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
 	if(idx >= nnz) return;
 
 	int j = rows[idx], l = cols[idx];
-	dB[l * (2 * bandwidth + 1) + bandwidth + j - l] = vals[idx];
+	if (saveMem && j < l)
+		return;
+
+	int col_width = 2 * bandwidth + 1;
+	int delta = bandwidth;
+	if (saveMem) {
+		col_width = bandwidth + 1;
+		delta = 0;
+	}
+
+	dB[l * col_width + delta + j - l] = vals[idx];
 }
 
 template <typename T>
@@ -445,13 +456,17 @@ copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
 												  T*   dB,
 												  int* offsets,
 												  int  partSize,
-												  int  remainder)
+												  int  remainder,
+												  bool saveMem)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
 	if(idx >= nnz) return;
 
 	int j = rows[idx], l = cols[idx];
+
+	if (saveMem && j < l)
+		return;
 
 	int curPartNum = l / (partSize + 1);
 	int l_in_part;
@@ -464,7 +479,15 @@ copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
 	}
 
 	int bandwidth = ks[curPartNum];
-	dB[offsets[curPartNum] + l_in_part * (2 * bandwidth + 1) + bandwidth + j - l] = vals[idx];
+
+	int col_width = 2 * bandwidth + 1;
+	int delta = bandwidth;
+	if (saveMem) {
+		col_width = bandwidth + 1;
+		delta = 0;
+	}
+
+	dB[offsets[curPartNum] + l_in_part * col_width + delta + j - l] = vals[idx];
 }
 
 template <typename T>

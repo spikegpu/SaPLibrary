@@ -1000,7 +1000,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
 		int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
 
-		device::copyFromCOOMatrixToBandedMatrix_variableBandwidth<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions);
+		device::copyFromCOOMatrixToBandedMatrix_variableBandwidth<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
 
 		m_timer.Stop();
 		m_time_toBanded = m_timer.getElapsed();
@@ -1028,7 +1028,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
 		PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
 
-		device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, m_k, d_rows, d_cols, d_vals, dB);
+		device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, m_k, d_rows, d_cols, d_vals, dB, m_saveMem);
 		m_timer.Stop();
 		m_time_toBanded = m_timer.getElapsed();
 	}
@@ -1144,7 +1144,7 @@ Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A)
 	PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
 
 	m_timer.Start();
-	device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(nnz, m_k, d_rows, d_cols, d_vals, dB);
+	device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(nnz, m_k, d_rows, d_cols, d_vals, dB, m_saveMem);
 	m_timer.Stop();
 	m_time_toBanded = m_timer.getElapsed();
 }
