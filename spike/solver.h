@@ -48,6 +48,8 @@ struct Options
 	int                 maxNumIterations;     /**< Maximum number of iterations; default: 100 */
 	double              tolerance;            /**< Relative tolerance; default: 1e-6 */
 
+	bool                isSPD;                /**< Indicate whether the matrix is symmetric positive definitive; default: false*/
+	bool                saveMem;                /**< (For SPD matrix only) Indicate whether to use memory-saving yet slower mode or not; default: false*/
 	bool                performReorder;       /**< Perform matrix reorderings? default: true */
 	bool                performMC64;          /**< Perform MC64 reordering? default: true */
 	bool                applyScaling;         /**< Apply MC64 scaling? default: true */
@@ -173,6 +175,8 @@ Options::Options()
 :	solverType(BiCGStab2),
 	maxNumIterations(100),
 	tolerance(1e-6),
+	isSPD(false),
+	saveMem(false),
 	performReorder(true),
 	performMC64(true),
 	applyScaling(true),
@@ -226,7 +230,7 @@ template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
-	m_precond(numPartitions, opts.performReorder, opts.performMC64, opts.applyScaling,
+	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.performMC64, opts.applyScaling,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
@@ -530,8 +534,19 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 
 	timer.Start();
 
-	spike::bicgstab2(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
-	
+	switch(m_solver)
+	{
+		case BiCGStab:
+			spike::bicgstab(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+			break;
+		case BiCGStab2:
+			spike::bicgstab2(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+			break;
+		default:
+			spike::cg(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+			break;
+	}
+
 	thrust::copy(x_vector.begin(), x_vector.end(), x.begin());
 	timer.Stop();
 

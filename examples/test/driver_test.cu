@@ -59,7 +59,8 @@ using std::vector;
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_PART,
-      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
+      OPT_SPD, OPT_SAVE_MEM,
+	  OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE, 
@@ -90,6 +91,8 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
 	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
+	{ OPT_SPD,           "--spd",                SO_NONE    },
+	{ OPT_SAVE_MEM,      "--save-mem",           SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
 	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
@@ -218,6 +221,21 @@ int main(int argc, char** argv)
 	outputItem( A.num_rows);
 	// No. of non-zeros
 	outputItem( A.num_entries);
+	// SPD
+	outputItem( opts.isSPD ? "true" : "false");
+	// Save memory or not
+	outputItem( opts.saveMem ? "true" : "false");
+	// Krylov method
+	switch(opts.solverType) {
+		case spike::BiCGStab:
+			outputItem("BiCGStab"); break;
+
+		case spike::BiCGStab2:
+			outputItem("BiCGStab2"); break;
+
+		default:
+			outputItem("CG"); break;
+	}
 
 	try {
 		mySolver.setup(A);
@@ -556,6 +574,12 @@ GetProblemSpecs(int             argc,
 			case OPT_MAX_BANDWIDTH:
 				opts.maxBandwidth = atoi(args.OptionArg());
 				break;
+			case OPT_SPD:
+				opts.isSPD = true;
+				break;
+			case OPT_SAVE_MEM:
+				opts.saveMem = true;
+				break;
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
 				break;
@@ -606,6 +630,8 @@ GetProblemSpecs(int             argc,
 						opts.solverType = spike::BiCGStab;
 					else if (kry == "1" || kry == "BICGSTAB2")
 						opts.solverType = spike::BiCGStab2;
+					else if (kry == "2" || kry == "CG")
+						opts.solverType = spike::CG;
 					else
 						return false;
 				}
@@ -635,6 +661,14 @@ GetProblemSpecs(int             argc,
 		ShowUsage();
 		return false;
 	}
+
+	// For symmetric positive definitive matrix, do not perform MC64
+	if (opts.isSPD) {
+		opts.performMC64 = false;
+		opts.applyScaling = false;
+		opts.solverType = spike::CG;
+	} else
+		opts.saveMem = false;
 
 	// If no reordering, force using constant bandwidth.
 	if (!opts.performReorder) {
@@ -681,6 +715,9 @@ void ShowUsage()
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
 	cout << "        Frobenius norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
+	cout << " -b=MAX_BANDWIDTH" << endl;
+	cout << " --max-bandwidth=MAX_BANDWIDTH" << endl;
+	cout << "        Drop off elements such that the bandwidth is at most MAX_BANDWIDTH" << endl;
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the file MATFILE (MatrixMarket format)." << endl;
@@ -698,6 +735,7 @@ void ShowUsage()
 	cout << "        Specify the iterative Krylov solver:" << endl;
 	cout << "        METHOD=0 or METHOD=bicgstab      use BiCGStab" << endl;
 	cout << "        METHOD=1 or METHOD=bicgstab2     use BiCGStab(2). This is the default." << endl;
+	cout << "        METHOD=2 or METHOD=cg            use CG" << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;

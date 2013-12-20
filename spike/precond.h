@@ -57,6 +57,8 @@ public:
 	Precond();
 
 	Precond(int                 numPart,
+			bool                isSPD,
+			bool                saveMem,
 	        bool                reorder,
 	        bool                doMC64,
 	        bool                scale,
@@ -107,6 +109,8 @@ private:
 	int                  m_n;
 	int                  m_k;
 
+	bool                 m_isSPD;
+	bool                 m_saveMem; 
 	bool                 m_reorder;
 	bool                 m_doMC64;
 	bool                 m_scale;
@@ -237,6 +241,7 @@ private:
 	bool hasZeroPivots(const PrecVectorIterator& start_B,
 	                   const PrecVectorIterator& end_B,
 	                   int                       k,
+					   int                       step,
 	                   PrecValueType             threshold);
 };
 
@@ -270,6 +275,8 @@ struct SmallerThan : public thrust::unary_function<T, bool>
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond(int                 numPart,
+		                     bool                isSPD,
+							 bool                saveMem,
                              bool                reorder,
                              bool                doMC64,
                              bool                scale,
@@ -281,6 +288,8 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                variableBandwidth,
                              bool                trackReordering)
 :	m_numPartitions(numPart),
+	m_isSPD(isSPD),
+	m_saveMem(saveMem),
 	m_reorder(reorder),
 	m_doMC64(doMC64),
 	m_scale(scale),
@@ -312,7 +321,9 @@ Precond<PrecVector>::Precond(int                 numPart,
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond()
-:	m_reorder(false),
+:	m_isSPD(false),
+	m_saveMem(false),
+	m_reorder(false),
 	m_doMC64(false),
 	m_scale(false),
 	m_k_reorder(0),
@@ -353,6 +364,8 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
+	m_isSPD             = prec.m_isSPD;
+	m_saveMem           = prec.m_saveMem;
 	m_reorder           = prec.m_reorder;
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
@@ -371,6 +384,8 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 {
 	m_numPartitions     = prec.m_numPartitions;
 
+	m_isSPD             = prec.m_isSPD;
+	m_saveMem           = prec.m_saveMem;
 	m_reorder           = prec.m_reorder;
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
@@ -1471,7 +1486,7 @@ Precond<PrecVector>::partBandedLU_one()
 
 	// If not using safe factorization, check the factorized banded matrix for any
 	// zeros on its diagonal (this means a zero pivot).
-	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, (PrecValueType) BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_one).");
 
 
@@ -1572,7 +1587,7 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 
 	// If not using safe factorization, check the factorized banded matrix for any
 	// zeros on its diagonal (this means a zero pivot).
-	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, (PrecValueType) BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.end(), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBlockedBandedLU_one).");
 
 
@@ -1673,7 +1688,7 @@ Precond<PrecVector>::partBandedLU_const()
 	// If not using safe factorization, check the factorized banded matrix for any
 	// zeros on its diagonal (this means a zero pivot). Note that we must only check
 	// the diagonal blocks corresponding to the partitions for which LU was applied.
-	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, (PrecValueType) BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_const).");
 
 
@@ -1794,7 +1809,7 @@ Precond<PrecVector>::partBandedLU_var()
 	// matrix, one partition at a time.
 	if (!m_safeFactorization) {
 		for (int i = 0; i < m_numPartitions; i++) {
-			if (hasZeroPivots(m_B.begin() + m_BOffsets_host[i], m_B.begin() + m_BOffsets_host[i+1], m_ks_host[i], (PrecValueType) BURST_VALUE))
+			if (hasZeroPivots(m_B.begin() + m_BOffsets_host[i], m_B.begin() + m_BOffsets_host[i+1], m_ks_host[i], 2 * m_ks_host[i] + 1, (PrecValueType) BURST_VALUE))
 				throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_var).");
 		}
 	}
@@ -1908,7 +1923,7 @@ Precond<PrecVector>::partBandedUL(PrecVector& B)
 
 	// If not using safe factorization, check for zero pivots in the factorized
 	// banded matrix.
-	if (!m_safeFactorization && hasZeroPivots(B.begin() + (2 * m_k + 1) * n_first, B.end(), m_k, (PrecValueType) BURST_VALUE))
+	if (!m_safeFactorization && hasZeroPivots(B.begin() + (2 * m_k + 1) * n_first, B.end(), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedUL).");
 }
 
@@ -2746,10 +2761,11 @@ bool
 Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
                                    const PrecVectorIterator&    end_B,
                                    int                          k,
+								   int                          step,
                                    PrecValueType                threshold)
 {
 	// Create a strided range to select the main diagonal
-	strided_range<typename PrecVector::iterator> diag(start_B + k, end_B, 2*k + 1);
+	strided_range<typename PrecVector::iterator> diag(start_B + k, end_B, step);
 
 	////std::cout << std::endl;
 	////thrust::copy(diag.begin(), diag.end(), std::ostream_iterator<PrecValueType>(std::cout, " "));

@@ -254,6 +254,19 @@ void bicgstabl(SpmvOperator&                       spmv,
 	}
 }
 
+/// Specializations of the generic spike::bicgstabl function for L=1
+template <typename SpmvOperator, typename SolverVector, typename PrecVector>
+void bicgstab (SpmvOperator&                       spmv,
+               const SolverVector&                 b,
+               SolverVector&                       x,
+               Monitor<SolverVector>&              monitor,
+               std::vector<Precond<PrecVector>*>&  precond_pointers,
+               IntVectorH&                         compIndices,
+               IntVectorH&                         comp_perms,
+               std::vector<IntVectorH>&            comp_reorderings)
+{
+	bicgstabl<SpmvOperator, SolverVector, PrecVector, 1>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+}
 
 /// Specializations of the generic spike::bicgstabl function for L=2
 template <typename SpmvOperator, typename SolverVector, typename PrecVector>
@@ -282,6 +295,92 @@ void bicgstab4(SpmvOperator&                       spmv,
                std::vector<IntVectorH>&            comp_reorderings)
 {
 	bicgstabl<SpmvOperator, SolverVector, PrecVector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+}
+
+
+/// Preconditioned CG Krylov method
+/**
+ * \tparam SpmvOperator is a functor class for sparse matrix-vector product.
+ * \tparam SolverVector is the vector type for the linear system solution.
+ * \tparam PrecVector is the vector type used in the preconditioner.
+ */
+template <typename SpmvOperator, typename SolverVector, typename PrecVector>
+void cg(SpmvOperator&                       spmv,
+        const SolverVector&                 b,
+        SolverVector&                       x,
+        Monitor<SolverVector>&              monitor,
+        std::vector<Precond<PrecVector>*>&  precond_pointers,
+        IntVectorH&                         compIndices,
+        IntVectorH&                         comp_perms,
+        std::vector<IntVectorH>&            comp_reorderings)
+{
+	typedef typename SolverVector::value_type   SolverValueType;
+	typedef typename SolverVector::memory_space MemorySpace;
+
+	typedef typename cusp::array1d<int, MemorySpace>  IntVector;
+
+	// Allocate workspace
+	int  n = b.size();
+
+	IntVector              loc_compIndices = compIndices;
+	IntVector              loc_comp_perms = comp_perms;
+	std::vector<IntVector> loc_comp_reorderings;
+
+	int numComponents = comp_reorderings.size();
+
+	for (int i = 0; i < numComponents; i++)
+		loc_comp_reorderings.push_back(comp_reorderings[i]);
+
+	SolverVector r(n), r_new(n);
+
+	// r <- b - A * x
+	spmv(x, r);
+	cusp::blas::axpby(b, r, r, SolverValueType(1), SolverValueType(-1));
+
+	if (monitor.done(r))
+		return;
+
+	SolverVector z(n), p(n), z_new(n);
+	precondSolveWrapper(r, z, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+
+	// p <- z
+	cusp::blas::copy(z, p);
+
+	SolverValueType alpha, beta, dot_rz;
+
+	while(true) {
+
+		SolverVector Ap(n);
+
+		spmv(p, Ap);
+		SolverValueType tmp = cusp::blas::dotc(p, Ap);
+		dot_rz = cusp::blas::dotc(r, z);
+		if (tmp == 0)
+			return;
+
+		alpha = dot_rz / tmp;
+
+		cusp::blas::axpy(p, x, SolverValueType(alpha));
+
+		cusp::blas::axpby(r, Ap, r_new, SolverValueType(1), SolverValueType(-alpha));
+
+		monitor.increment(0.5f);
+		if (monitor.done(r_new))
+			return;
+
+		precondSolveWrapper(r_new, z_new, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+
+		if (dot_rz == 0)
+			return;
+
+		beta = cusp::blas::dotc(r_new, z_new) / dot_rz;
+		cusp::blas::axpby(z_new, p, p, SolverValueType(1), SolverValueType(beta));
+
+		cusp::blas::copy(z_new, z);
+		cusp::blas::copy(r_new, r);
+
+		monitor.increment(0.5f);
+	}
 }
 
 
