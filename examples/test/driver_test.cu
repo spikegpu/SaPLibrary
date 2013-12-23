@@ -397,61 +397,50 @@ int main(int argc, char** argv)
 		outputItem( stats.bandwidthMC64);
 		// Solve the problem successfully
 		outputItem( solveSuccess);
-		
-		if (solveSuccess) {
-			// Reason why cannot solve (for unsuccessful solving only)
+
+		// Reason why cannot solve (for unsuccessful solving only)
+		if (solveSuccess)
 			outputItem ("N/A");
-			// Number of partitions
-			outputItem( numPart);
-			// Number of iterations to converge
-			outputItem( stats.numIterations);
-			// Time to reorder
-			outputItem( stats.time_reorder);
-			// Time to assemble banded and off-diagonal matrices on CPU
-			outputItem( stats.time_cpu_assemble);
-			// Time for data transferring
-			outputItem( stats.time_transfer);
-			// Time to extract all off-diagonal matrices on GPU
-			outputItem( stats.time_offDiags);
-			// Time to assemble off-diagonal matrics on GPU (including the solution of multi-RHS)
-			outputItem( stats.time_assembly);
-			// Time for banded LU and UL
-			outputItem( stats.time_bandLU + stats.time_bandUL);
-			// Time for full LU on reduced matrices
-			outputItem( stats.time_fullLU);
-			// Total time for setup
-			outputItem( stats.timeSetup);
-			// Total time for Krylov solve
-			outputItem( stats.timeSolve);
-			// Total amount of time
-			outputItem( stats.timeSetup + stats.timeSolve);
-			// Output the pardiso time
-			std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
-			if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
-				outputItem(map_it->second);
-				outputItem((stats.timeSetup + stats.timeSolve) / map_it->second);
-			}
-			else {
-				outputItem("");
-				outputItem("");
-			}
-		} else {
+		else
 			outputItem ( "Not converged");
-
-			// Make up for the other columns
-			for (int i=0; i < outputItem.m_additional_item_count; i++)
-				outputItem("");
-
-			// Output the pardiso time
-			std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
-			if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
-				outputItem(map_it->second);
-				outputItem("");
-			}
-			else {
-				outputItem("");
-				outputItem("");
-			}
+		
+		// Number of partitions
+		outputItem( numPart);
+		// Number of iterations to converge
+		outputItem( stats.numIterations);
+		// Time to reorder
+		outputItem( stats.time_reorder);
+		// Time to assemble banded and off-diagonal matrices on CPU
+		outputItem( stats.time_cpu_assemble);
+		// Time for data transferring
+		outputItem( stats.time_transfer);
+		// Time to extract all off-diagonal matrices on GPU
+		outputItem( stats.time_offDiags);
+		// Time for banded LU and UL
+		outputItem( stats.time_bandLU + stats.time_bandUL);
+		// Time to assemble off-diagonal matrics on GPU (including the solution of multi-RHS)
+		outputItem( stats.time_assembly);
+		// Time for full LU on reduced matrices
+		outputItem( stats.time_fullLU);
+		// Total time for setup
+		outputItem( stats.timeSetup);
+		// Total time for Krylov solve
+		outputItem( stats.timeSolve);
+		// Total amount of time
+		outputItem( stats.timeSetup + stats.timeSolve);
+		// Output the pardiso time
+		std::map<std::string, double>::iterator map_it = pardiso_time_table.end();
+		if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
+			outputItem(map_it->second);
+			// Slowdown
+			if (solveSuccess)
+				outputItem((stats.timeSetup + stats.timeSolve) / map_it->second);
+			else
+				outputItem("N/A");
+		}
+		else {
+			outputItem("");
+			outputItem("");
 		}
 
 		cout << "</tr>" << endl;
