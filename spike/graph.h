@@ -351,11 +351,15 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	// TODO:  how can we check if the precision of Vector is already
 	//        double, so that we can save extra copies.
 	if (doMC64) {
+		CPUTimer loc_timer;
+		loc_timer.Start();
 		DoubleVector  mc64RowScaleD;
 		DoubleVector  mc64ColScaleD;
 		MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
 		mc64RowScale = mc64RowScaleD;
 		mc64ColScale = mc64ColScaleD;
+		loc_timer.Stop();
+		m_timeMC64 = loc_timer.getElapsed();
 	} else {
 		mc64RowScale.resize(m_n);
 		mc64ColScale.resize(m_n);

@@ -76,7 +76,9 @@ public:
 
 	Precond & operator = (const Precond &prec);
 
+	double getTimeMC64() const         {return m_time_MC64;}
 	double getTimeReorder() const         {return m_time_reorder;}
+	double getTimeDropOff() const         {return m_time_dropOff;}
 	double getTimeCPUAssemble() const     {return m_time_cpu_assemble;}
 	double getTimeTransfer() const        {return m_time_transfer;}
 	double getTimeToBanded() const        {return m_time_toBanded;}
@@ -130,8 +132,12 @@ private:
 
 	// Used in variable-bandwidth method only, host versions
 	IntVectorH           m_ks_host;
+
+public:
 	IntVectorH           m_ks_row_host;
 	IntVectorH           m_ks_col_host;
+
+private:
 	IntVectorH           m_offDiagWidths_left_host;
 	IntVectorH           m_offDiagWidths_right_host;
 	IntVectorH           m_first_rows_host;
@@ -174,7 +180,9 @@ private:
 	PrecValueType        m_dropOff_actual;        // actual dropOff fraction achieved
 
 	GPUTimer             m_timer;
+	double               m_time_MC64;             // CPU time for MC64 reordering
 	double               m_time_reorder;          // CPU time for matrix reordering
+	double               m_time_dropOff;          // CPU time for drop off
 	double               m_time_cpu_assemble;     // Time for acquiring the banded matrix and off-diagonal matrics on CPU
 	double               m_time_transfer;         // Time for data transferring from CPU to GPU
 	double               m_time_toBanded;         // GPU time for transformation or conversion to banded double       
@@ -304,6 +312,8 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
+	m_time_MC64(0),
+	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
 	m_time_toBanded(0),
@@ -331,6 +341,8 @@ Precond<PrecVector>::Precond()
 	m_dropOff_actual(0),
 	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
+	m_time_MC64(0),
+	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
 	m_time_toBanded(0),
@@ -352,6 +364,8 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_k_mc64(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
+	m_time_MC64(0),
+	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
 	m_time_toBanded(0),
@@ -936,14 +950,23 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	m_k_reorder = graph.reorder(Acoo, m_doMC64, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
+	m_time_MC64 = graph.getTimeMC64();
 	m_time_reorder += reorder_timer.getElapsed();
 	
 	int dropped = 0;
 
-	if (m_k_reorder > m_maxBandwidth || m_dropOff_frac > 0)
+	if (m_k_reorder > m_maxBandwidth || m_dropOff_frac > 0) {
+		CPUTimer loc_timer;
+		loc_timer.Start();
 		dropped = graph.dropOff(m_dropOff_frac, m_maxBandwidth, m_dropOff_actual);
-	else
+		loc_timer.Stop();
+
+		m_time_dropOff = loc_timer.getElapsed();
+	}
+	else {
 		m_dropOff_actual = 0;
+		m_time_dropOff = 0;
+	}
 
 	// FIXME: this is a little bit problematic when for some off-diagonals, there is no element at all.
 	m_k = m_k_reorder - dropped;

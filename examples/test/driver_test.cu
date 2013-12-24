@@ -68,6 +68,11 @@ enum {OPT_HELP, OPT_PART,
       OPT_KRYLOV, OPT_SAFE_FACT,
       OPT_CONST_BAND, OPT_SINGLE_COMP};
 
+// Color to print
+enum TestColor {COLOR_NO = 0,
+                COLOR_RED,
+                COLOR_GREEN} ;
+
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
 // - the option as it should appear on the command line
@@ -126,18 +131,32 @@ void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
 void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv);
+void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name, double time_cur_run, bool solveSuccess = false);
 
 class OutputItem
 {
 public:
-	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(12) {}
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(16) {}
 
 	int           m_additional_item_count;
 
 	template <typename T>
-	void operator() (T item) {
+	void operator() (T item, TestColor c = COLOR_NO) {
 		m_o << "<td style=\"border-style: inset;\">\n";
-		m_o << "<p>" << item << "</p>\n";
+		switch (c)
+		{
+			case COLOR_RED:
+				m_o << "<p> <FONT COLOR=\"Red\">" << item << " </FONT> </p>\n";
+				break;
+
+			case COLOR_GREEN:
+				m_o << "<p> <FONT COLOR=\"Green\">" << item << " </FONT> </p>\n";
+				break;
+
+			default:
+				m_o << "<p> " << item << " </p>\n";
+				break;
+		}
 		m_o << "</td>\n";
 	}
 private:
@@ -194,9 +213,13 @@ int main(int argc, char** argv)
 		int i;
 		for (i = fileMat.size()-1; i>=0 && fileMat[i] != '/' && fileMat[i] != '\\'; i--);
 		i++;
-
-		outputItem( fileMat.substr(i));
 		fileMat = fileMat.substr(i);
+
+		int j = fileMat.rfind(std::string(".mtx"));
+		if (j != std::string::npos)
+			outputItem( fileMat.substr(0, j-i));
+		else
+			outputItem( fileMat);
 	}
 
 	// Load information of Pardiso time
@@ -216,39 +239,48 @@ int main(int argc, char** argv)
 			fin.close();
 		}
 	}
+	std::map<std::string, double> fastest_time_table;
+	{
+		std::ifstream fin("../../test/fastest_list.txt", std::ios::in);
+		if (fin.is_open()) {
+			std::string mat_name;
+			double fastest_time;
+
+			while(fin >> mat_name >> fastest_time) {
+				if (mat_name == fileMat) {
+					fastest_time_table[mat_name] = fastest_time;
+					break;
+				}
+			}
+			fin.close();
+		}
+	}
 
 	// Dimension
 	outputItem( A.num_rows);
 	// No. of non-zeros
 	outputItem( A.num_entries);
 	// SPD
-	outputItem( opts.isSPD ? "true" : "false");
-	// Save memory or not
-	outputItem( opts.saveMem ? "true" : "false");
-	// Krylov method
-	switch(opts.solverType) {
-		case spike::BiCGStab:
-			outputItem("BiCGStab"); break;
-
-		case spike::BiCGStab2:
-			outputItem("BiCGStab2"); break;
-
-		default:
-			outputItem("CG"); break;
-	}
+	outputItem( opts.isSPD);
+	// Perform MC64
+	outputItem(opts.performMC64);
 
 	try {
 		mySolver.setup(A);
 	} catch (const std::bad_alloc& ) {
 		solveSuccess = false;
-		// Half-bandwidth
-		outputItem( "N/A");
 		// Half-bandwidth after MC64
 		outputItem( "N/A");
-		// Solve the problem successfully
-		outputItem( solveSuccess);
+		// Half-bandwidth before drop-off 
+		outputItem( "N/A");
+		// Half-bandwidth
+		outputItem( "N/A");
+		// nuKf
+		outputItem( "N/A");
 		// Reason why cannot solve (for unsuccessful solving only)
-		outputItem ("Out of memory (in setup stage)");
+		outputItem ("OoM (in setup stage)", COLOR_RED);
+		// Enable Diagonal boosting?
+		outputItem (opts.safeFactorization);
 		// Make up for the other columns
 		for (int i=0; i < outputItem.m_additional_item_count; i++)
 			outputItem("");
@@ -264,35 +296,41 @@ int main(int argc, char** argv)
 		}
 
 		cout << "</tr>" << endl;
+
+		updateFastest(fastest_time_table, fileMat, 0.0, false);
 
 		return 1;
 	} catch (const spike::system_error& se) {
 		solveSuccess = false;
-		// Half-bandwidth
-		outputItem( "N/A");
 		// Half-bandwidth after MC64
 		outputItem( "N/A");
-		// Solve the problem successfully
-		outputItem( solveSuccess);
+		// Half-bandwidth before drop-off 
+		outputItem( "N/A");
+		// Half-bandwidth
+		outputItem( "N/A");
+		// nuKf
+		outputItem( "N/A");
 
 		// Reason why cannot solve (for unsuccessful solving only)
 		switch(se.reason()) {
 			case spike::system_error::Zero_pivoting:
-				outputItem( "Zero pivoting");
+				outputItem ("ZPiv", COLOR_RED);
 				break;
 			case spike::system_error::Matrix_singular:
-				outputItem( "Matrix singular");
+				outputItem ("MatSing", COLOR_RED);
 				break;
 			case spike::system_error::Illegal_update:
-				outputItem( "Illegal update");
+				outputItem ("Illegal update", COLOR_RED);
 				break;
 			case spike::system_error::Negative_MC64_weight:
-				outputItem( "Internal system error");
+				outputItem ("Internal system error", COLOR_RED);
 				break;
 			default:
-				outputItem( "Unknown error");
+				outputItem ("Unknown error", COLOR_RED);
 				break;
 		}
+		// Enable Diagonal boosting?
+		outputItem (opts.safeFactorization);
 
 		// Make up for the other columns
 		for (int i=0; i < outputItem.m_additional_item_count; i++)
@@ -310,6 +348,8 @@ int main(int argc, char** argv)
 		}
 
 		cout << "</tr>" << endl;
+
+		updateFastest(fastest_time_table, fileMat, 0.0, false);
 
 		return 1;
 	}
@@ -318,14 +358,18 @@ int main(int argc, char** argv)
 		solveSuccess = mySolver.solve(mySpmv, b, x);
 	} catch (const std::bad_alloc& ) {
 		solveSuccess = false;
-		// Half-bandwidth
-		outputItem( "N/A");
 		// Half-bandwidth after MC64
 		outputItem( "N/A");
-		// Solve the problem successfully
-		outputItem( solveSuccess);
+		// Half-bandwidth before drop-off
+		outputItem( "N/A");
+		// Half-bandwidth
+		outputItem( "N/A");
+		// nuKf
+		outputItem( "N/A");
 		// Reason why cannot solve (for unsuccessful solving only)
-		outputItem ("Out of memory (in solve stage)");
+		outputItem ("OoM (in solve stage)", COLOR_RED);
+		// Enable Diagonal boosting?
+		outputItem (opts.safeFactorization);
 		// Make up for the other columns
 		for (int i=0; i < outputItem.m_additional_item_count; i++)
 			outputItem("");
@@ -342,32 +386,38 @@ int main(int argc, char** argv)
 		}
 
 		cout << "</tr>" << endl;
+
+		updateFastest(fastest_time_table, fileMat, 0.0, false);
 
 		return 1;
 	} catch (const spike::system_error& se) {
 		solveSuccess = false;
-		// Half-bandwidth
-		outputItem( "N/A");
 		// Half-bandwidth after MC64
 		outputItem( "N/A");
-		// Solve the problem successfully
-		outputItem( solveSuccess);
+		// Half-bandwidth before drop-off
+		outputItem( "N/A");
+		// Half-bandwidth
+		outputItem( "N/A");
+		// nuKf
+		outputItem( "N/A");
 
 		// Reason why cannot solve (for unsuccessful solving only)
 		switch(se.reason()) {
 			case spike::system_error::Zero_pivoting:
-				outputItem( "Zero pivoting");
+				outputItem( "ZPiv", COLOR_RED);
 				break;
 			case spike::system_error::Illegal_update:
-				outputItem( "Illegal update");
+				outputItem( "Illegal update", COLOR_RED);
 				break;
 			case spike::system_error::Negative_MC64_weight:
-				outputItem( "Internal system error");
+				outputItem( "Internal system error", COLOR_RED);
 				break;
 			default:
-				outputItem( "Unknown error");
+				outputItem( "Unknown error", COLOR_RED);
 				break;
 		}
+		// Enable Diagonal boosting?
+		outputItem (opts.safeFactorization);
 
 		// Make up for the other columns
 		for (int i=0; i < outputItem.m_additional_item_count; i++)
@@ -385,35 +435,55 @@ int main(int argc, char** argv)
 		}
 
 		cout << "</tr>" << endl;
+
+		updateFastest(fastest_time_table, fileMat, 0.0, false);
 
 		return 1;
 	}
 
 	{
 		spike::Stats stats = mySolver.getStats();
-		// Half-bandwidth
-		outputItem( stats.bandwidth);
 		// Half-bandwidth after MC64
 		outputItem( stats.bandwidthMC64);
-		// Solve the problem successfully
-		outputItem( solveSuccess);
+		// Half-bandwidth before drop-off
+		outputItem( stats.bandwidthReorder);
+		// Half-bandwidth
+		outputItem( stats.bandwidth);
+		// nuKf
+		outputItem( stats.nuKf);
 
 		// Reason why cannot solve (for unsuccessful solving only)
 		if (solveSuccess)
-			outputItem ("N/A");
+			outputItem ( "OK");
 		else
-			outputItem ( "Not converged");
+			outputItem ( "NConv", COLOR_RED);
+		// Enable Diagonal boosting?
+		outputItem (opts.safeFactorization);
+
+		// The relative infinity norm of solution
+		if (solveSuccess) {
+			REAL nrm_target = cusp::blas::nrmmax(x_target);
+			REAL rel_err = fabs(cusp::blas::nrmmax(x) - nrm_target)/ nrm_target;
+			if (rel_err >= 1)
+				outputItem(rel_err, COLOR_RED);
+			else
+				outputItem(rel_err);
+		} else
+			outputItem("");
 		
-		// Number of partitions
-		outputItem( numPart);
-		// Number of iterations to converge
-		outputItem( stats.numIterations);
-		// Time to reorder
-		outputItem( stats.time_reorder);
+		// Time for MC64 reordering
+		outputItem( stats.time_MC64);
+		// Time for RCM reordering
+		outputItem( stats.time_reorder - stats.time_MC64);
+		// Time for drop off
+		outputItem( stats.time_dropOff);
 		// Time to assemble banded and off-diagonal matrices on CPU
 		outputItem( stats.time_cpu_assemble);
 		// Time for data transferring
 		outputItem( stats.time_transfer);
+
+		// Number of partitions
+		outputItem( numPart);
 		// Time to extract all off-diagonal matrices on GPU
 		outputItem( stats.time_offDiags);
 		// Time for banded LU and UL
@@ -424,6 +494,19 @@ int main(int argc, char** argv)
 		outputItem( stats.time_fullLU);
 		// Total time for setup
 		outputItem( stats.timeSetup);
+		// Krylov method
+		switch(opts.solverType) {
+			case spike::BiCGStab:
+				outputItem("B1"); break;
+
+			case spike::BiCGStab2:
+				outputItem("B2"); break;
+
+			default:
+				outputItem("CG"); break;
+		}
+		// Number of iterations to converge
+		outputItem( stats.numIterations);
 		// Total time for Krylov solve
 		outputItem( stats.timeSolve);
 		// Total amount of time
@@ -433,20 +516,67 @@ int main(int argc, char** argv)
 		if ((map_it = pardiso_time_table.find(fileMat)) != pardiso_time_table.end())  {
 			outputItem(map_it->second);
 			// Slowdown
-			if (solveSuccess)
-				outputItem((stats.timeSetup + stats.timeSolve) / map_it->second);
+			if (solveSuccess) {
+				double slowdown = (stats.timeSetup + stats.timeSolve) / map_it->second;
+				if (slowdown >= 5)
+					outputItem(slowdown, COLOR_RED);
+				else if (slowdown < 1)
+					outputItem(slowdown, COLOR_GREEN);
+				else
+					outputItem(slowdown);
+			}
 			else
-				outputItem("N/A");
+				outputItem("N/A", COLOR_RED);
 		}
 		else {
 			outputItem("");
 			outputItem("");
 		}
 
+		if ((map_it = fastest_time_table.find(fileMat)) != fastest_time_table.end())  {
+			outputItem(map_it->second);
+			// Speedup over the historical fastest run
+			if (solveSuccess) {
+				double speedup = map_it -> second / (stats.timeSetup + stats.timeSolve);
+				if (speedup >= 1.05)
+					outputItem(speedup, COLOR_GREEN);
+				else if (speedup < 0.95)
+					outputItem(speedup, COLOR_RED);
+				else
+					outputItem(speedup);
+			}
+			else
+				outputItem("N/A", COLOR_RED);
+		} else {
+			outputItem("");
+			outputItem("");
+		}
+
+		updateFastest(fastest_time_table, fileMat, stats.timeSetup + stats.timeSolve, solveSuccess);
+
 		cout << "</tr>" << endl;
 	}
 
 	return 0;
+}
+
+void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name, double time_cur_run, bool solveSuccess) {
+	std::ofstream fout("../../test/fastest_list_tmp.txt", std::ios::out | std::ios::app);
+	if (!fout.is_open())
+		return;
+
+	if (!solveSuccess) {
+		if (fastest_map.find(mat_name) != fastest_map.end())
+			fout << mat_name << fastest_map[mat_name];
+	} else {
+		if (fastest_map.find(mat_name) == fastest_map.end() || fastest_map[mat_name] > time_cur_run)
+			fastest_map[mat_name] = time_cur_run;
+
+		fout << mat_name << "\n" << fastest_map[mat_name] << std::endl;
+	}
+
+		
+	fout.close();
 }
 
 

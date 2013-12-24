@@ -78,7 +78,9 @@ struct Stats
 	double      timeUpdate;             /**< Time to update the preconditioner. */
 	double      timeSolve;              /**< Time for Krylov solve. */
 
+	double      time_MC64;              /**< Time to do MC64 reordering. */
 	double      time_reorder;           /**< Time to do reordering. */
+	double      time_dropOff;           /**< Time for drop-off*/
 	double      time_cpu_assemble;      /**< Time on CPU to assemble the banded matrix and off-diagonal spikes. */
 	double      time_transfer;          /**< Time to transfer data from CPU to GPU. */
 	double      time_toBanded;          /**< Time to form banded matrix when reordering is disabled.*/ /*TODO: combine this with time_cpu_assemble*/
@@ -93,6 +95,7 @@ struct Stats
 	int         bandwidthReorder;       /**< Half-bandwidth after reordering. */
 	int         bandwidthMC64;          /**< Half-bandwidth after MC64. */
 	int         bandwidth;              /**< Half-bandwidth after reordering and drop-off. */
+	double      nuKf;                   /**< Non-uniform K factor. Indicates whether the K changes a lot from row to row. */
 
 	int         numPartitions;          /**< Actual number of partitions used in the Spike factorization */
 	double      actualDropOff;          /**< Actual fraction of the element-wise matrix 1-norm dropped off. */
@@ -199,7 +202,9 @@ inline
 Stats::Stats()
 :	timeSetup(0),
 	timeSolve(0),
+	time_MC64(0),
 	time_reorder(0),
+	time_dropOff(0),
 	time_cpu_assemble(0),
 	time_transfer(0),
 	time_toBanded(0),
@@ -212,6 +217,7 @@ Stats::Stats()
 	bandwidthReorder(0),
 	bandwidthMC64(0),
 	bandwidth(0),
+	nuKf(0),
 	numPartitions(0),
 	actualDropOff(0),
 	numIterations(0),
@@ -378,9 +384,12 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
 	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
 	m_stats.bandwidthMC64 = m_precond_pointers[0]->getBandwidthMC64();
+	m_stats.nuKf = cusp::blas::nrm1(m_precond_pointers[0]->m_ks_row_host) + cusp::blas::nrm1(m_precond_pointers[0]->m_ks_col_host);
 	m_stats.numPartitions = m_precond_pointers[0]->getNumPartitions();
 	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
+	m_stats.time_MC64 = m_precond_pointers[0] -> getTimeMC64();
 	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
+	m_stats.time_dropOff = m_precond_pointers[0]->getTimeDropOff();
 	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
 	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
 	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
@@ -399,7 +408,10 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 			m_stats.bandwidthMC64 = m_precond_pointers[i]->getBandwidthMC64();
 		if (m_stats.numPartitions > m_precond_pointers[i]->getNumPartitions())
 			m_stats.numPartitions = m_precond_pointers[i]->getNumPartitions();
+		m_stats.nuKf += cusp::blas::nrm1(m_precond_pointers[i]->m_ks_row_host) + cusp::blas::nrm1(m_precond_pointers[i]->m_ks_col_host);
+		m_stats.time_MC64 += m_precond_pointers[i] -> getTimeMC64();
 		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
+		m_stats.time_dropOff += m_precond_pointers[i]->getTimeDropOff();
 		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
 		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
 		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
@@ -409,6 +421,11 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 		m_stats.time_assembly += m_precond_pointers[i]->gettimeAssembly();
 		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
 	}
+
+	if (m_stats.bandwidth == 0)
+		m_stats.nuKf = 0.0;
+	else
+		m_stats.nuKf = (2 * m_stats.bandwidth * m_n- m_stats.nuKf) / (2 * m_stats.bandwidth * m_n);
 
 	m_setupDone = true;
 
