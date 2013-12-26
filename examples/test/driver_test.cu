@@ -567,7 +567,7 @@ void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name,
 
 	if (!solveSuccess) {
 		if (fastest_map.find(mat_name) != fastest_map.end())
-			fout << mat_name << fastest_map[mat_name];
+			fout << mat_name << "\n" << fastest_map[mat_name] << std::endl;
 	} else {
 		if (fastest_map.find(mat_name) == fastest_map.end() || fastest_map[mat_name] > time_cur_run)
 			fastest_map[mat_name] = time_cur_run;
