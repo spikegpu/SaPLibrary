@@ -17,7 +17,7 @@ bayer01.mtx
 bcircuit.mtx
 3838.8
 cant.mtx
-2323.81
+2297.03
 cfd1.mtx
 13804.4
 cfd2.mtx
@@ -27,7 +27,7 @@ ckt11752_tr_0.mtx
 cont-201.mtx
 1531.12
 dawson5.mtx
-2596.66
+2584.44
 dixmaanl.mtx
 469.047
 Dubcova2.mtx
@@ -53,7 +53,7 @@ garon2.mtx
 gas_sensor.mtx
 6230.98
 gridgena.mtx
-945.88
+943.584
 H2O.mtx
 62954.6
 hcircuit.mtx
@@ -63,7 +63,7 @@ ibm_matrix_2.mtx
 jan99jac120.mtx
 24772.7
 lhr10c.mtx
-331.607
+330.846
 mark3jac100.mtx
 7471.44
 mark3jac140.mtx
@@ -73,7 +73,7 @@ matrix_9.mtx
 minsurfo.mtx
 236.96
 ncvxbqp1.mtx
-4589.05
+4587.62
 oilpan.mtx
 6631.1
 olesnik0.mtx
