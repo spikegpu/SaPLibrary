@@ -313,7 +313,7 @@ forwardElimL(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 
 template <typename T>
 __global__ void
-preBck_sol_divide(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
+preBck_sol_divide(int N, int k, T *dA, T *dB, int partition_size, int rest_num, bool saveMem)
 {
 	int first_row = blockIdx.y*partition_size;
 	int last_row;
@@ -324,11 +324,17 @@ preBck_sol_divide(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 		first_row += rest_num;
 		last_row = first_row + partition_size;
 	}
-	int pivotIdx = first_row * (2*k+1) + k;
+	int column_width = (k << 1) + 1;
+	int delta = k;
+	if (saveMem) {
+		column_width = k + 1;
+		delta = 0;
+	}
+	int pivotIdx = first_row * column_width + delta;
 	int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (idx >= last_row-first_row)
 		return;
-	dB[first_row + idx] /= dA[pivotIdx + idx * ((k<<1)+1)];
+	dB[first_row + idx] /= dA[pivotIdx + idx * column_width];
 }
 
 template <typename T>

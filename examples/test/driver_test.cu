@@ -33,7 +33,7 @@
 // Typedefs
 // -----------------------------------------------------------------------------
 typedef double REAL;
-typedef double PREC_REAL;
+typedef float  PREC_REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
@@ -215,7 +215,7 @@ int main(int argc, char** argv)
 		i++;
 		fileMat = fileMat.substr(i);
 
-		int j = fileMat.rfind(std::string(".mtx"));
+		int j = fileMat.rfind(".mtx");
 		if (j != std::string::npos)
 			outputItem( fileMat.substr(0, j-i));
 		else
@@ -786,6 +786,7 @@ GetProblemSpecs(int             argc,
 		opts.performMC64 = false;
 		opts.applyScaling = false;
 		opts.solverType = spike::CG;
+		opts.saveMem = true;
 	} else
 		opts.saveMem = false;
 

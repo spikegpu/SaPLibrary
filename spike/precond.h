@@ -205,6 +205,7 @@ private:
 	void partBandedLU_const();
 	void partBandedLU_one();
 	void partBlockedBandedLU_one();
+	void partBlockedBandedCholesky_one();
 	void partBandedLU_var();
 	void partBandedUL(PrecVector& B);
 
@@ -999,7 +1000,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 		assemble_timer.Start();
 		PrecMatrixCooH Acooh;
-		graph.assembleBandedMatrix(m_k, m_numPartitions, m_ks_col_host, m_ks_row_host, Acooh,
+		graph.assembleBandedMatrix(m_k, m_saveMem, m_numPartitions, m_ks_col_host, m_ks_row_host, Acooh,
 		                           m_ks_host, m_BOffsets_host, 
 		                           typeMap, bandedMatMap);
 		assemble_timer.Stop();
@@ -1432,9 +1433,12 @@ Precond<PrecVector>::partBandedLU()
 		// Constant bandwidth method.
 		if (m_numPartitions > 1)
 			partBandedLU_const();
-		else
-			// partBandedLU_one();
-			partBlockedBandedLU_one();
+		else {
+			if (m_saveMem)
+				partBlockedBandedCholesky_one();
+			else
+				partBlockedBandedLU_one();
+		}
 	}
 }
 
@@ -1621,6 +1625,74 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 		device::bandLU_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_k, m_n);
 	else
 		device::bandLU_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_k, m_n);
+}
+
+template <typename PrecVector>
+void
+Precond<PrecVector>::partBlockedBandedCholesky_one()
+{
+	PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
+
+	if (m_ks_col_host.size() != m_n) {
+		m_ks_col_host.resize(m_n, m_k);
+
+		for (int i = m_n - 1; i >= m_n - m_k; i--)
+			m_ks_col_host[i] = m_n - 1 - i;
+	}
+
+	if (m_ks_row_host.size() != m_n) {
+		m_ks_row_host.resize(m_n, m_k);
+
+		for (int i = m_n - 1; i >= m_n - m_k; i--)
+			m_ks_row_host[i] = m_n - 1 - i;
+	}
+
+	if(m_k >= CRITICAL_THRESHOLD) {
+		int threadsNum = 0;
+
+		const int BLOCK_FACTOR = 8;
+
+		IntVector ks_col = m_ks_col_host;
+		int *ks_col_ptr = thrust::raw_pointer_cast(&ks_col[0]);
+		for (int st_row = 0; st_row < m_n-1; st_row += BLOCK_FACTOR) {
+			int last_row = st_row + BLOCK_FACTOR;
+			if (last_row > m_n)
+				last_row = m_n;
+
+			int col_max = thrust::reduce(m_ks_col_host.begin() + st_row, m_ks_col_host.begin() + last_row, 0, thrust::maximum<int>());
+
+			threadsNum = col_max * (last_row - st_row - 1);
+
+			int blockX = 0;
+			for (int i = st_row; i < last_row; i++)
+				if (blockX < i + m_ks_row_host[i])
+					blockX = i + m_ks_row_host[i];
+
+			blockX -= st_row + BLOCK_FACTOR - 1;
+
+			device::blockedCholesky_critical_phase1_safe<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
+
+			if (m_n == last_row) break;
+
+			if (blockX <= 0) continue;
+
+			threadsNum = col_max;
+
+			device::blockedCholesky_critical_phase2<PrecValueType><<<blockX, 512, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
+		}
+
+	} else if (m_k > 27) {
+		if (m_safeFactorization)
+			device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
+		else
+			device::bandLU_g32<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
+	} else {
+		if (m_safeFactorization)
+			device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
+		else
+			device::bandLU<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
+			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
+	}
 }
 
 template <typename PrecVector>
@@ -1978,12 +2050,19 @@ Precond<PrecVector>::partBandedFwdSweep_const(PrecVector&  v)
 	int remainder = m_n % m_numPartitions;
 
 	if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
-		if (m_k > 1024)
-			device::forwardElimL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-		else if (m_k > 32)
-			device::forwardElimL_g32<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-		else
-			device::forwardElimL<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+		if (m_saveMem) {
+			if (m_k > 1024)
+				device::fwdElim_sol_forSPD<PrecValueType> <<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			else
+				device::fwdElim_sol_medium_forSPD<PrecValueType> <<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+		} else {
+			if (m_k > 1024)
+				device::forwardElimL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			else if (m_k > 32)
+				device::forwardElimL_g32<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			else
+				device::forwardElimL<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+		}
 	} else {
 		if (m_k > 1024)
 			device::forwardElimL_LU_UL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
@@ -2058,14 +2137,21 @@ Precond<PrecVector>::partBandedBckSweep_const(PrecVector&  v)
 			}
 			dim3 grids(gridX, m_numPartitions);
 
-			device::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			device::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(m_n, m_k, p_B, p_v, partSize, remainder, m_saveMem);
 
-			if (m_k > 1024)
-				device::bckElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-			else if (m_k > 32)
-				device::bckElim_sol_medium<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-			else
-				device::bckElim_sol_narrow<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			if (m_saveMem) {
+				if (m_k > 1024)
+					device::bckElim_sol_forSPD<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				else
+					device::bckElim_sol_medium_forSPD<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			} else {
+				if (m_k > 1024)
+					device::bckElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				else if (m_k > 32)
+					device::bckElim_sol_medium<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+				else
+					device::bckElim_sol_narrow<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+			}
 		}
 	} else {
 		if (m_k > 1024)

@@ -153,6 +153,7 @@ public:
 	                                MatrixMap&  bandedMatMap);
 
 	void       assembleBandedMatrix(int         bandwidth,
+									bool        saveMem,
 	                                int         numPartitions,
 	                                IntVector&  ks_col,
 	                                IntVector&  ks_row,
@@ -746,6 +747,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 template <typename T>
 void
 Graph<T>::assembleBandedMatrix(int         bandwidth,
+							   bool        saveMem,
                                int         numPartitions,
                                IntVector&  ks_col,
                                IntVector&  ks_row,
@@ -762,6 +764,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 
 	int partSize = m_n / numPartitions;
 	int remainder = m_n % numPartitions;
+	int factor = (saveMem ? 1 : 2);
 
 	EdgeIterator toStart = m_major_edges.begin(), toEnd = m_major_edges.end();
 
@@ -781,9 +784,9 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 
 	for (int i=0; i < numPartitions; i++) {
 		if (i < remainder)
-			BOffsets[i+1] = BOffsets[i] + (partSize + 1) * (2 * ks[i] + 1);
+			BOffsets[i+1] = BOffsets[i] + (partSize + 1) * (factor * ks[i] + 1);
 		else
-			BOffsets[i+1] = BOffsets[i] + (partSize) * (2 * ks[i] + 1);
+			BOffsets[i+1] = BOffsets[i] + (partSize) * (factor * ks[i] + 1);
 	}
 
 	if (m_trackReordering) {
@@ -811,7 +814,8 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 		}
 
 		int K = ks[curPartNum];
-		int i = BOffsets[curPartNum] + l_in_part * (2 * K + 1) + K + j - l;
+		int delta = (saveMem ? 0 : K);
+		int i = BOffsets[curPartNum] + l_in_part * (factor * K + 1) + delta + j - l;
 
 		Acoo.row_indices[idx] = it->m_from;
 		Acoo.column_indices[idx] = it->m_to;
@@ -1062,8 +1066,8 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
                          EdgeIterator&  end,
                          int            node_begin,
                          int            node_end,
-                         IntVector&       optReordering,
-                         IntVector&       optPerm)
+                         IntVector&     optReordering,
+                         IntVector&     optPerm)
 {
 	static std::vector<int> tmp_reordering;
 	tmp_reordering.resize(m_n);
