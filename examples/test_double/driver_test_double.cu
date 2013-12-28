@@ -225,7 +225,7 @@ int main(int argc, char** argv)
 	// Load information of Pardiso time
 	std::map<std::string, double> pardiso_time_table;
 	{
-		std::ifstream fin("../../test/pardiso_list.txt", std::ios::in);
+		std::ifstream fin("../../test_double/pardiso_list.txt", std::ios::in);
 		if (fin.is_open()) {
 			std::string mat_name;
 			double pardiso_time;
@@ -241,7 +241,7 @@ int main(int argc, char** argv)
 	}
 	std::map<std::string, double> fastest_time_table;
 	{
-		std::ifstream fin("../../test/fastest_list.txt", std::ios::in);
+		std::ifstream fin("../../test_double/fastest_list.txt", std::ios::in);
 		if (fin.is_open()) {
 			std::string mat_name;
 			double fastest_time;
@@ -561,7 +561,7 @@ int main(int argc, char** argv)
 }
 
 void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name, double time_cur_run, bool solveSuccess) {
-	std::ofstream fout("../../test/fastest_list_tmp.txt", std::ios::out | std::ios::app);
+	std::ofstream fout("../../test_double/fastest_list_tmp.txt", std::ios::out | std::ios::app);
 	if (!fout.is_open())
 		return;
 
