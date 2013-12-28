@@ -463,7 +463,8 @@ int main(int argc, char** argv)
 		// The relative infinity norm of solution
 		if (solveSuccess) {
 			REAL nrm_target = cusp::blas::nrmmax(x_target);
-			REAL rel_err = fabs(cusp::blas::nrmmax(x) - nrm_target)/ nrm_target;
+			cusp::blas::axpy(x_target, x, (REAL)(-1));
+			REAL rel_err = fabs(cusp::blas::nrmmax(x))/ nrm_target;
 			if (rel_err >= 1)
 				outputItem(rel_err, COLOR_RED);
 			else
