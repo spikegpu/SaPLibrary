@@ -7,7 +7,7 @@
 ABACUS_shell_ud.mtx
 332.336
 af23560.mtx
-675.077
+663.235
 apache1.mtx
 2766.67
 bayer01.mtx
@@ -31,7 +31,7 @@ Dubcova2.mtx
 ecl32.mtx
 3896.89
 epb3.mtx
-1737.89
+1733.41
 ex11.mtx
 1241.44
 ex19.mtx
@@ -41,9 +41,9 @@ F2.mtx
 filter3D.mtx
 21884.4
 finan512.mtx
-4781.66
+4577
 garon2.mtx
-532.848
+503.534
 gas_sensor.mtx
 6444.54
 gridgena.mtx
@@ -53,9 +53,9 @@ ibm_matrix_2.mtx
 jan99jac120.mtx
 24758.3
 lhr10c.mtx
-323.184
+315.595
 mark3jac100.mtx
-8839.63
+8836.04
 mark3jac140.mtx
 12746
 minsurfo.mtx
@@ -69,7 +69,7 @@ olesnik0.mtx
 OPF_10000.mtx
 3665.4
 qa8fm.mtx
-3439.07
+3332.12
 rail_79841.mtx
 1608.74
 rma10.mtx
