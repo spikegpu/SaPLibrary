@@ -989,7 +989,7 @@ fwdElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 		dB[g_k * row_to_start + idx] = tmp6;
 		for (int loadIdx = threadIdx.x; loadIdx < 13; loadIdx += step)
-			a_elements[loadIdx] = dA[offset + k + (2*k+1)*(row_to_start - first_row) + loadIdx + 1];
+			a_elements[loadIdx] = dA[offset + column_width*(row_to_start - first_row) + loadIdx + 1];
 		__syncthreads();
 		tmp7 -= tmp6 * a_elements[99];
 		tmp8 -= tmp6 * a_elements[100];
@@ -2110,8 +2110,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 				sharedOffset = 0;
 				for (int l = j; l < j+16 && l <= row_to_start; l++) {
 					nextToAccess = l-(last_row - 20*i);
-					for(int loadIdx = threadIdx.x + nextToAccess; loadIdx < nextToAccess+20 && loadIdx < k; loadIdx += step)
-						a_elements[loadIdx-nextToAccess+sharedOffset] = dA[offset - column_width*(last_row - 1 - l) - (loadIdx + 1) * factor];
+					for(int loadIdx = threadIdx.x + nextToAccess; loadIdx < nextToAccess+20 && loadIdx < k; loadIdx += step) {
+						if (l - loadIdx - 1 >= first_row)
+							a_elements[loadIdx-nextToAccess+sharedOffset] = dA[offset - column_width*(last_row - 1 - l) - (loadIdx + 1) * factor];
+						else
+							a_elements[loadIdx - nextToAccess + sharedOffset] = (T)0;
+					}
 					sharedOffset += 20;
 				}
 				sharedOffset = 0;
@@ -2147,8 +2151,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		sharedOffset = 0;
 		for (int j=row_to_start+1; j<row_to_start + 20 && j < last_row; j++) {
 			int nextToAccess = j - (last_row - 20*i);
-			for(int loadIdx = threadIdx.x + nextToAccess; loadIdx < nextToAccess+20 && loadIdx < k; loadIdx += step)
-				a_elements[loadIdx-nextToAccess+sharedOffset] = dA[offset - column_width*(last_row - 1 - j) - (loadIdx + 1) * factor];
+			for(int loadIdx = threadIdx.x + nextToAccess; loadIdx < nextToAccess+20 && loadIdx < k; loadIdx += step) {
+				if (j - loadIdx - 1 >= first_row)
+					a_elements[loadIdx-nextToAccess+sharedOffset] = dA[offset - column_width*(last_row - 1 - j) - (loadIdx + 1) * factor];
+				else
+					a_elements[loadIdx - nextToAccess + sharedOffset] = (T)0;
+			}
 			sharedOffset += 20;
 		}
 		sharedOffset = 0;
@@ -2241,8 +2249,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		}
 
 		row_to_start = last_row - 1 - 20 * i;
-		for (int loadIdx = threadIdx.x; loadIdx < 19; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 19; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		dB[g_k * row_to_start + idx] = tmp0;
 		tmp1 -= tmp0 * a_elements[0];
@@ -2267,8 +2279,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start --;
 
 		dB[g_k * row_to_start + idx] = tmp1;
-		for (int loadIdx = threadIdx.x; loadIdx < 18; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 18; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp2 -= tmp1 * a_elements[0];
 		tmp3 -= tmp1 * a_elements[1];
@@ -2291,8 +2307,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp2;
-		for (int loadIdx = threadIdx.x; loadIdx < 17; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 17; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp3 -= tmp2 * a_elements[0];
 		tmp4 -= tmp2 * a_elements[1];
@@ -2314,8 +2334,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp3;
-		for (int loadIdx = threadIdx.x; loadIdx < 16; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 16; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp4 -= tmp3 * a_elements[0];
 		tmp5 -= tmp3 * a_elements[1];
@@ -2336,8 +2360,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp4;
-		for (int loadIdx = threadIdx.x; loadIdx < 15; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 15; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp5 -= tmp4 * a_elements[0];
 		tmp6 -= tmp4 * a_elements[1];
@@ -2357,8 +2385,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp5;
-		for (int loadIdx = threadIdx.x; loadIdx < 14; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 14; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp6 -= tmp5 * a_elements[0];
 		tmp7 -= tmp5 * a_elements[1];
@@ -2377,8 +2409,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp6;
-		for (int loadIdx = threadIdx.x; loadIdx < 13; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 13; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp7 -= tmp6 * a_elements[0];
 		tmp8 -= tmp6 * a_elements[1];
@@ -2396,8 +2432,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp7;
-		for (int loadIdx = threadIdx.x; loadIdx < 12; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 12; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp8 -= tmp7 * a_elements[0];
 		tmp9 -= tmp7 * a_elements[1];
@@ -2414,8 +2454,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp8;
-		for (int loadIdx = threadIdx.x; loadIdx < 11; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 11; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp9 -= tmp8 * a_elements[0];
 		tmp10 -= tmp8 * a_elements[1];
@@ -2431,8 +2475,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp9;
-		for (int loadIdx = threadIdx.x; loadIdx < 10; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 10; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp10 -= tmp9 * a_elements[0];
 		tmp11 -= tmp9 * a_elements[1];
@@ -2447,8 +2495,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp10;
-		for (int loadIdx = threadIdx.x; loadIdx < 9; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 9; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp11 -= tmp10 * a_elements[0];
 		tmp12 -= tmp10 * a_elements[1];
@@ -2462,8 +2514,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp11;
-		for (int loadIdx = threadIdx.x; loadIdx < 8; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 8; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp12 -= tmp11 * a_elements[0];
 		tmp13 -= tmp11 * a_elements[1];
@@ -2476,8 +2532,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp12;
-		for (int loadIdx = threadIdx.x; loadIdx < 7; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 7; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp13 -= tmp12 * a_elements[0];
 		tmp14 -= tmp12 * a_elements[1];
@@ -2489,8 +2549,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp13;
-		for (int loadIdx = threadIdx.x; loadIdx < 6; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 6; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp14 -= tmp13 * a_elements[0];
 		tmp15 -= tmp13 * a_elements[1];
@@ -2501,8 +2565,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp14;
-		for (int loadIdx = threadIdx.x; loadIdx < 5; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 5; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp15 -= tmp14 * a_elements[0];
 		tmp16 -= tmp14 * a_elements[1];
@@ -2512,8 +2580,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp15;
-		for (int loadIdx = threadIdx.x; loadIdx < 4; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 4; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp16 -= tmp15 * a_elements[0];
 		tmp17 -= tmp15 * a_elements[1];
@@ -2522,8 +2594,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp16;
-		for (int loadIdx = threadIdx.x; loadIdx < 3; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 3; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp17 -= tmp16 * a_elements[0];
 		tmp18 -= tmp16 * a_elements[1];
@@ -2531,16 +2607,24 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp17;
-		for (int loadIdx = threadIdx.x; loadIdx < 2; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 2; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp18 -= tmp17 * a_elements[0];
 		tmp19 -= tmp17 * a_elements[1];
 		row_to_start--;
 
 		dB[g_k * row_to_start + idx] = tmp18;
-		for (int loadIdx = threadIdx.x; loadIdx < 1; loadIdx += step)
-			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		for (int loadIdx = threadIdx.x; loadIdx < 1; loadIdx += step) {
+			if (row_to_start - (loadIdx + 1) >= first_row)
+				a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx] = (T)0;
+		}
 		__syncthreads();
 		tmp19 -= tmp18 * a_elements[0];
 		row_to_start--;
@@ -2658,8 +2742,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 		if (((j-nextToAccess-1) & 15) == 0) {
 			sharedOffset = 0;
 			for (int l = j; l < j+16 && l <=row_to_start; l++) {
-				for(int loadIdx = threadIdx.x + l-nextToAccess-1; loadIdx < l-nextToAccess+19 && loadIdx < k; loadIdx += step)
-					a_elements[loadIdx-l+nextToAccess+1+sharedOffset] = dA[offset - column_width*(last_row - 1 - l) - (loadIdx + 1) * factor];
+				for(int loadIdx = threadIdx.x + l-nextToAccess-1; loadIdx < l-nextToAccess+19 && loadIdx < k; loadIdx += step) {
+					if (l - loadIdx - 1 >= first_row)
+						a_elements[loadIdx-l+nextToAccess+1+sharedOffset] = dA[offset - column_width*(last_row - 1 - l) - (loadIdx + 1) * factor];
+					else
+						a_elements[loadIdx-l+nextToAccess+1+sharedOffset] = (T)0;
+				}
 				sharedOffset += 20;
 			}
 			sharedOffset = 0;
@@ -2733,8 +2821,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 	sharedOffset = 0;
 	for (int j=row_to_start+1; j<row_to_start + 20 && j < last_row; j++) {
 		int nextToAccess = last_row-1-20*i;
-		for(int loadIdx = threadIdx.x+j-nextToAccess-1; loadIdx < j-nextToAccess+19 && loadIdx < k; loadIdx += step)
-			a_elements[loadIdx-j+nextToAccess+1+sharedOffset] = dA[offset - column_width*(last_row - 1 - j) - (loadIdx + 1) * factor];
+		for(int loadIdx = threadIdx.x+j-nextToAccess-1; loadIdx < j-nextToAccess+19 && loadIdx < k; loadIdx += step) {
+			if (j - loadIdx - 1 >= first_row)
+				a_elements[loadIdx-j+nextToAccess+1+sharedOffset] = dA[offset - column_width*(last_row - 1 - j) - (loadIdx + 1) * factor];
+			else
+				a_elements[loadIdx-j+nextToAccess+1+sharedOffset] = (T)0;
+		}
 		sharedOffset += 20;
 	}
 	sharedOffset = 0;
@@ -2830,8 +2922,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp0;
-	for (int loadIdx = threadIdx.x; loadIdx < 19; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 19; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp1 -= tmp0 * a_elements[0];
@@ -2875,8 +2971,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp1;
-	for (int loadIdx = threadIdx.x; loadIdx < 18; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 18; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp2 -= tmp1 * a_elements[0];
@@ -2918,8 +3018,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp2;
-	for (int loadIdx = threadIdx.x; loadIdx < 17; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 17; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp3 -= tmp2 * a_elements[0];
@@ -2959,8 +3063,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp3;
-	for (int loadIdx = threadIdx.x; loadIdx < 16; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 16; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start- 1 >= first_row)
 		tmp4 -= tmp3 * a_elements[0];
@@ -2998,8 +3106,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp4;
-	for (int loadIdx = threadIdx.x; loadIdx < 15; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 15; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp5 -= tmp4 * a_elements[0];
@@ -3035,8 +3147,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp5;
-	for (int loadIdx = threadIdx.x; loadIdx < 14; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 14; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp6 -= tmp5 * a_elements[0];
@@ -3070,8 +3186,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp6;
-	for (int loadIdx = threadIdx.x; loadIdx < 13; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 13; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp7 -= tmp6 * a_elements[0];
@@ -3103,8 +3223,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp7;
-	for (int loadIdx = threadIdx.x; loadIdx < 12; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 12; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp8 -= tmp7 * a_elements[0];
@@ -3134,8 +3258,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp8;
-	for (int loadIdx = threadIdx.x; loadIdx < 11; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 11; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp9 -= tmp8 * a_elements[0];
@@ -3163,8 +3291,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp9;
-	for (int loadIdx = threadIdx.x; loadIdx < 10; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 10; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp10 -= tmp9 * a_elements[0];
@@ -3190,8 +3322,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp10;
-	for (int loadIdx = threadIdx.x; loadIdx < 9; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 9; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp11 -= tmp10 * a_elements[0];
@@ -3215,8 +3351,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp11;
-	for (int loadIdx = threadIdx.x; loadIdx < 8; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 8; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp12 -= tmp11 * a_elements[0];
@@ -3238,8 +3378,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp12;
-	for (int loadIdx = threadIdx.x; loadIdx < 7; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 7; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp13 -= tmp12 * a_elements[0];
@@ -3259,8 +3403,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp13;
-	for (int loadIdx = threadIdx.x; loadIdx < 6; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 6; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp14 -= tmp13 * a_elements[0];
@@ -3278,8 +3426,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp14;
-	for (int loadIdx = threadIdx.x; loadIdx < 5; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 5; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp15 -= tmp14 * a_elements[0];
@@ -3295,8 +3447,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp15;
-	for (int loadIdx = threadIdx.x; loadIdx < 4; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 4; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp16 -= tmp15 * a_elements[0];
@@ -3310,8 +3466,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp16;
-	for (int loadIdx = threadIdx.x; loadIdx < 3; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 3; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp17 -= tmp16 * a_elements[0];
@@ -3323,8 +3483,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp17;
-	for (int loadIdx = threadIdx.x; loadIdx < 2; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 2; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp18 -= tmp17 * a_elements[0];
@@ -3334,8 +3498,12 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 	if (row_to_start < first_row) return;
 	dB[g_k * row_to_start + idx] = tmp18;
-	for (int loadIdx = threadIdx.x; loadIdx < 1; loadIdx += step)
-		a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+	for (int loadIdx = threadIdx.x; loadIdx < 1; loadIdx += step) {
+		if (row_to_start - loadIdx - 1 >= first_row)
+			a_elements[loadIdx] = dA[offset - column_width*(last_row - 1 - row_to_start) - (loadIdx + 1) * factor];
+		else
+			a_elements[loadIdx] = (T)0;
+	}
 	__syncthreads();
 	if (row_to_start - 1 >= first_row)
 		tmp19 -= tmp18 * a_elements[0];
