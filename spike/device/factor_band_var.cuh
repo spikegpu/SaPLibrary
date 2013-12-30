@@ -866,10 +866,165 @@ fullLU_post_divide_general(T *dA, int *ks, int *offsets) {
 
 template <typename T>
 __global__ void
+blockedBandLU_critical_phase1_safe(T *dA, int start_row, int *ks, int *offsets, int *last, int b, int partSize, int remainder, bool isSPD)
+{
+	int k = ks[blockIdx.x];
+	int column_width = (isSPD ? (k + 1) : ((k<<1) + 1));
+	int delta = (isSPD ? 0 : k);
+	int pivotIdx = offsets[blockIdx.x] + start_row * column_width + delta;
+	int last_row = start_row + b;
+	int partitionEnd;
+	int row_delta = blockIdx.x * partSize;
+
+	__shared__ T sharedA;
+
+	if (blockIdx.x < remainder) {
+		partitionEnd = partSize + 1;
+		row_delta += blockIdx.x;
+	}
+	else {
+		partitionEnd = partSize;
+		row_delta += remainder;
+	}
+
+	if (last_row > partitionEnd)
+		last_row = partitionEnd;
+
+	for (int row = start_row; row < last_row; row ++) {
+		int cur_last = last[row + row_delta];
+
+		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx + tid] /= sharedA;
+		__syncthreads();
+
+		if (row == last_row - 1) break;
+		if (cur_last == 0) {
+			pivotIdx += column_width;
+			continue;
+		}
+
+		int num_elements = (last_row - row - 1) * cur_last;
+
+		if (!isSPD) {
+			for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+				int r = tid / cur_last + 1;
+				int c = tid % cur_last + 1;
+
+				dA[pivotIdx + c + r * (column_width - 1)] -= dA[pivotIdx + c] * dA[pivotIdx + r * (column_width - 1)];
+			}
+		} else {
+			for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+				int r = tid / cur_last + 1;
+				int c = tid % cur_last + 1;
+
+				if (c >= r)
+					dA[pivotIdx + c + r * (column_width - 1)] -= dA[pivotIdx + c] * dA[pivotIdx + r] * sharedA;
+			}
+		}
+
+		__syncthreads();
+
+		pivotIdx += column_width;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_phase2(T *dA, int start_row, int *ks, int *offsets, int b, int partSize, int remainder)
+{
+	int k = ks[blockIdx.y];
+	int bid = blockIdx.x + b;
+	int pivotIdx = offsets[blockIdx.y] + start_row * ((k << 1) + 1)+ k;
+
+	int partitionEnd;
+	if (blockIdx.y < remainder)
+		partitionEnd = (partSize + 1);
+	else
+		partitionEnd = partSize;
+
+	if (start_row + bid >= partitionEnd || k < blockIdx.x)
+		return;
+
+	extern __shared__ T sharedElem[];
+
+	if (threadIdx.x + k < bid) {
+		sharedElem[threadIdx.x] = (T)0;
+		return;
+	} else
+		sharedElem[threadIdx.x] = dA[pivotIdx + bid * (k << 1) + threadIdx.x];
+
+	__syncthreads();
+
+	for (int i = 1; i < b; i++) {
+		if (threadIdx.x >= i)
+			sharedElem[threadIdx.x] -= sharedElem[i-1] * dA[pivotIdx + (i-1) * (k<<1) + threadIdx.x];
+
+		__syncthreads();
+	}
+
+	dA[pivotIdx + bid * (k << 1) + threadIdx.x] = sharedElem[threadIdx.x];
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_phase3(T *dA, int start_row, int *ks, int *offsets, int b, int partSize, int remainder, bool isSPD)
+{
+	int k = ks[blockIdx.y];
+	int column_width = (k << 1) + 1;
+	int delta = k;
+	if (isSPD) {
+		column_width = k + 1;
+		delta = 0;
+	}
+
+	int pivotIdx = offsets[blockIdx.y] + start_row * column_width + delta;
+	int bid = blockIdx.x;
+
+	if (bid >= k)
+		return;
+
+	int partitionEnd;
+	if (blockIdx.y < remainder)
+		partitionEnd = (partSize + 1);
+	else
+		partitionEnd = partSize;
+
+	if (start_row + bid + b >= partitionEnd)
+		return;
+
+	if (isSPD) {
+		for (int tid = threadIdx.x; tid < k; tid += blockDim.x) {
+			if (tid < bid) continue;
+
+			T tmp = dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid];
+
+			for (int i = 0; i < b; i++)
+				if (tid - i + b <= k && i + k >= b + bid)
+					tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * dA[pivotIdx + (b+bid) + i * (column_width - 1)] * dA[pivotIdx + i * column_width];
+
+			dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid] = tmp;
+		}
+	} else {
+		for (int tid = threadIdx.x; tid < k; tid += blockDim.x) {
+			T tmp = dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid];
+			for (int i = 0; i < b; i++)
+				if (tid - i + b <= k && i + k >= b + bid)
+					tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * dA[pivotIdx + (b+bid) * (column_width - 1) + i];
+
+			dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid] = tmp;
+		}
+	}
+}
+
+template <typename T>
+__global__ void
 blockedFullLU_phase1_general(T *dA, int *ks, int *offsets, int cur_row, int b)
 {
 	int k = ks[blockIdx.x];
-	int partition_size = (2*k);
+	int partition_size = (k << 1);
 
 	int offset = offsets[blockIdx.x] + cur_row * partition_size + cur_row;
 

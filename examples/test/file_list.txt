@@ -17,7 +17,7 @@ af23560.mtx
 Andrews.mtx
 1 --spd
 apache1.mtx
-8
+8 --spd
 ASIC_100k.mtx
 1
 ASIC_100ks.mtx
@@ -79,7 +79,7 @@ F2.mtx
 filter3D.mtx
 1
 finan512.mtx
-12
+12 --spd
 g7jac140.mtx
 1
 Ga3As3H12.mtx
@@ -135,7 +135,7 @@ OPF_10000.mtx
 poisson3Db.mtx
 1
 qa8fm.mtx
-12
+12 --spd
 rail_79841.mtx
 8
 rajat26.mtx
@@ -143,9 +143,9 @@ rajat26.mtx
 rma10.mtx
 8
 shallow_water1.mtx
-16
+16 --spd
 shallow_water2.mtx
-16
+16 --spd
 sparsine.mtx
 1
 stomach.mtx
@@ -153,7 +153,7 @@ stomach.mtx
 t3dh_a.mtx
 1
 thermal1.mtx
-12
+12 --spd
 torso3.mtx
 1
 TSOPF_FS_b162_c4.mtx

@@ -206,7 +206,9 @@ private:
 	void partBandedLU_one();
 	void partBlockedBandedLU_one();
 	void partBlockedBandedCholesky_one();
+	void partBlockedBandedCholesky_var();
 	void partBandedLU_var();
+	void partBlockedBandedLU_var();
 	void partBandedUL(PrecVector& B);
 
 	void partBandedFwdSweep(PrecVector& v);
@@ -1428,7 +1430,11 @@ Precond<PrecVector>::partBandedLU()
 	if (m_variableBandwidth) {
 		// Variable bandwidth method. Note that in this situation, there
 		// must be more than one partition.
-		partBandedLU_var();
+		// partBandedLU_var();
+		if (m_saveMem)
+			partBlockedBandedCholesky_var();
+		else
+			partBlockedBandedLU_var();
 	} else {
 		// Constant bandwidth method.
 		if (m_numPartitions > 1)
@@ -1931,6 +1937,128 @@ Precond<PrecVector>::partBandedLU_var()
 	}
 }
 
+template <typename PrecVector>
+void
+Precond<PrecVector>::partBlockedBandedLU_var()
+{
+	// Note that this function can only be called if there are two or more partitions.
+	// Also, in this case, the factorization method is LU_only which implies that all
+	// partitions are LU factorized.
+
+	PrecValueType* dB         = thrust::raw_pointer_cast(&m_B[0]);
+	int*           p_ks       = thrust::raw_pointer_cast(&m_ks[0]);
+	int*           p_BOffsets = thrust::raw_pointer_cast(&m_BOffsets[0]);
+
+	int tmp_k = cusp::blas::nrmmax(m_ks);
+	int partSize  = m_n / m_numPartitions;
+	int remainder = m_n % m_numPartitions;
+
+	if(tmp_k >= CRITICAL_THRESHOLD) 
+	{
+		int final_partition_size = partSize + 1;
+		int threadsNum = adjustNumThreads(cusp::blas::nrm1(m_ks) / m_numPartitions);
+
+		IntVector ks_col = m_ks_col_host;
+		int *ks_col_ptr = thrust::raw_pointer_cast(&ks_col[0]);
+
+		const int BLOCK_FACTOR = 8;
+		for (int st_row = 0; st_row < final_partition_size; st_row += BLOCK_FACTOR) {
+			int last_row = st_row + BLOCK_FACTOR;
+			if (last_row > final_partition_size)
+				last_row = final_partition_size;
+			int block_num = last_row - st_row;
+
+			device::var::blockedBandLU_critical_phase1_safe<PrecValueType> <<< m_numPartitions, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, ks_col_ptr, block_num, partSize, remainder, false);
+
+			if (last_row == final_partition_size)
+				break;
+
+			dim3 grids(tmp_k, m_numPartitions);
+
+			device::var::blockedBandLU_critical_phase2<PrecValueType> <<<grids, BLOCK_FACTOR, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder);
+
+			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, false);
+		}
+	} else if (tmp_k > 27){
+		if (m_safeFactorization)
+			device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+		else
+			device::var::bandLU_g32<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+	} else {
+		if (m_safeFactorization)
+			device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder);
+		else
+			device::var::bandLU<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+	}
+
+
+	if (m_safeFactorization)
+		device::var::boostLastPivot<PrecValueType><<<m_numPartitions, 1>>>(dB, partSize, p_ks, p_BOffsets, partSize, remainder);
+
+	int gridX = partSize+1;
+	int gridY = 1;
+	kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
+	dim3 grids(gridX, gridY);
+
+	for (int i=0; i<m_numPartitions ; i++) {
+		if (i < remainder) {
+			if (m_ks_host[i] <= 1024)
+				device::var::bandLU_post_divide_per_partition<PrecValueType><<<grids, m_ks_host[i]>>>(dB, m_ks_host[i], m_BOffsets_host[i], partSize + 1);
+			else
+				device::var::bandLU_post_divide_per_partition_general<PrecValueType><<<grids, 512>>>(dB, m_ks_host[i], m_BOffsets_host[i], partSize + 1);
+		}
+		else {
+			if (m_ks_host[i] <= 1024)
+				device::var::bandLU_post_divide_per_partition<PrecValueType><<<grids, m_ks_host[i]>>>(dB, m_ks_host[i], m_BOffsets_host[i], partSize);
+			else
+				device::var::bandLU_post_divide_per_partition_general<PrecValueType><<<grids, 512>>>(dB, m_ks_host[i], m_BOffsets_host[i], partSize);
+		}
+	}
+}
+
+template <typename PrecVector>
+void
+Precond<PrecVector>::partBlockedBandedCholesky_var()
+{
+	// Note that this function can only be called if there are two or more partitions.
+	// Also, in this case, the factorization method is LU_only which implies that all
+	// partitions are LU factorized.
+
+	PrecValueType* dB         = thrust::raw_pointer_cast(&m_B[0]);
+	int*           p_ks       = thrust::raw_pointer_cast(&m_ks[0]);
+	int*           p_BOffsets = thrust::raw_pointer_cast(&m_BOffsets[0]);
+
+	int tmp_k = cusp::blas::nrmmax(m_ks);
+	int partSize  = m_n / m_numPartitions;
+	int remainder = m_n % m_numPartitions;
+
+	// if(tmp_k >= CRITICAL_THRESHOLD) 
+	{
+		int final_partition_size = partSize + 1;
+		int threadsNum = adjustNumThreads(cusp::blas::nrm1(m_ks) / m_numPartitions);
+
+		IntVector ks_col = m_ks_col_host;
+		int *ks_col_ptr = thrust::raw_pointer_cast(&ks_col[0]);
+
+		const int BLOCK_FACTOR = 8;
+		for (int st_row = 0; st_row < final_partition_size; st_row += BLOCK_FACTOR) {
+			int last_row = st_row + BLOCK_FACTOR;
+			if (last_row > final_partition_size)
+				last_row = final_partition_size;
+			int block_num = last_row - st_row;
+
+			device::var::blockedBandLU_critical_phase1_safe<PrecValueType> <<< m_numPartitions, threadsNum>>>(dB, st_row, p_ks, p_BOffsets, ks_col_ptr, block_num, partSize, remainder, true);
+
+			if (last_row == final_partition_size)
+				break;
+
+			dim3 grids(tmp_k, m_numPartitions);
+
+			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, true);
+		}
+	}
+}
+
 /**
  * This function performs the in-place UL factorization of the diagonal blocks
  * of the specified banded matrix B, on a per-partition basis, using the
@@ -2086,12 +2214,21 @@ Precond<PrecVector>::partBandedFwdSweep_var(PrecVector&  v)
 	int partSize  = m_n / m_numPartitions;
 	int remainder = m_n % m_numPartitions;
 
-	if (tmp_k > 1024)
-		device::var::fwdElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
-	else if (tmp_k > 32)
-		device::var::fwdElim_sol_medium<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
-	else
-		device::var::fwdElim_sol_narrow<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	if (m_saveMem)
+		if (tmp_k > 1024)
+			device::var::fwdElimCholesky_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else if (tmp_k > 32)
+			device::var::fwdElimCholesky_sol_medium<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else
+			device::var::fwdElimCholesky_sol_narrow<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	else {
+		if (tmp_k > 1024)
+			device::var::fwdElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else if (tmp_k > 32)
+			device::var::fwdElim_sol_medium<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else
+			device::var::fwdElim_sol_narrow<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	}
 }
 
 /*! \brief This function will call either Precond::partBandedBckSweep_const()
@@ -2179,14 +2316,24 @@ Precond<PrecVector>::partBandedBckSweep_var(PrecVector&  v)
 	int gridX = 1, blockX = partSize + 1;
 	kernelConfigAdjust(blockX, gridX, BLOCK_SIZE);
 	dim3 grids(gridX, m_numPartitions);
-	device::var::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	device::var::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder, m_saveMem);
 
-	if (tmp_k > 1024)
-		device::var::bckElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
-	else if (tmp_k > 32) 
-		device::var::bckElim_sol_medium<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
-	else
-		device::var::bckElim_sol_narrow<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	if (m_saveMem) {
+		if (tmp_k > 1024)
+			device::var::bckElimCholesky_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else if (tmp_k > 32) 
+			device::var::bckElimCholesky_sol_medium<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else
+			device::var::bckElimCholesky_sol_narrow<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	}
+	else {
+		if (tmp_k > 1024)
+			device::var::bckElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else if (tmp_k > 32) 
+			device::var::bckElim_sol_medium<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+		else
+			device::var::bckElim_sol_narrow<PrecValueType><<<m_numPartitions, tmp_k>>>(m_n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder);
+	}
 }
 
 /**
@@ -2397,17 +2544,25 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 					else 
 						last_row += partSize;
 
+					int column_width = m_ks_host[i] + 1;
+					int delta = 0;
+
+					if (!m_saveMem) {
+						column_width += m_ks_host[i];
+						delta = m_ks_host[i];
+					}
+
 					int tmp_first_row = m_first_rows_host[i];
-					device::var::fwdElim_rightSpike_per_partition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>> (n_eff, m_ks_host[i], m_BOffsets_host[i]+m_ks_host[i]+(2*m_ks_host[i]+1)*(m_first_rows_host[i]-pseudo_first_row), p_B, p_extV, m_first_rows_host[i], last_row);
+					device::var::fwdElim_rightSpike_per_partition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>> (n_eff, m_ks_host[i], m_BOffsets_host[i]+ delta +column_width*(m_first_rows_host[i]-pseudo_first_row), p_B, p_extV, m_first_rows_host[i], last_row, m_saveMem);
 					
 					int blockX = last_row - m_first_rows_host[i];
 					int gridX = 1;
 					kernelConfigAdjust(blockX, gridX, BLOCK_SIZE);
 					dim3 grids(gridX, m_offDiagWidths_right_host[i]);
-					device::var::preBck_rightSpike_divide_per_partition<PrecValueType><<<grids, blockX>>> (n_eff, m_ks_host[i], m_BOffsets_host[i]+m_ks_host[i]+(2*m_ks_host[i]+1)*(m_first_rows_host[i]-pseudo_first_row), p_B, p_extV, m_first_rows_host[i], last_row);
+					device::var::preBck_rightSpike_divide_per_partition<PrecValueType><<<grids, blockX>>> (n_eff, m_ks_host[i], m_BOffsets_host[i]+delta+column_width*(m_first_rows_host[i]-pseudo_first_row), p_B, p_extV, m_first_rows_host[i], last_row, m_saveMem);
 
 					m_first_rows_host[i] = thrust::reduce(m_secondPerm.begin()+(last_row-m_k), m_secondPerm.begin()+last_row, last_row, thrust::minimum<int>());
-					device::var::bckElim_rightSpike_per_partition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>> (n_eff, m_ks_host[i], m_BOffsets_host[i]+m_ks_host[i]+(2*m_ks_host[i]+1)*(last_row-pseudo_first_row-1), p_B, p_extV, m_first_rows_host[i], last_row);
+					device::var::bckElim_rightSpike_per_partition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>> (n_eff, m_ks_host[i], m_BOffsets_host[i]+delta+column_width*(last_row-pseudo_first_row-1), p_B, p_extV, m_first_rows_host[i], last_row, m_saveMem);
 
 					pseudo_first_row = last_row;
 				}
@@ -2500,15 +2655,23 @@ Precond<PrecVector>::calculateSpikes_var_old(PrecVector&  WV)
 						last_row += partSize + 1;
 					else 
 						last_row += partSize;
-					device::var::fwdElim_leftSpike_per_partition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>> (n_eff, m_ks_host[i+1], m_k - m_offDiagWidths_left_host[i], m_BOffsets_host[i+1]+m_ks_host[i+1], p_B, p_extW, first_row, last_row);
+					int delta = 0;
+					int column_width = m_ks_host[i+1] + 1;
+					if (!m_saveMem) {
+						delta = m_ks_host[i+1];
+						column_width += m_ks_host[i+1];
+					}
+
+					device::var::fwdElim_leftSpike_per_partition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>> (n_eff, m_ks_host[i+1], m_k - m_offDiagWidths_left_host[i], m_BOffsets_host[i+1]+delta, p_B, p_extW, first_row, last_row, m_saveMem);
 					
 					int blockX = last_row - first_row;
 					int gridX = 1;
 					kernelConfigAdjust(blockX, gridX, BLOCK_SIZE);
 					dim3 grids(gridX, m_offDiagWidths_left_host[i]);
 
-					device::var::preBck_leftSpike_divide_per_partition<PrecValueType><<<grids, blockX>>> (n_eff, m_ks_host[i+1], m_k - m_offDiagWidths_left_host[i], m_BOffsets_host[i+1]+m_ks_host[i+1], p_B, p_extW, first_row, last_row);
-					device::var::bckElim_leftSpike_per_partition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>>(n_eff, m_ks_host[i+1], m_k - m_offDiagWidths_left_host[i], m_BOffsets_host[i+1] + m_ks_host[i+1] + (2*m_ks_host[i+1]+1)*(last_row-first_row-1), p_B, p_extW, first_row, last_row);
+					device::var::preBck_leftSpike_divide_per_partition<PrecValueType><<<grids, blockX>>> (n_eff, m_ks_host[i+1], m_k - m_offDiagWidths_left_host[i], m_BOffsets_host[i+1]+delta, p_B, p_extW, first_row, last_row, m_saveMem);
+					device::var::bckElim_leftSpike_per_partition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>>(n_eff, m_ks_host[i+1], m_k - m_offDiagWidths_left_host[i], m_BOffsets_host[i+1] + delta + column_width*(last_row-first_row-1), p_B, p_extW, first_row, last_row, m_saveMem);
+
 					first_row = last_row;
 				}
 			}
@@ -2687,7 +2850,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			kernelConfigAdjust(sweepBlockX, sweepGridX, SWEEP_MAX_NUM_THREADS);
 			dim3 sweepGrids(sweepGridX, 2*numPart_eff-2);
 
-			device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
+			device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
 
 			int preBckBlockX = leftOffDiagWidth + rightOffDiagWidth;
 			int preBckGridX  = 1;
@@ -2697,7 +2860,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			kernelConfigAdjust(preBckGridY, preBckGridZ, MAX_GRID_DIMENSION);
 			dim3 preBckGrids(preBckGridX, preBckGridY, preBckGridZ);
 
-			device::var::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, p_ks, p_offsets, p_B, p_buffer, partSize, remainder);
+			device::var::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, p_ks, p_offsets, p_B, p_buffer, partSize, remainder, m_saveMem);
 
 			{
 				int last_row = 0;
@@ -2713,7 +2876,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 				p_first_rows = thrust::raw_pointer_cast(&m_first_rows[0]);
 			}
 
-			device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
+			device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
 		}
 
 
