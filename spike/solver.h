@@ -96,6 +96,7 @@ struct Stats
 	int         bandwidthMC64;          /**< Half-bandwidth after MC64. */
 	int         bandwidth;              /**< Half-bandwidth after reordering and drop-off. */
 	double      nuKf;                   /**< Non-uniform K factor. Indicates whether the K changes a lot from row to row. */
+	double      flops_LU;               /**< FLOPs of LU*/
 
 	int         numPartitions;          /**< Actual number of partitions used in the Spike factorization */
 	double      actualDropOff;          /**< Actual fraction of the element-wise matrix 1-norm dropped off. */
@@ -218,6 +219,7 @@ Stats::Stats()
 	bandwidthMC64(0),
 	bandwidth(0),
 	nuKf(0),
+	flops_LU(0),
 	numPartitions(0),
 	actualDropOff(0),
 	numIterations(0),
@@ -385,6 +387,12 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
 	m_stats.bandwidthMC64 = m_precond_pointers[0]->getBandwidthMC64();
 	m_stats.nuKf = cusp::blas::nrm1(m_precond_pointers[0]->m_ks_row_host) + cusp::blas::nrm1(m_precond_pointers[0]->m_ks_col_host);
+	m_stats.flops_LU = 0;
+	{
+		int n = m_precond_pointers[0]->m_ks_row_host.size();
+		for (int i=0; i<n; i++)
+			m_stats.flops_LU += (double)(m_precond_pointers[0]->m_ks_row_host[i]) * (m_precond_pointers[0]->m_ks_col_host[i]);
+	}
 	m_stats.numPartitions = m_precond_pointers[0]->getNumPartitions();
 	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
 	m_stats.time_MC64 = m_precond_pointers[0] -> getTimeMC64();
@@ -409,6 +417,11 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 		if (m_stats.numPartitions > m_precond_pointers[i]->getNumPartitions())
 			m_stats.numPartitions = m_precond_pointers[i]->getNumPartitions();
 		m_stats.nuKf += cusp::blas::nrm1(m_precond_pointers[i]->m_ks_row_host) + cusp::blas::nrm1(m_precond_pointers[i]->m_ks_col_host);
+		{
+			int n = m_precond_pointers[i]->m_ks_row_host.size();
+			for (int j=0; j<n; j++)
+				m_stats.flops_LU += (double)(m_precond_pointers[i]->m_ks_row_host[j]) * (m_precond_pointers[i]->m_ks_col_host[j]);
+		}
 		m_stats.time_MC64 += m_precond_pointers[i] -> getTimeMC64();
 		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
 		m_stats.time_dropOff += m_precond_pointers[i]->getTimeDropOff();
@@ -427,6 +440,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	else
 		m_stats.nuKf = (2 * m_stats.bandwidth * m_n- m_stats.nuKf) / (2 * m_stats.bandwidth * m_n);
 
+	m_stats.flops_LU /= m_stats.time_bandLU * 1e6;
 	m_setupDone = true;
 
 	return true;

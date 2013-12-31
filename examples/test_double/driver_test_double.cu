@@ -136,7 +136,7 @@ void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name,
 class OutputItem
 {
 public:
-	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(16) {}
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(17) {}
 
 	int           m_additional_item_count;
 
@@ -489,6 +489,8 @@ int main(int argc, char** argv)
 		outputItem( stats.time_offDiags);
 		// Time for banded LU and UL
 		outputItem( stats.time_bandLU + stats.time_bandUL);
+		// GFLOPS of banded LU
+		outputItem( stats.flops_LU);
 		// Time to assemble off-diagonal matrics on GPU (including the solution of multi-RHS)
 		outputItem( stats.time_assembly);
 		// Time for full LU on reduced matrices
