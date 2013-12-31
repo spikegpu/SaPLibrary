@@ -40,6 +40,8 @@ F2.mtx
 18830.1
 filter3D.mtx
 18887.4
+finan512.mtx
+3234.14
 GaAsH6.mtx
 157986
 garon2.mtx
