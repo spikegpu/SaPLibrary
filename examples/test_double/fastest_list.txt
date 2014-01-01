@@ -25,7 +25,7 @@ cont-201.mtx
 dawson5.mtx
 2478.23
 dixmaanl.mtx
-470.795
+470.656
 Dubcova2.mtx
 1816.2
 ecl32.mtx
@@ -41,7 +41,7 @@ F2.mtx
 filter3D.mtx
 21884.4
 finan512.mtx
-5035.84
+4810.28
 garon2.mtx
 503.534
 gas_sensor.mtx
