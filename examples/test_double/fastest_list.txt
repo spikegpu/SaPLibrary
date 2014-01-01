@@ -41,7 +41,7 @@ F2.mtx
 filter3D.mtx
 21884.4
 finan512.mtx
-5195.78
+5035.84
 garon2.mtx
 503.534
 gas_sensor.mtx
