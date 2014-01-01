@@ -1,5 +1,5 @@
 2cubes_sphere.mtx
-23647.3
+23628
 2D_54019_highK.mtx
 3997.54
 31770-lhs.mtx
@@ -21,7 +21,7 @@ cant.mtx
 cfd1.mtx
 10240.9
 cfd2.mtx
-11580.5
+11578.7
 ckt11752_tr_0.mtx
 30577.9
 cont-201.mtx
@@ -41,9 +41,9 @@ F2.mtx
 filter3D.mtx
 18887.4
 finan512.mtx
-3234.14
+3040.57
 GaAsH6.mtx
-157986
+157908
 garon2.mtx
 481.719
 gas_sensor.mtx
