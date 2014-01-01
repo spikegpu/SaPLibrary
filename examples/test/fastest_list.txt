@@ -97,6 +97,6 @@ vanbody.mtx
 venkat25.mtx
 5059.1
 vibrobox.mtx
-4487.11
+4479.37
 xenon1.mtx
 5273.98
