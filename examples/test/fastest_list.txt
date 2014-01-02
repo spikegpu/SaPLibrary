@@ -1,5 +1,5 @@
 2cubes_sphere.mtx
-23628
+23618.5
 2D_54019_highK.mtx
 3997.54
 31770-lhs.mtx
@@ -7,7 +7,7 @@
 88950-lhs.mtx
 877.725
 ABACUS_shell_ud.mtx
-552.89
+552.217
 af23560.mtx
 636.229
 apache1.mtx
@@ -19,7 +19,7 @@ bcircuit.mtx
 cant.mtx
 2885.98
 cfd1.mtx
-10240.9
+10231.9
 cfd2.mtx
 11578.7
 ckt11752_tr_0.mtx
@@ -29,7 +29,7 @@ cont-201.mtx
 dawson5.mtx
 12700.4
 dixmaanl.mtx
-546.551
+546.264
 Dubcova2.mtx
 1584.59
 ecl32.mtx
@@ -41,7 +41,7 @@ F2.mtx
 filter3D.mtx
 18887.4
 finan512.mtx
-3040.57
+3002.29
 GaAsH6.mtx
 157908
 garon2.mtx
@@ -93,7 +93,7 @@ t3dh_a.mtx
 thermal1.mtx
 1049.25
 vanbody.mtx
-3058.71
+3057.72
 venkat25.mtx
 5059.1
 vibrobox.mtx
