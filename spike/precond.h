@@ -1596,9 +1596,9 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 
 			threadsNum = col_max;
 			if (threadsNum > 1024)
-				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, 512>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
+				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, 512, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
 			else
-				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, threadsNum>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
+				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, threadsNum, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
 
 		}
 	} else if (m_k > 27) {
@@ -1977,7 +1977,7 @@ Precond<PrecVector>::partBlockedBandedLU_var()
 
 			device::var::blockedBandLU_critical_phase2<PrecValueType> <<<grids, BLOCK_FACTOR, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder);
 
-			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, false);
+			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, false);
 		}
 	} else if (tmp_k > 27){
 		if (m_safeFactorization)
@@ -2054,7 +2054,7 @@ Precond<PrecVector>::partBlockedBandedCholesky_var()
 
 			dim3 grids(tmp_k, m_numPartitions);
 
-			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, true);
+			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, true);
 		}
 	}
 }

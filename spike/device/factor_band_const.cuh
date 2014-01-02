@@ -1222,11 +1222,19 @@ blockedBandLU_critical_phase3(T *dA, int start_row, int k, int cur_last, int b)
 	int pivotIdx = start_row * ((k<<1) + 1) + k;
 	int bid = blockIdx.x;
 
+	extern __shared__ T sharedA[];
+
+	if (threadIdx.x < b)
+		sharedA[threadIdx.x] = dA[pivotIdx + (b+bid) * (k << 1) + threadIdx.x];
+	__syncthreads();
+
 	for (int tid = threadIdx.x; tid < cur_last; tid += blockDim.x) {
 		T tmp = dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid];
+
 		for (int i = 0; i < b; i++)
 			if (tid - i + b <= k && i + k >= b + bid)
-				tmp -= dA[pivotIdx + tid + i * (k << 1) + b] * dA[pivotIdx + (b+bid) * (k << 1) + i];
+				//tmp -= dA[pivotIdx + tid + i * (k << 1) + b] * dA[pivotIdx + (b+bid) * (k << 1) + i];
+				tmp -= dA[pivotIdx + tid + i * (k << 1) + b] * sharedA[i];
 
 		dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid] = tmp;
 	}
@@ -1241,8 +1249,8 @@ blockedCholesky_critical_phase2(T *dA, int start_row, int k, int cur_last, int b
 
 	extern __shared__ T pivots[];
 
-	if (threadIdx.x < b)
-		pivots[threadIdx.x] = dA[pivotIdx + threadIdx.x * (k+1)];
+	if (threadIdx.x < b) 
+		pivots[threadIdx.x] = dA[pivotIdx + threadIdx.x * (k+1)] * dA[pivotIdx + (b+bid) + threadIdx.x * k];
 
 	__syncthreads();
 
@@ -1250,7 +1258,8 @@ blockedCholesky_critical_phase2(T *dA, int start_row, int k, int cur_last, int b
 		T tmp = dA[pivotIdx + b * (k + 1) + tid + k * bid];
 		for (int i = 0; i < b; i++)
 			if (tid - i + b <= k && i + k >= b + bid)
-				tmp -= dA[pivotIdx + tid + i * k + b] * dA[pivotIdx + (b+bid)  + i * k] * pivots[i];
+				// tmp -= dA[pivotIdx + tid + i * k + b] * dA[pivotIdx + (b+bid)  + i * k] * pivots[i];
+				tmp -= dA[pivotIdx + tid + i * k + b] * pivots[i];
 
 		dA[pivotIdx + b * (k+1) + tid + k * bid] = tmp;
 	}

@@ -995,7 +995,14 @@ blockedBandLU_critical_phase3(T *dA, int start_row, int *ks, int *offsets, int b
 	if (start_row + bid + b >= partitionEnd)
 		return;
 
+	extern __shared__ T sharedA[];
+
 	if (isSPD) {
+		if (threadIdx.x < b)
+			sharedA[threadIdx.x] = dA[pivotIdx + (b+bid) + threadIdx.x * (column_width - 1)] * dA[pivotIdx + threadIdx.x * column_width];
+
+		__syncthreads();
+
 		for (int tid = threadIdx.x; tid < k; tid += blockDim.x) {
 			if (tid < bid) continue;
 
@@ -1003,16 +1010,22 @@ blockedBandLU_critical_phase3(T *dA, int start_row, int *ks, int *offsets, int b
 
 			for (int i = 0; i < b; i++)
 				if (tid - i + b <= k && i + k >= b + bid)
-					tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * dA[pivotIdx + (b+bid) + i * (column_width - 1)] * dA[pivotIdx + i * column_width];
+					// tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * dA[pivotIdx + (b+bid) + i * (column_width - 1)] * dA[pivotIdx + i * column_width];
+					tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * sharedA[i];
 
 			dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid] = tmp;
 		}
 	} else {
+		if (threadIdx.x < b)
+			sharedA[threadIdx.x] = dA[pivotIdx + (b + bid) * (column_width - 1) + threadIdx.x];
+
+		__syncthreads();
+
 		for (int tid = threadIdx.x; tid < k; tid += blockDim.x) {
 			T tmp = dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid];
 			for (int i = 0; i < b; i++)
 				if (tid - i + b <= k && i + k >= b + bid)
-					tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * dA[pivotIdx + (b+bid) * (column_width - 1) + i];
+					tmp -= dA[pivotIdx + tid + i * (column_width - 1) + b] * sharedA[i];
 
 			dA[pivotIdx + b * column_width + tid + (column_width - 1) * bid] = tmp;
 		}
