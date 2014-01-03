@@ -109,10 +109,15 @@ public:
 	Graph(bool trackReordering = false);
 
 	double     getTimeMC64() const     {return m_timeMC64;}
+	double     getTimeMC64Pre() const     {return m_timeMC64_pre;}
+	double     getTimeMC64First() const     {return m_timeMC64_first;}
+	double     getTimeMC64Second() const     {return m_timeMC64_second;}
+	double     getTimeMC64Post() const     {return m_timeMC64_post;}
 	double     getTimeRCM() const      {return m_timeRCM;}
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
 	int        reorder(const MatrixCoo& Acoo,
+	                   bool             testMC64,
 	                   bool             doMC64,
 	                   bool             scale,
 	                   IntVector&       optReordering,
@@ -174,6 +179,10 @@ private:
 	bool          m_trackReordering;
 
 	double        m_timeMC64;
+	double        m_timeMC64_pre;
+	double        m_timeMC64_first;
+	double        m_timeMC64_second;
+	double        m_timeMC64_post;
 	double        m_timeRCM;
 	double        m_timeDropoff;
 
@@ -306,6 +315,10 @@ const double Graph<T>::LOC_INFINITY = 1e37;
 template <typename T>
 Graph<T>::Graph(bool trackReordering)
 :	m_timeMC64(0),
+	m_timeMC64_pre(0),
+	m_timeMC64_first(0),
+	m_timeMC64_second(0),
+	m_timeMC64_post(0),
 	m_timeRCM(0),
 	m_timeDropoff(0),
 	m_trackReordering(trackReordering)
@@ -323,6 +336,7 @@ Graph<T>::Graph(bool trackReordering)
 template <typename T>
 int
 Graph<T>::reorder(const MatrixCoo&  Acoo,
+                  bool              testMC64,
                   bool              doMC64,
                   bool              scale,
                   IntVector&        optReordering,
@@ -377,8 +391,9 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
 		if (k_mc64 < abs(edgeIt->m_from - edgeIt->m_to))
 			k_mc64 = abs(edgeIt->m_from - edgeIt->m_to);
-	
 
+	if (testMC64)
+		return k_mc64;
 
 	// Apply reverse Cuthill-McKee algorithm.
 	int bandwidth = RCM(m_edges, optReordering, optPerm);
@@ -868,6 +883,10 @@ Graph<T>::MC64(bool           scale,
 {
 	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
 
+	CPUTimer loc_timer;
+
+	loc_timer.Start();
+
 	if (m_trackReordering)
 		scaleMap.resize(m_nnz);
 
@@ -888,6 +907,8 @@ Graph<T>::MC64(bool           scale,
 		if (m_trackReordering)
 			cusp::blas::fill(scaleMap, (T) 1.0);
 	}
+	loc_timer.Stop();
+	m_timeMC64_post = loc_timer.getElapsed();
 
 	return true;
 }
@@ -1245,6 +1266,9 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
                              DoubleVector&  mc64RowScale,
                              DoubleVector&  mc64ColScale)
 {
+	CPUTimer loc_timer;
+
+	loc_timer.Start();
 	// Allocate space for the output vectors.
 	mc64RowPerm.resize(m_n, 0);
 	mc64RowScale.resize(m_n + 1, 0);
@@ -1261,8 +1285,15 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 	IntVector     rev_matched(m_n + 1, 0);
 
 	get_csc_matrix(row_ptr, rows, c_val, max_val_in_col);
-	init_reduced_cval(row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowPerm, rev_match_nodes, matched, rev_matched);
+	loc_timer.Stop();
+	m_timeMC64_pre = loc_timer.getElapsed();
 
+	loc_timer.Start();
+	init_reduced_cval(row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowPerm, rev_match_nodes, matched, rev_matched);
+	loc_timer.Stop();
+	m_timeMC64_first = loc_timer.getElapsed();
+
+	loc_timer.Start();
 	IntVector  irn(m_n);
 	for(int i=0; i<m_n; i++) {
 		if(rev_matched[i]) continue;
@@ -1273,23 +1304,6 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 		for (int i=0; i<m_n; i++)
 			if (!matched[i])
 				throw system_error(system_error::Matrix_singular, "Singular matrix found");
-#if 0
-		IntVector  unmatched_rows;
-		IntVector  unmatched_cols;
-
-		for (int i=0; i<m_n; i++)
-			if (!matched[i])
-				unmatched_rows.push_back(i);
-
-		for (int i=0; i<m_n; i++)
-			if (!rev_matched[i])
-				unmatched_cols.push_back(i);
-		
-		int unmatched_count = unmatched_rows.size();
-
-		for (int i=0; i<unmatched_count; i++)
-			mc64RowPerm[unmatched_rows[i]] = unmatched_cols[i];
-#endif
 	}
 
 	mc64RowScale.pop_back();
@@ -1302,6 +1316,8 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 	                  max_val_in_col.begin(),
 	                  mc64ColScale.begin(),
 	                  thrust::divides<double>());
+	loc_timer.Stop();
+	m_timeMC64_second = loc_timer.getElapsed();
 }
 
 // ----------------------------------------------------------------------------

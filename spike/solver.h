@@ -48,6 +48,7 @@ struct Options
 	int                 maxNumIterations;     /**< Maximum number of iterations; default: 100 */
 	double              tolerance;            /**< Relative tolerance; default: 1e-6 */
 
+	bool                testMC64;             /**< Indicate that we are running the test for MC64*/
 	bool                isSPD;                /**< Indicate whether the matrix is symmetric positive definitive; default: false*/
 	bool                saveMem;                /**< (For SPD matrix only) Indicate whether to use memory-saving yet slower mode or not; default: false*/
 	bool                performReorder;       /**< Perform matrix reorderings? default: true */
@@ -79,6 +80,10 @@ struct Stats
 	double      timeSolve;              /**< Time for Krylov solve. */
 
 	double      time_MC64;              /**< Time to do MC64 reordering. */
+	double      time_MC64_pre;          /**< Time to do MC64 reordering (pre-processing). */
+	double      time_MC64_first;        /**< Time to do MC64 reordering (first stage). */
+	double      time_MC64_second;       /**< Time to do MC64 reordering (second stage). */
+	double      time_MC64_post;         /**< Time to do MC64 reordering (post-processing). */
 	double      time_reorder;           /**< Time to do reordering. */
 	double      time_dropOff;           /**< Time for drop-off*/
 	double      time_cpu_assemble;      /**< Time on CPU to assemble the banded matrix and off-diagonal spikes. */
@@ -179,6 +184,7 @@ Options::Options()
 :	solverType(BiCGStab2),
 	maxNumIterations(100),
 	tolerance(1e-6),
+	testMC64(false),
 	isSPD(false),
 	saveMem(false),
 	performReorder(true),
@@ -204,6 +210,10 @@ Stats::Stats()
 :	timeSetup(0),
 	timeSolve(0),
 	time_MC64(0),
+	time_MC64_pre(0),
+	time_MC64_first(0),
+	time_MC64_second(0),
+	time_MC64_post(0),
 	time_reorder(0),
 	time_dropOff(0),
 	time_cpu_assemble(0),
@@ -238,7 +248,7 @@ template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
-	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.performMC64, opts.applyScaling,
+	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testMC64, opts.performMC64, opts.applyScaling,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
@@ -396,6 +406,10 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.numPartitions = m_precond_pointers[0]->getNumPartitions();
 	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
 	m_stats.time_MC64 = m_precond_pointers[0] -> getTimeMC64();
+	m_stats.time_MC64_pre = m_precond_pointers[0] -> getTimeMC64Pre();
+	m_stats.time_MC64_first = m_precond_pointers[0] -> getTimeMC64First();
+	m_stats.time_MC64_second = m_precond_pointers[0] -> getTimeMC64Second();
+	m_stats.time_MC64_post = m_precond_pointers[0] -> getTimeMC64Post();
 	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
 	m_stats.time_dropOff = m_precond_pointers[0]->getTimeDropOff();
 	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
@@ -423,6 +437,10 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 				m_stats.flops_LU += (double)(m_precond_pointers[i]->m_ks_row_host[j]) * (m_precond_pointers[i]->m_ks_col_host[j]);
 		}
 		m_stats.time_MC64 += m_precond_pointers[i] -> getTimeMC64();
+		m_stats.time_MC64_pre += m_precond_pointers[i] -> getTimeMC64Pre();
+		m_stats.time_MC64_first += m_precond_pointers[i] -> getTimeMC64First();
+		m_stats.time_MC64_second += m_precond_pointers[i] -> getTimeMC64Second();
+		m_stats.time_MC64_post += m_precond_pointers[i] -> getTimeMC64Post();
 		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
 		m_stats.time_dropOff += m_precond_pointers[i]->getTimeDropOff();
 		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();

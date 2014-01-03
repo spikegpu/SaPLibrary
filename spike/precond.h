@@ -60,6 +60,7 @@ public:
 			bool                isSPD,
 			bool                saveMem,
 	        bool                reorder,
+			bool                testMC64,
 	        bool                doMC64,
 	        bool                scale,
 	        double              dropOff_frac,
@@ -77,6 +78,10 @@ public:
 	Precond & operator = (const Precond &prec);
 
 	double getTimeMC64() const         {return m_time_MC64;}
+	double getTimeMC64Pre() const         {return m_time_MC64_pre;}
+	double getTimeMC64First() const         {return m_time_MC64_first;}
+	double getTimeMC64Second() const         {return m_time_MC64_second;}
+	double getTimeMC64Post() const         {return m_time_MC64_post;}
 	double getTimeReorder() const         {return m_time_reorder;}
 	double getTimeDropOff() const         {return m_time_dropOff;}
 	double getTimeCPUAssemble() const     {return m_time_cpu_assemble;}
@@ -114,6 +119,7 @@ private:
 	bool                 m_isSPD;
 	bool                 m_saveMem; 
 	bool                 m_reorder;
+	bool                 m_testMC64;
 	bool                 m_doMC64;
 	bool                 m_scale;
 	PrecValueType        m_dropOff_frac;
@@ -181,6 +187,10 @@ private:
 
 	GPUTimer             m_timer;
 	double               m_time_MC64;             // CPU time for MC64 reordering
+	double               m_time_MC64_pre;         // CPU time for MC64 reordering (pre-processing)
+	double               m_time_MC64_first;       // CPU time for MC64 reordering (first stage)
+	double               m_time_MC64_second;      // CPU time for MC64 reordering (second stage)
+	double               m_time_MC64_post;        // CPU time for MC64 reordering (post-processing)
 	double               m_time_reorder;          // CPU time for matrix reordering
 	double               m_time_dropOff;          // CPU time for drop off
 	double               m_time_cpu_assemble;     // Time for acquiring the banded matrix and off-diagonal matrics on CPU
@@ -289,6 +299,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 		                     bool                isSPD,
 							 bool                saveMem,
                              bool                reorder,
+							 bool                testMC64,
                              bool                doMC64,
                              bool                scale,
                              double              dropOff_frac,
@@ -302,6 +313,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_isSPD(isSPD),
 	m_saveMem(saveMem),
 	m_reorder(reorder),
+	m_testMC64(testMC64),
 	m_doMC64(doMC64),
 	m_scale(scale),
 	m_dropOff_frac((PrecValueType)dropOff_frac),
@@ -316,6 +328,10 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_MC64(0),
+	m_time_MC64_pre(0),
+	m_time_MC64_first(0),
+	m_time_MC64_second(0),
+	m_time_MC64_post(0),
 	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -337,6 +353,7 @@ Precond<PrecVector>::Precond()
 :	m_isSPD(false),
 	m_saveMem(false),
 	m_reorder(false),
+	m_testMC64(false),
 	m_doMC64(false),
 	m_scale(false),
 	m_k_reorder(0),
@@ -345,6 +362,10 @@ Precond<PrecVector>::Precond()
 	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
 	m_time_MC64(0),
+	m_time_MC64_pre(0),
+	m_time_MC64_first(0),
+	m_time_MC64_second(0),
+	m_time_MC64_post(0),
 	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -368,6 +389,10 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_MC64(0),
+	m_time_MC64_pre(0),
+	m_time_MC64_first(0),
+	m_time_MC64_second(0),
+	m_time_MC64_post(0),
 	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -384,6 +409,7 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_isSPD             = prec.m_isSPD;
 	m_saveMem           = prec.m_saveMem;
 	m_reorder           = prec.m_reorder;
+	m_testMC64          = prec.m_testMC64;
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
@@ -404,6 +430,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_isSPD             = prec.m_isSPD;
 	m_saveMem           = prec.m_saveMem;
 	m_reorder           = prec.m_reorder;
+	m_testMC64          = prec.m_testMC64;
 	m_doMC64            = prec.m_doMC64;
 	m_scale             = prec.m_scale;
 	m_dropOff_frac      = prec.m_dropOff_frac;
@@ -606,6 +633,10 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		transformToBandedMatrix(A);
 	else
 		convertToBandedMatrix(A);
+
+	// For MC64 test only, directly exit
+	if (m_testMC64)
+		return;
 
 	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
 	if (m_k == 0)
@@ -950,11 +981,18 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_doMC64, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
-	m_time_MC64 = graph.getTimeMC64();
+	m_time_MC64        = graph.getTimeMC64();
+	m_time_MC64_pre    = graph.getTimeMC64Pre();
+	m_time_MC64_first  = graph.getTimeMC64First();
+	m_time_MC64_second = graph.getTimeMC64Second();
+	m_time_MC64_post   = graph.getTimeMC64Post();
 	m_time_reorder += reorder_timer.getElapsed();
+
+	if (m_testMC64)
+		return;
 	
 	int dropped = 0;
 
