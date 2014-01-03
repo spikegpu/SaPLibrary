@@ -1892,15 +1892,9 @@ Precond<PrecVector>::partBandedLU_var()
 			}
 		}
 	} else if (tmp_k > 27){
-		if (m_safeFactorization)
-			device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder);
-		else
-			device::var::bandLU_g32<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+		device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder, false);
 	} else {
-		if (m_safeFactorization)
-			device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder);
-		else
-			device::var::bandLU<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+		device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder, false);
 	}
 
 
@@ -1982,15 +1976,9 @@ Precond<PrecVector>::partBlockedBandedLU_var()
 			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, false);
 		}
 	} else if (tmp_k > 27){
-		if (m_safeFactorization)
-			device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder);
-		else
-			device::var::bandLU_g32<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+		device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder, false);
 	} else {
-		if (m_safeFactorization)
-			device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder);
-		else
-			device::var::bandLU<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k>>>(dB, p_ks, p_BOffsets, partSize, remainder);
+		device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder, false);
 	}
 
 
@@ -2034,7 +2022,7 @@ Precond<PrecVector>::partBlockedBandedCholesky_var()
 	int partSize  = m_n / m_numPartitions;
 	int remainder = m_n % m_numPartitions;
 
-	// if(tmp_k >= CRITICAL_THRESHOLD) 
+	if(tmp_k >= CRITICAL_THRESHOLD) 
 	{
 		int final_partition_size = partSize + 1;
 		int threadsNum = adjustNumThreads(cusp::blas::nrm1(m_ks) / m_numPartitions);
@@ -2058,7 +2046,11 @@ Precond<PrecVector>::partBlockedBandedCholesky_var()
 
 			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, true);
 		}
-	}
+	} else if (tmp_k > 27)
+		device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder, true);
+	else
+		device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder, true);
+	
 }
 
 /**

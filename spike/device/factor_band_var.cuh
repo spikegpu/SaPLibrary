@@ -25,150 +25,147 @@ namespace var {
 
 template <typename T>
 __global__ void
-bandLU(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
+bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num, bool isSPD)
 {
 	// First kernel launch
 	int k = ks[blockIdx.x];
-	if (threadIdx.x >= k*k)
+	if (threadIdx.x >= k*k) return;
+	int r = threadIdx.x % k + 1, c = threadIdx.x / k+1;
+	if (isSPD && r < c)
 		return;
 
-	int r = threadIdx.x % k + 1, c = threadIdx.x / k+1;
-	int offset = offsets[blockIdx.x];
-	int last_row = partition_size;
-	if(blockIdx.x < rest_num) {
-		last_row++;
+	int column_width = k + 1;
+	int delta = 0;
+	if (!isSPD) {
+		column_width += k;
+		delta = k;
 	}
+
+	int offset = offsets[blockIdx.x] + delta;
+	int last_row = partition_size;
+	if(blockIdx.x < rest_num)
+		last_row = partition_size+1;
+
+	__shared__ T sharedA;
+
+	if (threadIdx.x == 0) {
+		sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+	}
+	__syncthreads();
 
 	if(c == 1)
-		dA[r+k+offset] /= dA[k+offset];
+		dA[r+offset] /= sharedA;
 	__syncthreads();
-	dA[c*(k<<1) + r+k+offset] -= dA[r+k+offset] * dA[c*(k<<1)+k+offset];
+
+	if (isSPD) {
+		dA[c*k + r+offset] -= dA[r+offset] * dA[c+offset] * sharedA;
+	} else
+		dA[c*(k<<1) + r+offset] -= dA[r+offset] * dA[c*(k<<1)+offset];
 	__syncthreads();
 
 	// Second kernel launch
 	for(int i=1; i<last_row-k; i++) {
-		offset += (k<<1)+1;
-		if(c == 1) {
-			dA[r+k+offset] /= dA[k+offset];
-		}
+		offset += column_width;
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+
 		__syncthreads();
-		dA[c*(k<<1) + r+k+offset] -= dA[r+k+offset] * dA[c*(k<<1)+k+offset];
+		if(c == 1)
+			dA[r+offset] /= sharedA;
+
+		__syncthreads();
+
+		if (isSPD)
+			dA[c*k + r+offset] -= dA[r+offset] * dA[c+offset] * sharedA;
+		else 
+			dA[c*(k<<1) + r+offset] -= dA[r+offset] * dA[c*(k<<1)+offset];
 		__syncthreads();
 	}
 
 	for(int i=k; i>1; i--) {
 		if(r >= i || c >= i) return ;
-		offset += (k<<1) + 1;
-		if(c == 1) {
-			dA[r+k+offset] /= dA[k+offset];
-		}
+		offset += column_width;
+		if (threadIdx.x == 0) 
+			sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		
 		__syncthreads();
-		dA[c*(k<<1) + r+k+offset] -= dA[r+k+offset] * dA[c*(k<<1)+k+offset];
+		if(c == 1)
+			dA[r+offset] /= sharedA;
+		
+		__syncthreads();
+		if (isSPD)
+			dA[c*k + r+offset] -= dA[r+offset] * dA[c+offset] * sharedA;
+		else
+			dA[c*(k<<1) + r+offset] -= dA[r+offset] * dA[c*(k<<1)+offset];
 		__syncthreads();
 	}
 }
 
 template <typename T>
 __global__ void
-bandLU_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
+bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num, bool isSPD)
 {
 	// First kernel launch
 	int k = ks[blockIdx.x];
 	if (threadIdx.x >= k*k) return;
-	int r = threadIdx.x % k + 1, c = threadIdx.x / k+1;
-	int offset = offsets[blockIdx.x];
-	int last_row = partition_size;
-	if(blockIdx.x < rest_num) {
-		last_row = partition_size++;
+	int column_width = k + 1;
+	int delta = 0;
+	if (!isSPD) {
+		column_width += k;
+		delta = k;
 	}
-
-	__shared__ T sharedA;
-
-	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
-	}
-	__syncthreads();
-
-	if(c == 1) {
-		dA[r+k+offset] /= sharedA;
-	}
-	__syncthreads();
-	dA[c*(k<<1) + r+k+offset] -= dA[r+k+offset] * dA[c*(k<<1)+k+offset];
-	__syncthreads();
-
-	// Second kernel launch
-	for(int i=1; i<last_row-k; i++) {
-		offset += (k<<1)+1;
-		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
-		}
-		__syncthreads();
-		if(c == 1) {
-			dA[r+k+offset] /= sharedA;
-		}
-		__syncthreads();
-		dA[c*(k<<1) + r+k+offset] -= dA[r+k+offset] * dA[c*(k<<1)+k+offset];
-		__syncthreads();
-	}
-
-	for(int i=k; i>1; i--) {
-		if(r >= i || c >= i) return ;
-		offset += (k<<1) + 1;
-		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
-		}
-		__syncthreads();
-		if(c == 1) {
-			dA[r+k+offset] /= sharedA;
-		}
-		__syncthreads();
-		dA[c*(k<<1) + r+k+offset] -= dA[r+k+offset] * dA[c*(k<<1)+k+offset];
-		__syncthreads();
-	}
-}
-
-template <typename T>
-__global__ void
-bandLU_g32(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
-{
-	// First kernel launch
-	int k = ks[blockIdx.x];
-	if (threadIdx.x >= k*k) return;
-	int two_k = (k<<1);
-	int r = threadIdx.x % k + 1, c = threadIdx.x / k+1;
-	int offset = offsets[blockIdx.x];
+	int r, c;
+	int offset = offsets[blockIdx.x] + delta;
 
 	int last_row = partition_size;
 	if(blockIdx.x < rest_num)
 		last_row++;
 
-	int k_square = k*k;
-	int tid = threadIdx.x;
+	int k_square = k * k;
 
-	for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
-		r = ttid + 1;
-		dA[r+k+offset] /= dA[k+offset];
-	}
+	__shared__ T sharedA;
+
+	if (threadIdx.x == 0)
+		sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+	
 	__syncthreads();
-	for(int ttid = tid; ttid < k_square; ttid+=blockDim.x) {
+
+	for(int ttid = threadIdx.x; ttid < k; ttid+=blockDim.x)
+		dA[ttid + 1 +offset] /= sharedA;
+	
+	__syncthreads();
+
+	for(int ttid = threadIdx.x; ttid < k_square; ttid+=blockDim.x) {
 		r = ttid % k + 1;
 		c = ttid / k + 1;
-		dA[c*two_k + r+k+offset] -= dA[r+k+offset] * dA[c*two_k+k+offset];
+		if (isSPD) {
+			if (r >= c)
+				dA[c*k + r+offset] -= dA[r+offset] * dA[c+offset] * sharedA;
+		}
+		else
+			dA[c*(k << 1) + r+offset] -= dA[r+offset] * dA[c*(k << 1)+offset];
 	}
 	__syncthreads();
 
 	// Second kernel launch
 	for(int i=1; i<last_row-k; i++) {
-		offset += two_k+1;
-		for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
-			r = ttid + 1;
-			dA[r+k+offset] /= dA[k+offset];
-		}
+		offset += column_width;
+		if (threadIdx.x == 0) 
+			sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		
 		__syncthreads();
-		for(int ttid = tid; ttid < k_square; ttid+=blockDim.x) {
+		for(int ttid = threadIdx.x; ttid < k; ttid+=blockDim.x)
+			dA[ttid + 1 + offset] /= sharedA;
+		
+		__syncthreads();
+		for(int ttid = threadIdx.x; ttid < k_square; ttid+=blockDim.x) {
 			r = ttid % k + 1;
 			c = ttid / k + 1;
-			dA[c*two_k + r+k+offset] -= dA[r+k+offset] * dA[c*two_k+k+offset];
+			if (isSPD) {
+				if (r >= c)
+					dA[c * k + r + offset] -= dA[r + offset] * dA[c + offset] * sharedA;
+			} else 
+				dA[c*(k << 1)+ r+offset] -= dA[r+offset] * dA[c*(k << 1)+offset];
 		}
 		__syncthreads();
 	}
@@ -176,97 +173,25 @@ bandLU_g32(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
 	for(int i=k; i>1; i--) {
 		int i_minus_1_square = (i-1)*(i-1);
 		int i_minus_1 = i-1;
-		if(tid >= i_minus_1_square) return;
-		offset += two_k + 1;
-		for(int ttid = tid; ttid < i_minus_1; ttid+=blockDim.x) {
-			r = ttid + 1;
-			dA[r+k+offset] /= dA[k+offset];
-		}
+		if(threadIdx.x >= i_minus_1_square) return;
+		offset += column_width;
+		if (threadIdx.x == 0) 
+			sharedA = boostValue(dA[offset], dA[offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		
 		__syncthreads();
-		for(int ttid = tid; ttid < i_minus_1_square; ttid+=blockDim.x) {
+		for(int ttid = threadIdx.x; ttid < i_minus_1; ttid+=blockDim.x)
+			dA[ttid + 1 +offset] /= sharedA;
+		__syncthreads();
+
+		for(int ttid = threadIdx.x; ttid < i_minus_1_square; ttid+=blockDim.x) {
 			r = ttid % i_minus_1 + 1;
 			c = ttid / i_minus_1 + 1;
-			dA[c*two_k + r+k+offset] -= dA[r+k+offset] * dA[c*two_k+k+offset];
-		}
-		__syncthreads();
-	}
-}
-
-template <typename T>
-__global__ void
-bandLU_g32_safe(T *dA, int *ks, int *offsets, int partition_size, int rest_num)
-{
-	// First kernel launch
-	int k = ks[blockIdx.x];
-	if (threadIdx.x >= k*k) return;
-	int two_k = (k<<1);
-	int r = threadIdx.x % k + 1, c = threadIdx.x / k+1;
-	int offset = offsets[blockIdx.x];
-
-	int last_row = partition_size;
-	if(blockIdx.x < rest_num)
-		last_row++;
-
-	int k_square = k*k;
-	int tid = threadIdx.x;
-
-	__shared__ T sharedA;
-
-	if (threadIdx.x == 0) {
-		sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
-	}
-	__syncthreads();
-
-	for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
-		r = ttid + 1;
-		dA[r+k+offset] /= sharedA;
-	}
-	__syncthreads();
-	for(int ttid = tid; ttid < k_square; ttid+=blockDim.x) {
-		r = ttid % k + 1;
-		c = ttid / k + 1;
-		dA[c*two_k + r+k+offset] -= dA[r+k+offset] * dA[c*two_k+k+offset];
-	}
-	__syncthreads();
-
-	// Second kernel launch
-	for(int i=1; i<last_row-k; i++) {
-		offset += two_k+1;
-		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
-		}
-		__syncthreads();
-		for(int ttid = tid; ttid < k; ttid+=blockDim.x) {
-			r = ttid + 1;
-			dA[r+k+offset] /= sharedA;
-		}
-		__syncthreads();
-		for(int ttid = tid; ttid < k_square; ttid+=blockDim.x) {
-			r = ttid % k + 1;
-			c = ttid / k + 1;
-			dA[c*two_k + r+k+offset] -= dA[r+k+offset] * dA[c*two_k+k+offset];
-		}
-		__syncthreads();
-	}
-
-	for(int i=k; i>1; i--) {
-		int i_minus_1_square = (i-1)*(i-1);
-		int i_minus_1 = i-1;
-		if(tid >= i_minus_1_square) return;
-		offset += two_k + 1;
-		if (threadIdx.x == 0) {
-			sharedA = boostValue(dA[k+offset], dA[k+offset], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
-		}
-		__syncthreads();
-		for(int ttid = tid; ttid < i_minus_1; ttid+=blockDim.x) {
-			r = ttid + 1;
-			dA[r+k+offset] /= sharedA;
-		}
-		__syncthreads();
-		for(int ttid = tid; ttid < i_minus_1_square; ttid+=blockDim.x) {
-			r = ttid % i_minus_1 + 1;
-			c = ttid / i_minus_1 + 1;
-			dA[c*two_k + r+k+offset] -= dA[r+k+offset] * dA[c*two_k+k+offset];
+			if (isSPD) {
+				if (r >= c)
+					dA[c * k + r + offset] -= dA[r + offset] * dA[c + offset] * sharedA;
+			}
+			else
+				dA[c*(k << 1)+ r+offset] -= dA[r+offset] * dA[c*(k << 1)+offset];
 		}
 		__syncthreads();
 	}
