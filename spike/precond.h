@@ -1039,7 +1039,10 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 		transfer_timer.Start();
 		PrecMatrixCoo Acoo = Acooh;
-		m_B.resize((size_t)(2 * m_k + 1) * m_n);
+		if (m_saveMem)
+			m_B.resize((size_t)(m_k + 1) * m_n);
+		else
+			m_B.resize((size_t)(2 * m_k + 1) * m_n);
 
 		transfer_timer.Stop();
 		m_time_transfer += transfer_timer.getElapsed();
@@ -1402,9 +1405,9 @@ Precond<PrecVector>::partBlockedFullLU_var()
 		threads = two_k - BLOCK_FACTOR - i;
 
 		if (threads > 1024)
-			device::var::blockedFullLU_phase3_general<PrecValueType><<<grids, 512>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
+			device::var::blockedFullLU_phase3_general<PrecValueType><<<grids, 512, sizeof(PrecValueType) * BLOCK_FACTOR>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
 		else
-			device::var::blockedFullLU_phase3_general<PrecValueType><<<grids, threads>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
+			device::var::blockedFullLU_phase3_general<PrecValueType><<<grids, threads, sizeof(PrecValueType) * BLOCK_FACTOR>>>(d_R, p_spike_ks, p_ROffsets, i, BLOCK_FACTOR);
 	}
 
 	{

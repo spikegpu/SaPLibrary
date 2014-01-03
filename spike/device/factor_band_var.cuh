@@ -1070,11 +1070,20 @@ blockedFullLU_phase3_general(T *dA, int *ks, int *offsets, int cur_row, int b) {
 
 	int bid = blockIdx.x + b;
 
+	extern __shared__ T sharedA[];
+
+	if (threadIdx.x < b) {
+		for (int tid = threadIdx.x; tid < b; tid += blockDim.x)
+			sharedA[tid] = dA[offset + bid * partition_size + tid];
+	}
+	__syncthreads();
+
 	for (int tid = threadIdx.x + b;  tid < partition_size - cur_row; tid += blockDim.x) {
 		T tmp = dA[offset + bid * partition_size + tid];
 
 		for (int i = 0; i < b; i++)
-			tmp -= dA[offset + i * partition_size + tid] * dA[offset + bid * partition_size + i];
+			// tmp -= dA[offset + i * partition_size + tid] * dA[offset + bid * partition_size + i];
+			tmp -= dA[offset + i * partition_size + tid] * sharedA[i];
 
 		dA[offset + bid * partition_size + tid] = tmp;
 	}
