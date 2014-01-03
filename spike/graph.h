@@ -1334,13 +1334,9 @@ Graph<T>::get_csc_matrix(IntVector&     row_ptr,
                          DoubleVector&  c_val,
                          DoubleVector&  max_val_in_col)
 {
-	BoolVector row_visited(m_n, false);
-
 	cusp::blas::fill(c_val, LOC_INFINITY);
-	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
+	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
 		row_ptr[edgeIt->m_to]++;
-		row_visited[edgeIt->m_from] = true;
-	}
 
 	thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
