@@ -1217,7 +1217,7 @@ blockedBandLU_critical_phase2(T *dA, int start_row, int k, int b)
 
 template <typename T>
 __global__ void
-blockedBandLU_critical_phase3(T *dA, int start_row, int k, int cur_last, int b)
+blockedBandLU_critical_phase3(T *dA, int start_row, int k, int cur_last, int row_max, int b)
 {
 	int pivotIdx = start_row * ((k<<1) + 1) + k;
 	int bid = blockIdx.x;
@@ -1232,7 +1232,7 @@ blockedBandLU_critical_phase3(T *dA, int start_row, int k, int cur_last, int b)
 		T tmp = dA[pivotIdx + b * ((k<<1)+1) + tid + (k<<1) * bid];
 
 		for (int i = 0; i < b; i++)
-			if (tid - i + b <= k && i + k >= b + bid)
+			if (tid - i + b <= k && i + row_max >= b + bid)
 				//tmp -= dA[pivotIdx + tid + i * (k << 1) + b] * dA[pivotIdx + (b+bid) * (k << 1) + i];
 				tmp -= dA[pivotIdx + tid + i * (k << 1) + b] * sharedA[i];
 

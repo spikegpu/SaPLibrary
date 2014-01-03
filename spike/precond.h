@@ -1595,10 +1595,12 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 
 
 			threadsNum = col_max;
+			int row_max = thrust::reduce(m_ks_row_host.begin() + st_row, m_ks_row_host.begin() + last_row, 0, thrust::maximum<int>());
+
 			if (threadsNum > 1024)
-				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, 512, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
+				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, 512, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, row_max, BLOCK_FACTOR);
 			else
-				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, threadsNum, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, BLOCK_FACTOR);
+				device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, threadsNum, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, row_max, BLOCK_FACTOR);
 
 		}
 	} else if (m_k > 27) {

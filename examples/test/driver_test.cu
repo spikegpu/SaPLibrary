@@ -216,7 +216,6 @@ int main(int argc, char** argv)
 		fileMat = fileMat.substr(i);
 
 		size_t j = fileMat.rfind(".mtx");
-		fprintf(stderr, "%u\n", j);
 		if (j != std::string::npos)
 			outputItem( fileMat.substr(0, j));
 		else
