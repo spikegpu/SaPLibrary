@@ -10,6 +10,8 @@ ABACUS_shell_ud.mtx
 552.217
 af23560.mtx
 636.229
+ancfBigDan.mtx
+1272.38
 Andrews.mtx
 100114
 apache1.mtx
@@ -70,8 +72,6 @@ matrix_9.mtx
 18302.1
 minsurfo.mtx
 226.388
-new-lhs.mtx
-1272.38
 oilpan.mtx
 4463.12
 olesnik0.mtx

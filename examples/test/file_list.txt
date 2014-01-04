@@ -14,6 +14,8 @@ ABACUS_shell_ud.mtx
 1
 af23560.mtx
 8
+ancfBigDan.mtx
+16
 Andrews.mtx
 1 --spd
 apache1.mtx
@@ -126,8 +128,6 @@ minsurfo.mtx
 28
 ncvxbqp1.mtx
 1
-new-lhs.mtx
-16
 oilpan.mtx
 1 --spd
 olesnik0.mtx

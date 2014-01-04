@@ -10,6 +10,8 @@ ABACUS_shell_ud.mtx
 324.838
 af23560.mtx
 660.778
+ancfBigDan.mtx
+1630.44
 apache1.mtx
 2639.99
 bayer01.mtx
@@ -64,8 +66,6 @@ minsurfo.mtx
 261.491
 ncvxbqp1.mtx
 4246.93
-new-lhs.mtx
-1630.44
 oilpan.mtx
 5052.18
 olesnik0.mtx
