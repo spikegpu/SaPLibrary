@@ -478,10 +478,10 @@ int main(int argc, char** argv)
 		outputItem( stats.time_reorder - stats.time_MC64);
 		// Time for drop off
 		outputItem( stats.time_dropOff);
-		// Time to assemble banded and off-diagonal matrices on CPU
-		outputItem( stats.time_cpu_assemble);
 		// Time for data transferring
 		outputItem( stats.time_transfer);
+		// Time to assemble banded and off-diagonal matrices on CPU
+		outputItem( stats.time_cpu_assemble);
 
 		// Number of partitions
 		outputItem( numPart);
