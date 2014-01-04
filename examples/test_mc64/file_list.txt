@@ -15,7 +15,7 @@ ABACUS_shell_ud.mtx
 af23560.mtx
 8
 ancfBigDan.mtx
-16
+10
 Andrews.mtx
 1 --spd
 apache1.mtx
