@@ -740,6 +740,8 @@ GetProblemSpecs(int             argc,
 						opts.precondType = spike::Spike;
 					else if(precond == "1" || precond == "BLOCK")
 						opts.precondType = spike::Block;
+					else if(precond == "2" || precond == "NONE")
+						opts.precondType = spike::None;
 					else
 						return false;
 				}

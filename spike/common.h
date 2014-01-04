@@ -65,7 +65,8 @@ enum FactorizationMethod {
 
 enum PreconditionerType {
 	Spike,
-	Block
+	Block,
+	None
 };
 
 inline

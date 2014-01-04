@@ -325,6 +325,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_trackReordering(trackReordering),
 	m_k_reorder(0),
 	m_k_mc64(0),
+	m_k(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_MC64(0),
@@ -358,6 +359,7 @@ Precond<PrecVector>::Precond()
 	m_scale(false),
 	m_k_reorder(0),
 	m_k_mc64(0),
+	m_k(0),
 	m_dropOff_actual(0),
 	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
@@ -386,6 +388,7 @@ template <typename PrecVector>
 Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 :	m_k_reorder(0),
 	m_k_mc64(0),
+	m_k(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_MC64(0),
@@ -441,6 +444,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_variableBandwidth = prec.m_variableBandwidth;
 	m_trackReordering   = prec.m_trackReordering;
 
+	m_k                 = prec.m_k;
 	m_ks_host           = prec.m_ks_host;
 	m_offDiagWidths_left_host = prec.m_offDiagWidths_left_host;
 	m_offDiagWidths_right_host = prec.m_offDiagWidths_right_host;
@@ -627,6 +631,9 @@ Precond<PrecVector>::setup(const Matrix&  A)
 {
 	m_n = A.num_rows;
 
+	if (m_precondType == None)
+		return;
+
 	// Form the banded matrix based on the specified matrix, either through
 	// transformation (reordering and drop-off) or straight conversion.
 	if (m_reorder)
@@ -754,6 +761,11 @@ void
 Precond<PrecVector>::solve(PrecVector&  v,
                            PrecVector&  z)
 {
+	if (m_precondType == None) {
+		cusp::blas::copy(v, z);
+		return;
+	}
+
 	if (m_reorder) {
 		leftTrans(v, z);
 		static PrecVector buffer;
