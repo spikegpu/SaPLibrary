@@ -126,7 +126,7 @@ minsurfo.mtx
 28
 ncvxbqp1.mtx
 1
-new_lhs.mtx
+new-lhs.mtx
 16
 oilpan.mtx
 1 --spd
