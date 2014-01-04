@@ -1,5 +1,5 @@
 2cubes_sphere.mtx
-22806.1
+22800.5
 2D_54019_highK.mtx
 3997.54
 31770-lhs.mtx
@@ -35,7 +35,7 @@ dixmaanl.mtx
 Dubcova2.mtx
 1584.59
 ecl32.mtx
-4620.23
+4615.43
 epb3.mtx
 1607.41
 F2.mtx
@@ -70,6 +70,8 @@ matrix_9.mtx
 18302.1
 minsurfo.mtx
 226.388
+new-lhs.mtx
+1272.38
 oilpan.mtx
 4463.12
 olesnik0.mtx
@@ -81,7 +83,7 @@ qa8fm.mtx
 rail_79841.mtx
 1487.19
 rajat26.mtx
-35293.9
+35247.7
 rma10.mtx
 4236.68
 shallow_water1.mtx
@@ -97,8 +99,8 @@ thermal1.mtx
 vanbody.mtx
 3057.72
 venkat25.mtx
-4991.53
+4944.9
 vibrobox.mtx
-4338.02
+4329.68
 xenon1.mtx
 5273.98
