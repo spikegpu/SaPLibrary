@@ -188,11 +188,12 @@ private:
 
 	BoolVector    m_exists;
 
-	bool       MC64(bool           scale,
-	                IntVector&     mc64RowPerm,
-	                DoubleVector&  mc64RowScale,
-	                DoubleVector&  mc64ColScale,
-	                MatrixMapF&    scaleMap);
+	bool       MC64(const MatrixCoo& Acoo,
+			        bool             scale,
+	                IntVector&       mc64RowPerm,
+	                DoubleVector&    mc64RowScale,
+	                DoubleVector&    mc64ColScale,
+	                MatrixMapF&      scaleMap);
 
 	int        RCM(EdgeVector&  edges,
 	               IntVector&   optReordering,
@@ -213,9 +214,10 @@ private:
 	static const double LOC_INFINITY;
 
 	// Functions used in MC64
-	void       find_minimum_match(IntVector&     mc64RowPerm,
-	                              DoubleVector&  mc64RowScale,
-	                              DoubleVector&  mc64ColScale);
+	void       find_minimum_match(const MatrixCoo& Acoo,
+								  IntVector&       mc64RowPerm,
+	                              DoubleVector&    mc64RowScale,
+	                              DoubleVector&    mc64ColScale);
 	void       init_reduced_cval(IntVector&     row_ptr,
 	                             IntVector&     rows,
 	                             DoubleVector&  c_val, 
@@ -233,10 +235,11 @@ private:
 	                                  DoubleVector& v_val,
 	                                  DoubleVector& c_val,
 	                                  IntVector&    irn);
-	void       get_csc_matrix(IntVector&     row_ptr,
-	                          IntVector&     rows, 
-	                          DoubleVector&  c_val,
-	                          DoubleVector&  max_val_in_col);
+	void       get_csc_matrix(const MatrixCoo& Acoo,
+							  IntVector&       row_ptr,
+	                          IntVector&       rows, 
+	                          DoubleVector&    c_val,
+	                          DoubleVector&    max_val_in_col);
 
 	// Functor objects.
 	struct CompareEdgeLength
@@ -370,7 +373,7 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 		loc_timer.Start();
 		DoubleVector  mc64RowScaleD;
 		DoubleVector  mc64ColScaleD;
-		MC64(scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+		MC64(Acoo, scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
 		mc64RowScale = mc64RowScaleD;
 		mc64ColScale = mc64ColScaleD;
 		loc_timer.Stop();
@@ -875,13 +878,14 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::MC64(bool           scale,
-               IntVector&     mc64RowPerm,
-               DoubleVector&  mc64RowScale,
-               DoubleVector&  mc64ColScale,
-               MatrixMapF&    scaleMap)
+Graph<T>::MC64(const MatrixCoo& Acoo,
+			   bool             scale,
+               IntVector&       mc64RowPerm,
+               DoubleVector&    mc64RowScale,
+               DoubleVector&    mc64ColScale,
+               MatrixMapF&      scaleMap)
 {
-	find_minimum_match(mc64RowPerm, mc64RowScale, mc64ColScale);
+	find_minimum_match(Acoo, mc64RowPerm, mc64RowScale, mc64ColScale);
 
 	CPUTimer loc_timer;
 
@@ -1262,9 +1266,10 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
-                             DoubleVector&  mc64RowScale,
-                             DoubleVector&  mc64ColScale)
+Graph<T>::find_minimum_match(const MatrixCoo& Acoo,
+							 IntVector&       mc64RowPerm,
+                             DoubleVector&    mc64RowScale,
+                             DoubleVector&    mc64ColScale)
 {
 	CPUTimer loc_timer;
 
@@ -1284,7 +1289,7 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 	IntVector     matched(m_n + 1, 0);
 	IntVector     rev_matched(m_n + 1, 0);
 
-	get_csc_matrix(row_ptr, rows, c_val, max_val_in_col);
+	get_csc_matrix(Acoo, row_ptr, rows, c_val, max_val_in_col);
 	loc_timer.Stop();
 	m_timeMC64_pre = loc_timer.getElapsed();
 
@@ -1329,29 +1334,34 @@ Graph<T>::find_minimum_match(IntVector&     mc64RowPerm,
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-Graph<T>::get_csc_matrix(IntVector&     row_ptr,
-                         IntVector&     rows,
-                         DoubleVector&  c_val,
-                         DoubleVector&  max_val_in_col)
+Graph<T>::get_csc_matrix(const MatrixCoo& Acoo,
+						 IntVector&       row_ptr,
+                         IntVector&       rows,
+                         DoubleVector&    c_val,
+                         DoubleVector&    max_val_in_col)
 {
+	int nnz = Acoo.num_entries;
+
 	cusp::blas::fill(c_val, LOC_INFINITY);
-	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
-		row_ptr[edgeIt->m_to]++;
+
+	for (int i = 0; i < nnz; i++)
+		row_ptr[Acoo.column_indices[i]]++;
 
 	thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
-	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++) {
-		int from = edgeIt->m_from;
-		int to = edgeIt->m_to;
-		double tmp_val = fabs(edgeIt->m_val);
+	for (int i = 0; i < nnz; i++) {
+		int from = Acoo.row_indices[i];
+		int to = Acoo.column_indices[i];
+		double tmp_val = fabs(Acoo.values[i]);
 		rows[row_ptr[to]++] = from;
+
 		if (max_val_in_col[to] < tmp_val)
 			max_val_in_col[to] = tmp_val;
 	}
 
-	for (EdgeRevIterator edgeIt = m_edges.rbegin(); edgeIt != m_edges.rend(); edgeIt++) {
-		int to = edgeIt -> m_to;
-		c_val[--row_ptr[to]] = log(max_val_in_col[to] / fabs(edgeIt -> m_val));
+	for (int i = nnz-1; i >= 0; i--) {
+		int to = Acoo.column_indices[i];
+		c_val[--row_ptr[to]] = log(max_val_in_col[to] / fabs(Acoo.values[i]));
 	}
 }
 
