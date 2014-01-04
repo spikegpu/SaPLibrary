@@ -21,6 +21,7 @@
 
 #include <spike/common.h>
 #include <spike/timer.h>
+#include <spike/device/data_transfer.cuh>
 
 #include <spike/exception.h>
 
@@ -94,6 +95,8 @@ public:
 	typedef typename cusp::array1d<T, cusp::host_memory>         Vector;
 	typedef typename cusp::array1d<double, cusp::host_memory>    DoubleVector;
 	typedef typename cusp::array1d<int, cusp::host_memory>       IntVector;
+	typedef typename cusp::array1d<int, cusp::device_memory>     IntVectorD;
+	typedef typename cusp::array1d<double, cusp::device_memory>  DoubleVectorD;
 	typedef typename cusp::array1d<bool, cusp::host_memory>      BoolVector;
 	typedef Vector                                               MatrixMapF;
 	typedef IntVector                                            MatrixMap;
@@ -1347,21 +1350,52 @@ Graph<T>::get_csc_matrix(const MatrixCoo& Acoo,
 	for (int i = 0; i < nnz; i++)
 		row_ptr[Acoo.column_indices[i]]++;
 
-	thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
+	const int GPU_ASSEMBLE_THRESHOLD = 100000;
+	if (nnz < GPU_ASSEMBLE_THRESHOLD) {
+		thrust::exclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
+		for (int i = 0; i < nnz; i++) {
+			int from = Acoo.row_indices[i];
+			int to = Acoo.column_indices[i];
+			double tmp_val = fabs(Acoo.values[i]);
+			rows[row_ptr[to]++] = from;
 
-	for (int i = 0; i < nnz; i++) {
-		int from = Acoo.row_indices[i];
-		int to = Acoo.column_indices[i];
-		double tmp_val = fabs(Acoo.values[i]);
-		rows[row_ptr[to]++] = from;
+			if (max_val_in_col[to] < tmp_val)
+				max_val_in_col[to] = tmp_val;
+		}
 
-		if (max_val_in_col[to] < tmp_val)
-			max_val_in_col[to] = tmp_val;
-	}
+		for (int i = nnz-1; i >= 0; i--) {
+			int to = Acoo.column_indices[i];
+			c_val[--row_ptr[to]] = log(max_val_in_col[to] / fabs(Acoo.values[i]));
+		}
+	} else {
+		thrust::inclusive_scan(row_ptr.begin(), row_ptr.end(), row_ptr.begin());
 
-	for (int i = nnz-1; i >= 0; i--) {
-		int to = Acoo.column_indices[i];
-		c_val[--row_ptr[to]] = log(max_val_in_col[to] / fabs(Acoo.values[i]));
+		for (int i = nnz - 1; i >= 0; i--) {
+			int from = Acoo.row_indices[i];
+			int to = Acoo.column_indices[i];
+			double tmp_val = fabs(Acoo.values[i]);
+			rows[row_ptr[to]-1] = from;
+			c_val[--row_ptr[to]] = tmp_val;
+
+			if (max_val_in_col[to] < tmp_val)
+				max_val_in_col[to] = tmp_val;
+		}
+
+		DoubleVectorD dc_val     = c_val;
+		DoubleVectorD d_max_vals = max_val_in_col;
+		IntVectorD    d_row_ptr  = row_ptr;
+
+		double *dc_val_ptr = thrust::raw_pointer_cast(&dc_val[0]);
+		double *dmax_val_ptr = thrust::raw_pointer_cast(&d_max_vals[0]);
+		int *d_row_ptrs = thrust::raw_pointer_cast(&d_row_ptr[0]);
+
+		int blockX = m_n, blockY = 1;
+		kernelConfigAdjust(blockX, blockY, 32768);
+		dim3 grids(blockX, blockY);
+
+		device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs);
+
+		c_val = dc_val;
 	}
 }
 
