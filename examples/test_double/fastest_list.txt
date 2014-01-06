@@ -1,5 +1,5 @@
 2cubes_sphere.mtx
-24213.5
+24212.2
 2D_54019_highK.mtx
 4341.84
 31770-lhs.mtx
@@ -25,7 +25,7 @@ cant.mtx
 cfd1.mtx
 7990.06
 cfd2.mtx
-8473.99
+8468.39
 ckt11752_tr_0.mtx
 34371.6
 cont-201.mtx
@@ -35,7 +35,7 @@ dawson5.mtx
 dixmaanl.mtx
 428.003
 Dubcova2.mtx
-1674.86
+1673.03
 ecl32.mtx
 3380.56
 epb3.mtx
@@ -49,7 +49,7 @@ F2.mtx
 filter3D.mtx
 19047.4
 finan512.mtx
-4343.76
+4334.96
 g7jac140.mtx
 86602.1
 GaAsH6.mtx
@@ -63,7 +63,7 @@ gridgena.mtx
 H2O.mtx
 70930
 hcircuit.mtx
-33713.8
+33689.4
 ibm_matrix_2.mtx
 18834.2
 jan99jac120.mtx
