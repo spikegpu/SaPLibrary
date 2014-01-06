@@ -62,6 +62,7 @@ public:
 	        bool                reorder,
 			bool                testMC64,
 	        bool                doMC64,
+            bool                mc64FirstStageOnly,
 	        bool                scale,
 	        double              dropOff_frac,
 	        int                 maxBandwidth,
@@ -121,6 +122,7 @@ private:
 	bool                 m_reorder;
 	bool                 m_testMC64;
 	bool                 m_doMC64;
+	bool                 m_mc64FirstStageOnly;
 	bool                 m_scale;
 	PrecValueType        m_dropOff_frac;
 	int                  m_maxBandwidth;
@@ -301,6 +303,7 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                reorder,
 							 bool                testMC64,
                              bool                doMC64,
+                             bool                mc64FirstStageOnly,
                              bool                scale,
                              double              dropOff_frac,
                              int                 maxBandwidth,
@@ -315,6 +318,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_reorder(reorder),
 	m_testMC64(testMC64),
 	m_doMC64(doMC64),
+	m_mc64FirstStageOnly(mc64FirstStageOnly),
 	m_scale(scale),
 	m_dropOff_frac((PrecValueType)dropOff_frac),
 	m_maxBandwidth(maxBandwidth),
@@ -356,6 +360,7 @@ Precond<PrecVector>::Precond()
 	m_reorder(false),
 	m_testMC64(false),
 	m_doMC64(false),
+	m_mc64FirstStageOnly(false),
 	m_scale(false),
 	m_k_reorder(0),
 	m_k_mc64(0),
@@ -407,49 +412,51 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_time_fullLU(0),
 	m_time_shuffle(0)
 {
-	m_numPartitions     = prec.m_numPartitions;
+	m_numPartitions      = prec.m_numPartitions;
 
-	m_isSPD             = prec.m_isSPD;
-	m_saveMem           = prec.m_saveMem;
-	m_reorder           = prec.m_reorder;
-	m_testMC64          = prec.m_testMC64;
-	m_doMC64            = prec.m_doMC64;
-	m_scale             = prec.m_scale;
-	m_dropOff_frac      = prec.m_dropOff_frac;
-	m_maxBandwidth      = prec.m_maxBandwidth;
-	m_factMethod        = prec.m_factMethod;
-	m_precondType       = prec.m_precondType;
-	m_safeFactorization = prec.m_safeFactorization;
-	m_variableBandwidth = prec.m_variableBandwidth;
-	m_trackReordering   = prec.m_trackReordering;
+	m_isSPD              = prec.m_isSPD;
+	m_saveMem            = prec.m_saveMem;
+	m_reorder            = prec.m_reorder;
+	m_testMC64           = prec.m_testMC64;
+	m_doMC64             = prec.m_doMC64;
+	m_mc64FirstStageOnly = prec.m_mc64FirstStageOnly;
+	m_scale              = prec.m_scale;
+	m_dropOff_frac       = prec.m_dropOff_frac;
+	m_maxBandwidth       = prec.m_maxBandwidth;
+	m_factMethod         = prec.m_factMethod;
+	m_precondType        = prec.m_precondType;
+	m_safeFactorization  = prec.m_safeFactorization;
+	m_variableBandwidth  = prec.m_variableBandwidth;
+	m_trackReordering    = prec.m_trackReordering;
 }
 
 template <typename PrecVector>
 Precond<PrecVector>& 
 Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 {
-	m_numPartitions     = prec.m_numPartitions;
+	m_numPartitions      = prec.m_numPartitions;
 
-	m_isSPD             = prec.m_isSPD;
-	m_saveMem           = prec.m_saveMem;
-	m_reorder           = prec.m_reorder;
-	m_testMC64          = prec.m_testMC64;
-	m_doMC64            = prec.m_doMC64;
-	m_scale             = prec.m_scale;
-	m_dropOff_frac      = prec.m_dropOff_frac;
-	m_maxBandwidth      = prec.m_maxBandwidth;
-	m_factMethod        = prec.m_factMethod;
-	m_precondType       = prec.m_precondType;
-	m_safeFactorization = prec.m_safeFactorization;
-	m_variableBandwidth = prec.m_variableBandwidth;
-	m_trackReordering   = prec.m_trackReordering;
+	m_isSPD              = prec.m_isSPD;
+	m_saveMem            = prec.m_saveMem;
+	m_reorder            = prec.m_reorder;
+	m_testMC64           = prec.m_testMC64;
+	m_doMC64             = prec.m_doMC64;
+	m_mc64FirstStageOnly = prec.m_mc64FirstStageOnly;
+	m_scale              = prec.m_scale;
+	m_dropOff_frac       = prec.m_dropOff_frac;
+	m_maxBandwidth       = prec.m_maxBandwidth;
+	m_factMethod         = prec.m_factMethod;
+	m_precondType        = prec.m_precondType;
+	m_safeFactorization  = prec.m_safeFactorization;
+	m_variableBandwidth  = prec.m_variableBandwidth;
+	m_trackReordering    = prec.m_trackReordering;
 
-	m_k                 = prec.m_k;
-	m_ks_host           = prec.m_ks_host;
-	m_offDiagWidths_left_host = prec.m_offDiagWidths_left_host;
+	m_k                        = prec.m_k;
+	m_ks_host                  = prec.m_ks_host;
+	m_offDiagWidths_left_host  = prec.m_offDiagWidths_left_host;
 	m_offDiagWidths_right_host = prec.m_offDiagWidths_right_host;
-	m_first_rows_host   = prec.m_first_rows_host;
-	m_BOffsets_host     = prec.m_BOffsets_host;
+	m_first_rows_host          = prec.m_first_rows_host;
+	m_BOffsets_host            = prec.m_BOffsets_host;
 
 	m_time_shuffle = 0;
 	return *this;
@@ -993,7 +1000,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_MC64        = graph.getTimeMC64();

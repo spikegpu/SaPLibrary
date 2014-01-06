@@ -60,7 +60,7 @@ using std::vector;
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_PART,
       OPT_SPD, OPT_SAVE_MEM,
-	  OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
+	  OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING, OPT_MC64_FIRST_STAGE_ONLY,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE, 
@@ -101,6 +101,8 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
 	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
+	{ OPT_MC64_FIRST_STAGE_ONLY,
+	                     "--mc64-first-stage-only", SO_NONE },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
 	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
@@ -709,6 +711,10 @@ GetProblemSpecs(int             argc,
 				opts.performMC64 = false;
 				break;
 			case OPT_NO_SCALING:
+				opts.applyScaling = false;
+				break;
+			case OPT_MC64_FIRST_STAGE_ONLY:
+				opts.mc64FirstStageOnly = true;
 				opts.applyScaling = false;
 				break;
 			case OPT_MATFILE:

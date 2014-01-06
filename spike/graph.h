@@ -122,6 +122,7 @@ public:
 	int        reorder(const MatrixCoo& Acoo,
 	                   bool             testMC64,
 	                   bool             doMC64,
+					   bool             mc64FirstStageOnly,
 	                   bool             scale,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
@@ -193,6 +194,7 @@ private:
 
 	bool       MC64(const MatrixCoo& Acoo,
 			        bool             scale,
+					bool             mc64FirstStageOnly,
 	                IntVector&       mc64RowPerm,
 	                DoubleVector&    mc64RowScale,
 	                DoubleVector&    mc64ColScale,
@@ -218,10 +220,12 @@ private:
 
 	// Functions used in MC64
 	void       find_minimum_match(const MatrixCoo& Acoo,
+			                      bool             mc64FirstStageOnly,
 								  IntVector&       mc64RowPerm,
 	                              DoubleVector&    mc64RowScale,
 	                              DoubleVector&    mc64ColScale);
-	void       init_reduced_cval(IntVector&     row_ptr,
+	void       init_reduced_cval(bool           first_stage_only,
+			                     IntVector&     row_ptr,
 	                             IntVector&     rows,
 	                             DoubleVector&  c_val, 
 	                             DoubleVector&  u_val,
@@ -344,6 +348,7 @@ int
 Graph<T>::reorder(const MatrixCoo&  Acoo,
                   bool              testMC64,
                   bool              doMC64,
+				  bool              mc64FirstStageOnly,
                   bool              scale,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
@@ -376,7 +381,7 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 		loc_timer.Start();
 		DoubleVector  mc64RowScaleD;
 		DoubleVector  mc64ColScaleD;
-		MC64(Acoo, scale, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+		MC64(Acoo, scale, mc64FirstStageOnly, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
 		mc64RowScale = mc64RowScaleD;
 		mc64ColScale = mc64ColScaleD;
 		loc_timer.Stop();
@@ -883,12 +888,13 @@ template <typename T>
 bool
 Graph<T>::MC64(const MatrixCoo& Acoo,
 			   bool             scale,
+			   bool             mc64FirstStageOnly,
                IntVector&       mc64RowPerm,
                DoubleVector&    mc64RowScale,
                DoubleVector&    mc64ColScale,
                MatrixMapF&      scaleMap)
 {
-	find_minimum_match(Acoo, mc64RowPerm, mc64RowScale, mc64ColScale);
+	find_minimum_match(Acoo, mc64FirstStageOnly, mc64RowPerm, mc64RowScale, mc64ColScale);
 
 	CPUTimer loc_timer;
 
@@ -896,6 +902,10 @@ Graph<T>::MC64(const MatrixCoo& Acoo,
 
 	if (m_trackReordering)
 		scaleMap.resize(m_nnz);
+
+	// TODO: how to do scale when we apply only the first stage
+	if (mc64FirstStageOnly)
+		scale = false;
 
 	if (scale) {
 		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
@@ -1270,6 +1280,7 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 template <typename T>
 void
 Graph<T>::find_minimum_match(const MatrixCoo& Acoo,
+							 bool             mc64FirstStageOnly, 
 							 IntVector&       mc64RowPerm,
                              DoubleVector&    mc64RowScale,
                              DoubleVector&    mc64ColScale)
@@ -1297,15 +1308,17 @@ Graph<T>::find_minimum_match(const MatrixCoo& Acoo,
 	m_timeMC64_pre = loc_timer.getElapsed();
 
 	loc_timer.Start();
-	init_reduced_cval(row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowPerm, rev_match_nodes, matched, rev_matched);
+	init_reduced_cval(mc64FirstStageOnly, row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowPerm, rev_match_nodes, matched, rev_matched);
 	loc_timer.Stop();
 	m_timeMC64_first = loc_timer.getElapsed();
 
 	loc_timer.Start();
-	IntVector  irn(m_n);
-	for(int i=0; i<m_n; i++) {
-		if(rev_matched[i]) continue;
-		bool success = find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
+	if (!mc64FirstStageOnly) {
+		IntVector  irn(m_n);
+		for(int i=0; i<m_n; i++) {
+			if(rev_matched[i]) continue;
+			bool success = find_shortest_aug_path(i, matched, rev_matched, mc64RowPerm, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
+		}
 	}
 
 	{
@@ -1407,7 +1420,8 @@ Graph<T>::get_csc_matrix(const MatrixCoo& Acoo,
 // ----------------------------------------------------------------------------
 template <typename T>
 void 
-Graph<T>::init_reduced_cval(IntVector&     row_ptr,
+Graph<T>::init_reduced_cval(bool           first_stage_only,
+							IntVector&     row_ptr,
                             IntVector&     rows,
                             DoubleVector&  c_val,
                             DoubleVector&  u_val,
@@ -1417,14 +1431,12 @@ Graph<T>::init_reduced_cval(IntVector&     row_ptr,
                             IntVector&     matched,
                             IntVector&     rev_matched) 
 {
-	int i;
-	int j;
 	cusp::blas::fill(u_val, LOC_INFINITY);
 	cusp::blas::fill(v_val, LOC_INFINITY);
 
-	for(i = 0; i < m_n; i++) {
+	for(int i = 0; i < m_n; i++) {
 		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
-		for(j = start_idx; j < end_idx; j++) {
+		for(int j = start_idx; j < end_idx; j++) {
 			if (c_val[j] > LOC_INFINITY / 2.0) continue;
 			int row = rows[j];
 			if(u_val[row] > c_val[j]) {
@@ -1433,10 +1445,10 @@ Graph<T>::init_reduced_cval(IntVector&     row_ptr,
 		}
 	}
 
-	for(i = 0; i < m_n; i++) {
+	for(int i = 0; i < m_n; i++) {
 		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
 		int min_idx = -1;
-		for(j = start_idx; j < end_idx; j++) {
+		for(int j = start_idx; j < end_idx; j++) {
 			if (c_val[j] > LOC_INFINITY / 2.0) continue;
 			int row = rows[j];
 			double tmp_val = c_val[j] - u_val[row];
@@ -1456,11 +1468,120 @@ Graph<T>::init_reduced_cval(IntVector&     row_ptr,
 		}
 	}
 
-	for(i = 0; i < m_n; i++) {
-		if (!matched[i])
-			u_val[i] = 0.0;
-		if (!rev_matched[i])
-			v_val[i] = 0.0;
+	if (first_stage_only) {
+		const double CMP_THRESHOLD = 1e-10;
+		for (int i = 0; i < m_n; i++) {
+			if (rev_matched[i]) continue;
+
+			int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
+			int cur_v_val = v_val[i];
+
+			for (int j = start_idx; j < end_idx; j++) {
+				if (c_val[j] > LOC_INFINITY / 2.0) continue;
+				int row = rows[j];
+
+				if (!matched[row]) continue;
+
+				double res_cval = c_val[j] - u_val[row] - cur_v_val;
+
+				if (res_cval > CMP_THRESHOLD) continue;
+
+				int col2 = match_nodes[row];
+				int start_idx2 = row_ptr[col2], end_idx2 = row_ptr[col2 + 1];
+
+				bool found = false;
+
+				for (int j2 = start_idx2; j2 < end_idx2; j2++) {
+					if (c_val[j2] > LOC_INFINITY / 2.0) continue;
+
+					int row2 = rows[j2];
+					if (matched[row2]) continue;
+
+					matched[row2] = true;
+					match_nodes[row2] = col2;
+					rev_match_nodes[col2] = j2;
+					match_nodes[row] = i;
+					rev_matched[i] = true;
+					rev_match_nodes[i] = j;
+					found = true;
+					break;
+				}
+
+				if (found) break;
+			}
+		}
+
+		for (int i = 0; i < m_n; i++) {
+			if (rev_matched[i]) continue;
+
+			int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
+
+			for (int j = start_idx; j < end_idx; j++) {
+				int row = rows[j];
+				if (!matched[row]) {
+					matched[row] = true;
+					rev_matched[i] = true;
+					match_nodes[row] = i;
+					rev_match_nodes[i] = j;
+					break;
+				}
+			}
+		}
+
+		for (int i = 0; i < m_n; i++) {
+			if (rev_matched[i]) continue;
+
+			int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
+
+			for (int j = start_idx; j < end_idx; j++) {
+				int row = rows[j];
+
+				int col2 = match_nodes[row];
+				int start_idx2 = row_ptr[col2], end_idx2 = row_ptr[col2+1];
+
+				bool found = false;
+				for (int j2 = start_idx2; j2 < end_idx2; j2++) {
+					int row2 = rows[j2];
+
+					if (matched[row2]) continue;
+
+					found = true;
+					matched[row2] = true;
+					match_nodes[row2] = col2;
+					rev_match_nodes[col2] = j2;
+					match_nodes[row] = i;
+					rev_matched[i] = true;
+					rev_match_nodes[i] = j;
+
+					break;
+				}
+				if (found) break;
+			}
+		}
+
+		int last_j = 0;
+		for (int i = 0; i < m_n; i++) {
+			if (rev_matched[i]) continue;
+
+			for (int j = last_j; j < m_n; j++) {
+				if (matched[j]) continue;
+				rev_matched[i] = matched[j] = true;
+				match_nodes[j] = i;
+
+				last_j = j + 1;
+				break;
+			}
+		}
+
+		cusp::blas::fill(u_val, 1.0);
+		cusp::blas::fill(v_val, 1.0);
+	} else {
+		for(int i = 0; i < m_n; i++) {
+			if (!matched[i])
+				u_val[i] = 0.0;
+			if (!rev_matched[i])
+				v_val[i] = 0.0;
+		}
 	}
 }
 
@@ -1561,7 +1682,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		cur_node = match_nodes[tmp_idx];
 	}
 
-	if(lsap < LOC_INFINITY / 2.0f) {
+	if(lsap < LOC_INFINITY / 2.0) {
 		matched[isap] = true;
 		cur_node = match_nodes[isap];
 

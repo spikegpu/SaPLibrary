@@ -53,6 +53,7 @@ struct Options
 	bool                saveMem;                /**< (For SPD matrix only) Indicate whether to use memory-saving yet slower mode or not; default: false*/
 	bool                performReorder;       /**< Perform matrix reorderings? default: true */
 	bool                performMC64;          /**< Perform MC64 reordering? default: true */
+	bool                mc64FirstStageOnly;   /**< In MC64, only the first stage is to be performed? default: false*/
 	bool                applyScaling;         /**< Apply MC64 scaling? default: true */
 	int                 maxBandwidth;         /**< Maximum half-bandwidth; default: INT_MAX */
 	double              dropOffFraction;      /**< Maximum fraction of the element-wise matrix 1-norm that can be dropped-off; default: 0 */
@@ -189,6 +190,7 @@ Options::Options()
 	saveMem(false),
 	performReorder(true),
 	performMC64(true),
+	mc64FirstStageOnly(false),
 	applyScaling(true),
 	maxBandwidth(std::numeric_limits<int>::max()),
 	dropOffFraction(0),
@@ -248,7 +250,7 @@ template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.tolerance),
-	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testMC64, opts.performMC64, opts.applyScaling,
+	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testMC64, opts.performMC64, opts.mc64FirstStageOnly, opts.applyScaling,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
