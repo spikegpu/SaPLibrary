@@ -11,7 +11,7 @@ ABACUS_shell_ud.mtx
 af23560.mtx
 636.229
 ancfBigDan.mtx
-1034.87
+1034.33
 Andrews.mtx
 94421.3
 apache1.mtx
@@ -23,9 +23,9 @@ bcircuit.mtx
 cant.mtx
 2885.98
 case39.mtx
-349287
+349274
 case39_A_01.mtx
-349327
+349266
 cfd1.mtx
 10231.9
 cfd2.mtx
@@ -85,7 +85,7 @@ olesnik0.mtx
 OPF_10000.mtx
 3556.93
 poisson3Db.mtx
-120831
+120830
 qa8fm.mtx
 2329.75
 rail_79841.mtx
@@ -107,7 +107,7 @@ thermal1.mtx
 vanbody.mtx
 3057.72
 venkat25.mtx
-4712.48
+4706.39
 vibrobox.mtx
 4188.66
 xenon1.mtx
