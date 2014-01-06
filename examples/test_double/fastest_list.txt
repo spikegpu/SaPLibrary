@@ -59,13 +59,13 @@ garon2.mtx
 gas_sensor.mtx
 5738.24
 gridgena.mtx
-667.089
+666.228
 H2O.mtx
 70934.1
 hcircuit.mtx
 33713.8
 ibm_matrix_2.mtx
-18837.2
+18834.2
 jan99jac120.mtx
 21375.6
 lhr10c.mtx
@@ -81,7 +81,7 @@ matrix_9.mtx
 minsurfo.mtx
 261.491
 ncvxbqp1.mtx
-3958.75
+3957.31
 oilpan.mtx
 4738
 olesnik0.mtx
