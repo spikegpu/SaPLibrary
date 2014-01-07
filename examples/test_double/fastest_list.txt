@@ -17,7 +17,7 @@ Andrews.mtx
 apache1.mtx
 2639.99
 bayer01.mtx
-3790.83
+3790.35
 bcircuit.mtx
 4026.98
 cant.mtx
@@ -31,7 +31,7 @@ ckt11752_tr_0.mtx
 cont-201.mtx
 1385.89
 dawson5.mtx
-2359.38
+2357.83
 dixmaanl.mtx
 428.003
 Dubcova2.mtx
@@ -47,13 +47,13 @@ ex19.mtx
 F2.mtx
 18806.5
 filter3D.mtx
-19047.4
+19046.3
 finan512.mtx
 4334.96
 g7jac140.mtx
-86602.1
+86574.2
 GaAsH6.mtx
-128168
+128154
 garon2.mtx
 503.534
 gas_sensor.mtx
@@ -61,7 +61,7 @@ gas_sensor.mtx
 gridgena.mtx
 663.659
 H2O.mtx
-70930
+70906.1
 hcircuit.mtx
 33689.4
 ibm_matrix_2.mtx
@@ -71,13 +71,13 @@ jan99jac120.mtx
 lhr10c.mtx
 315.595
 Lin.mtx
-49242.2
+49233.5
 mark3jac100.mtx
-7648.96
+7648.59
 mark3jac140.mtx
 11046.5
 matrix_9.mtx
-20889.2
+20886.9
 minsurfo.mtx
 261.491
 ncvxbqp1.mtx
@@ -85,7 +85,7 @@ ncvxbqp1.mtx
 oilpan.mtx
 4733.85
 olesnik0.mtx
-5507.96
+5505.43
 OPF_10000.mtx
 3223.04
 qa8fm.mtx
@@ -93,7 +93,7 @@ qa8fm.mtx
 rail_79841.mtx
 1608.74
 rajat26.mtx
-40922.9
+40922.8
 rma10.mtx
 4291.54
 shallow_water1.mtx
@@ -111,6 +111,6 @@ vanbody.mtx
 venkat25.mtx
 4678.6
 vibrobox.mtx
-5188.37
+5187.79
 xenon1.mtx
 5036.25
