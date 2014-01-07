@@ -13,7 +13,7 @@ af23560.mtx
 ancfBigDan.mtx
 1034.33
 Andrews.mtx
-94421.3
+94381.4
 apache1.mtx
 2173.64
 bayer01.mtx
@@ -35,7 +35,7 @@ ckt11752_tr_0.mtx
 cont-201.mtx
 2606.1
 dawson5.mtx
-12474.4
+12463.4
 dixmaanl.mtx
 546.264
 Dubcova2.mtx
@@ -63,13 +63,13 @@ H2O.mtx
 hcircuit.mtx
 28857.8
 ibm_matrix_2.mtx
-16359.6
+16356.5
 jan99jac120.mtx
 24963
 lhr10c.mtx
 515.973
 Lin.mtx
-671121
+670638
 mark3jac100.mtx
 7443.14
 mark3jac140.mtx
@@ -85,13 +85,13 @@ olesnik0.mtx
 OPF_10000.mtx
 3556.93
 poisson3Db.mtx
-120830
+120791
 qa8fm.mtx
 2329.75
 rail_79841.mtx
 1487.19
 rajat26.mtx
-34419.6
+34396.2
 rma10.mtx
 4236.68
 shallow_water1.mtx
@@ -109,6 +109,6 @@ vanbody.mtx
 venkat25.mtx
 4706.39
 vibrobox.mtx
-4188.66
+4187.42
 xenon1.mtx
 5273.98
