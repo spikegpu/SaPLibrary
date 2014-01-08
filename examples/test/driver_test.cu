@@ -241,7 +241,7 @@ int main(int argc, char** argv)
 	}
 	std::map<std::string, double> fastest_time_table;
 	{
-		std::ifstream fin("../../test/fastest_list.txt", std::ios::in);
+		std::ifstream fin("../../../../Results/float/fastest_list.txt", std::ios::in);
 		if (fin.is_open()) {
 			std::string mat_name;
 			double fastest_time;
@@ -564,7 +564,7 @@ int main(int argc, char** argv)
 }
 
 void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name, double time_cur_run, bool solveSuccess) {
-	std::ofstream fout("../../test/fastest_list_tmp.txt", std::ios::out | std::ios::app);
+	std::ofstream fout("../../../../Results/float/fastest_list_tmp.txt", std::ios::out | std::ios::app);
 	if (!fout.is_open())
 		return;
 
