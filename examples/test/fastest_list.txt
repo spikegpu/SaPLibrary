@@ -33,7 +33,7 @@ cfd2.mtx
 ckt11752_tr_0.mtx
 30577.9
 cont-201.mtx
-2606.1
+2604.37
 dawson5.mtx
 12463.4
 dixmaanl.mtx
