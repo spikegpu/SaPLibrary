@@ -135,7 +135,7 @@ olesnik0.mtx
 OPF_10000.mtx
 1
 pdb1HYS.mtx
-1
+1 --spd
 poisson3Db.mtx
 1
 qa8fm.mtx
