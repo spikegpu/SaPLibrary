@@ -132,6 +132,8 @@ olesnik0.mtx
 566.995
 OPF_10000.mtx
 77.8420
+pdb1HYS.mtx
+1490.95
 poisson3Db.mtx
 6733.04
 qa8fm.mtx
