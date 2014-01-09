@@ -145,6 +145,7 @@ public:
 	/// Extract solver statistics.
 	const Stats&  getStats() const {return m_stats;}
 
+
 private:
 	typedef typename Array::value_type    SolverValueType;
 	typedef typename Array::memory_space  MemorySpace;
@@ -173,6 +174,12 @@ private:
 	bool                                m_setupDone;
 
 	Stats                               m_stats;
+
+public:
+	// FIXME: this should only be used in nightly test, remove this
+	const std::vector<Precond<PrecVector>*>&
+		                                getPreconditioners() const
+										{return m_precond_pointers;}
 };
 
 

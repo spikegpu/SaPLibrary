@@ -38,8 +38,10 @@ typedef double PREC_REAL;
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorH;
+typedef typename cusp::array1d<PREC_REAL, cusp::device_memory>    PrecVector;
 
 typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
+typedef typename spike::Precond<PrecVector>                       SpikePrecond;
 typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
 
 
@@ -271,12 +273,31 @@ int main(int argc, char** argv)
 		mySolver.setup(A);
 	} catch (const std::bad_alloc& ) {
 		solveSuccess = false;
-		// Half-bandwidth after MC64
-		outputItem( "N/A");
-		// Half-bandwidth before drop-off 
-		outputItem( "N/A");
-		// Half-bandwidth
-		outputItem( "N/A");
+
+		{
+			const std::vector<SpikePrecond*> &preconds = mySolver.getPreconditioners();
+			int k_mc64 = 0, k_reorder = 0, k = 0;
+
+			for (int i = 0; i < preconds.size(); i++) {
+				int tmp = preconds[i] -> getBandwidthMC64();
+				if (k_mc64 < tmp)
+					k_mc64 = tmp;
+
+				tmp = preconds[i] -> getBandwidthReordering();
+				if (k_reorder < tmp)
+					k_reorder = tmp;
+
+				tmp = preconds[i] -> getBandwidth();
+				if (k < tmp)
+					k = tmp;
+			}
+			// Half-bandwidth after MC64
+			outputItem( k_mc64);
+			// Half-bandwidth before drop-off 
+			outputItem( k_reorder);
+			// Half-bandwidth
+			outputItem( k);
+		}
 		// nuKf
 		outputItem( "N/A");
 		// Reason why cannot solve (for unsuccessful solving only)

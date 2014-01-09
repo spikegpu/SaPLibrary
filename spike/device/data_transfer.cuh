@@ -490,10 +490,11 @@ copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
 	dB[offsets[curPartNum] + l_in_part * col_width + delta + j - l] = vals[idx];
 }
 
+template<typename T>
 __global__ void
 getResidualValues(int       N,
-				  double*   c_vals,
-				  double*   max_vals,
+		          T*        c_vals,
+				  T*        max_vals,
 				  int*      row_ptr)
 {
 	int bid = blockIdx.x + blockIdx.y * gridDim.x;
@@ -503,7 +504,7 @@ getResidualValues(int       N,
 
 	__shared__ int start;
 	__shared__ int end;
-	__shared__ double max_val;
+	__shared__ T max_val;
 
 	if (threadIdx.x == 0) {
 		start = row_ptr[bid];
