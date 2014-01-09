@@ -225,7 +225,7 @@ int main(int argc, char** argv)
 	// Load information of Pardiso time
 	std::map<std::string, double> pardiso_time_table;
 	{
-		std::ifstream fin("../../test/pardiso_list.txt", std::ios::in);
+		std::ifstream fin("../../../../Matrices/pardiso_list.txt", std::ios::in);
 		if (fin.is_open()) {
 			std::string mat_name;
 			double pardiso_time;
