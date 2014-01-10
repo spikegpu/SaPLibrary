@@ -467,7 +467,11 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	else
 		m_stats.nuKf = (2 * m_stats.bandwidth * m_n- m_stats.nuKf) / (2 * m_stats.bandwidth * m_n);
 
-	m_stats.flops_LU /= m_stats.time_bandLU * 1e6;
+	if (m_stats.time_bandLU == 0)
+		m_stats.flops_LU = 0;
+	else
+		m_stats.flops_LU /= m_stats.time_bandLU * 1e6;
+
 	m_setupDone = true;
 
 	return true;
