@@ -445,7 +445,21 @@ Graph<T>::dropOff(T   frac,
 
 	// Sort the edges in *decreasing* order of their length (the difference
 	// between the indices of their adjacent nodes).
-	std::sort(m_edges.begin(), m_edges.end(), CompareEdgeLength());
+	// std::sort(m_edges.begin(), m_edges.end(), CompareEdgeLength());
+	{
+		EdgeVector tmp_edges(m_edges.end() - m_edges.begin());
+		IntVector  bucket(m_n, 0);
+
+		for (m_first = m_edges.begin(); m_first != m_edges.end(); m_first++)
+			bucket[m_n - 1 - abs(m_first->m_from - m_first->m_to)] ++;
+
+		thrust::exclusive_scan(bucket.begin(), bucket.end(), bucket.begin());
+
+		for (m_first = m_edges.begin(); m_first != m_edges.end(); m_first++)
+			tmp_edges[bucket[m_n - 1 - abs(m_first->m_from - m_first->m_to)]++] = *m_first;
+
+		m_edges = tmp_edges;
+	}
 
 	// Calculate the 1-norm of the current matrix and the minimum norm that
 	// must be retained after drop-off. Initialize the 1-norm of the resulting
