@@ -285,6 +285,8 @@ GetProblemSpecs(int             argc,
 						opts.precondType = spike::Spike;
 					else if(precond == "1" || precond == "BLOCK")
 						opts.precondType = spike::Block;
+					else if(precond == "2" || precond == "NONE")
+						opts.precondType = spike::None;
 					else
 						return false;
 				}
@@ -297,6 +299,8 @@ GetProblemSpecs(int             argc,
 						opts.solverType = spike::BiCGStab;
 					else if (kry == "1" || kry == "BICGSTAB2")
 						opts.solverType = spike::BiCGStab2;
+					else if (kry == "2" || kry == "CG")
+						opts.solverType = spike::CG;
 					else
 						return false;
 				}
@@ -348,24 +352,48 @@ GetProblemSpecs(int             argc,
 		cout << "Rhs file:    " << fileRhs << endl;
 	if (fileSol.length() > 0)
 		cout << "Sol file:    " << fileSol << endl;
-	cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
-	cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
+	cout << "Iterative solver: ";
+	switch (opts.solverType) {
+	case spike::BiCGStab:
+		cout << "BiCGStab" << endl;
+		break;
+	case spike::BiCGStab2:
+		cout << "BiCGStab2" << endl;
+		break;
+	case spike::CG:
+		cout << "CG" << endl;
+		break;
+	}
 	cout << "Tolerance: " << opts.tolerance << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
-	cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
-	cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
-	if (opts.dropOffFraction > 0)
-		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
-	else
-		cout << "No drop-off." << endl;
-	if (maxBandwidth_specified)
-		cout << "Maximum bandwidth: " << opts.maxBandwidth << endl;
-	cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
-	cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
-	cout << (opts.performMC64 ? "Perform MC64 reordering." : "Do not perform MC64 reordering.") << endl;
-	cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
-	cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
-	cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
+	cout << "Preconditioner: ";
+	switch (opts.precondType) {
+	case spike::Spike:
+		cout << "SPIKE" << endl;
+		break;
+	case spike::Block:
+		cout << "BLOCK DIAGONAL" << endl;
+		break;
+	case spike::None:
+		cout << "NONE" << endl;
+		break;
+	}
+	if (opts.precondType != spike::None) {
+		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
+		cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
+		if (opts.dropOffFraction > 0)
+			cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
+		else
+			cout << "No drop-off." << endl;
+		if (maxBandwidth_specified)
+			cout << "Maximum bandwidth: " << opts.maxBandwidth << endl;
+		cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
+		cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
+		cout << (opts.performMC64 ? "Perform MC64 reordering." : "Do not perform MC64 reordering.") << endl;
+		cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
+		cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
+		cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
+	}
 	cout << endl << endl;
 
 	return true;
@@ -420,6 +448,7 @@ void ShowUsage()
 	cout << "        Specify the iterative Krylov solver:" << endl;
 	cout << "        METHOD=0 or METHOD=bicgstab      use BiCGStab" << endl;
 	cout << "        METHOD=1 or METHOD=bicgstab2     use BiCGStab(2). This is the default." << endl;
+	cout << "        METHOD=2 or METHOD=CG            use CG." << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;
@@ -432,7 +461,8 @@ void ShowUsage()
 	cout << " --precond-method=METHOD" << endl;
 	cout << "        Specify the preconditioner to be used" << endl;
 	cout << "        METHOD=0 or METHOD=SPIKE                for using SPIKE preconditioner.  This is the default." << endl;
-	cout << "        METHOD=1 or METHOD=BLOCK                for using Block preconditionera." << endl;
+	cout << "        METHOD=1 or METHOD=BLOCK                for using Block preconditioner." << endl;
+	cout << "        METHOD=2 or METHOD=NONE                 do not use a preconditioner." << endl;
 	cout << " -? -h --help" << endl;
 	cout << "        Print this message and exit." << endl;
 	cout << endl;
