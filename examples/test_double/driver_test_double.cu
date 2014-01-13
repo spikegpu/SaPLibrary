@@ -68,7 +68,7 @@ enum {OPT_HELP, OPT_PART,
       OPT_MATFILE, OPT_RHSFILE, 
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT,
-      OPT_CONST_BAND, OPT_SINGLE_COMP};
+      OPT_CONST_BAND};
 
 // Color to print
 enum TestColor {COLOR_NO = 0,
@@ -97,7 +97,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_SPD,           "--spd",                SO_NONE    },
 	{ OPT_SAVE_MEM,      "--save-mem",           SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
@@ -275,22 +274,9 @@ int main(int argc, char** argv)
 		solveSuccess = false;
 
 		{
-			const std::vector<SpikePrecond*> &preconds = mySolver.getPreconditioners();
-			int k_mc64 = 0, k_reorder = 0, k = 0;
+			const SpikePrecond &precond = mySolver.getPreconditioner();
+			int k_mc64 = precond.getBandwidthMC64(), k_reorder = precond.getBandwidthReordering(), k = precond.getBandwidth();
 
-			for (int i = 0; i < preconds.size(); i++) {
-				int tmp = preconds[i] -> getBandwidthMC64();
-				if (k_mc64 < tmp)
-					k_mc64 = tmp;
-
-				tmp = preconds[i] -> getBandwidthReordering();
-				if (k_reorder < tmp)
-					k_reorder = tmp;
-
-				tmp = preconds[i] -> getBandwidth();
-				if (k < tmp)
-					k = tmp;
-			}
 			// Half-bandwidth after MC64
 			outputItem( k_mc64);
 			// Half-bandwidth before drop-off 
@@ -521,15 +507,31 @@ int main(int argc, char** argv)
 		// Total time for setup
 		outputItem( stats.timeSetup);
 		// Krylov method
-		switch(opts.solverType) {
-			case spike::BiCGStab:
-				outputItem("B1"); break;
+		{
+			std::string prec = (opts.precondType == spike::None ? "": "P-");
+			switch(opts.solverType) {
+				case spike::BiCGStab:
+					prec += "B1"; break;
 
-			case spike::BiCGStab2:
-				outputItem("B2"); break;
+				case spike::BiCGStab_SI:
+					prec += "B1(SI)"; break;
 
-			default:
-				outputItem("CG"); break;
+				case spike::BiCGStab2:
+					prec += "B2(SI)"; break;
+
+				case spike::CG:
+					prec += "CG"; break;
+
+				case spike::CG_SI:
+					prec += "CG(SI)"; break;
+
+				case spike::CR:
+					prec += "CR"; break;
+
+				case spike::GMRES:
+					prec += "GMRES"; break;
+			}
+			outputItem(prec.data());
 		}
 		// Number of iterations to converge
 		outputItem( stats.numIterations);
@@ -783,12 +785,17 @@ GetProblemSpecs(int             argc,
 						opts.solverType = spike::BiCGStab2;
 					else if (kry == "2" || kry == "CG")
 						opts.solverType = spike::CG;
+					else if (kry == "3" || kry == "CR")
+						opts.solverType = spike::CR;
+					else if (kry == "4" || kry == "GMRES")
+						opts.solverType = spike::GMRES;
+					else if (kry == "5" || kry == "BICGSTAB_SI")
+						opts.solverType = spike::BiCGStab_SI;
+					else if (kry == "6" || kry == "CG_SI")
+						opts.solverType = spike::CG_SI;
 					else
 						return false;
 				}
-				break;
-			case OPT_SINGLE_COMP:
-				opts.singleComponent = true;
 				break;
 			case OPT_SAFE_FACT:
 				opts.safeFactorization = true;
@@ -880,8 +887,6 @@ void ShowUsage()
 	cout << " -o=OUTFILE" << endl;
 	cout << " --output-file=OUTFILE" << endl;
 	cout << "        Write the solution to the file OUTFILE (MatrixMarket format)." << endl;
-	cout << " --single-component" << endl;
-	cout << "        Do not break the problem into several components." << endl;
 	cout << " -k=METHOD" << endl;
 	cout << " --krylov-method=METHOD" << endl;
 	cout << "        Specify the iterative Krylov solver:" << endl;

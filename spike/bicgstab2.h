@@ -35,29 +35,6 @@ struct IsEqualTo
 };
 
 
-template <typename SolverVector, typename PrecVector, typename IntVector>
-void precondSolveWrapper(SolverVector&                       rhs,
-                         SolverVector&                       sol,
-                         std::vector<Precond<PrecVector>*>&  precond_pointers,
-                         IntVector&                          compIndices,
-                         IntVector&                          comp_perms,
-                         std::vector<IntVector>&             comp_reorderings)
-{
-	int numComponents = comp_reorderings.size();
-
-	for (int i = 0; i < numComponents; i++) {
-		int loc_n = comp_reorderings[i].size();
-
-		PrecVector buffer_rhs(loc_n);
-		PrecVector buffer_sol(loc_n);
-
-		thrust::scatter_if(rhs.begin(), rhs.end(), comp_perms.begin(), compIndices.begin(), buffer_rhs.begin(), IsEqualTo<int>(i));
-		precond_pointers[i]->solve(buffer_rhs, buffer_sol);
-		thrust::scatter(buffer_sol.begin(), buffer_sol.end(), comp_reorderings[i].begin(), sol.begin());
-	}
-}
-
-
 /// Preconditioned BiCGStab(L) Krylov method
 /**
  * \tparam SpmvOperator is a functor class for sparse matrix-vector product.
@@ -67,13 +44,10 @@ void precondSolveWrapper(SolverVector&                       rhs,
  */
 template <typename SpmvOperator, typename SolverVector, typename PrecVector, int L>
 void bicgstabl(SpmvOperator&                       spmv,
-               const SolverVector&                 b,
                SolverVector&                       x,
+               const SolverVector&                 b,
                Monitor<SolverVector>&              monitor,
-               std::vector<Precond<PrecVector>*>&  precond_pointers,
-               IntVectorH&                         compIndices,
-               IntVectorH&                         comp_perms,
-               std::vector<IntVectorH>&            comp_reorderings)
+               Precond<PrecVector>&                precond)
 {
 	typedef typename SolverVector::value_type   SolverValueType;
 	typedef typename SolverVector::memory_space MemorySpace;
@@ -93,15 +67,6 @@ void bicgstabl(SpmvOperator&                       spmv,
 	SolverVector u(n,0);
 	SolverVector xx(n);
 	SolverVector Pv(n);
-
-	IntVector              loc_compIndices = compIndices;
-	IntVector              loc_comp_perms = comp_perms;
-	std::vector<IntVector> loc_comp_reorderings;
-
-	int numComponents = comp_reorderings.size();
-
-	for (int i = 0; i < numComponents; i++)
-		loc_comp_reorderings.push_back(comp_reorderings[i]);
 
 	std::vector<SolverVector> rr(L+1);
 	std::vector<SolverVector> uu(L+1);
@@ -131,7 +96,9 @@ void bicgstabl(SpmvOperator&                       spmv,
 	             thrust::make_zip_iterator(thrust::make_tuple(u.end(), x.end(), r.end())), 
 	             thrust::make_zip_iterator(thrust::make_tuple(uu[0].begin(), xx.begin(), rr[0].begin())));
 
-	while(!monitor.done(r)) {
+	PrecVector left(n), right(n);
+
+	while(!monitor.finished(r)) {
 
 		rou0 = -omega * rou0;
 
@@ -153,8 +120,11 @@ void bicgstabl(SpmvOperator&                       spmv,
 			}
 
 			// uu(j+1) <- A * P^(-1) * uu(j);
-			// precond.solve(uu[j], Pv);
-			precondSolveWrapper(uu[j], Pv, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+			{
+				cusp::blas::copy(uu[j], left);
+				precond.solve(left, right);
+				cusp::blas::copy(right, Pv);
+			}
 			spmv(Pv, uu[j+1]);
 
 			// gamma <- uu(j+1) . r0;
@@ -170,16 +140,20 @@ void bicgstabl(SpmvOperator&                       spmv,
 			}
 
 			// rr(j+1) = A * P^(-1) * rr(j)
-			//precond.solve(rr[j], Pv);
-			precondSolveWrapper(rr[j], Pv, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+			{
+				cusp::blas::copy(rr[j], left);
+				precond.solve(left, right);
+				cusp::blas::copy(right, Pv);
+			}
 			spmv(Pv, rr[j+1]);
 			
 			// xx <- xx + alpha * uu(0)
 			cusp::blas::axpy(uu[0], xx, alpha);
 
-			if(monitor.done(rr[0])) {
-				//precond.solve(xx, x);
-				precondSolveWrapper(xx, x, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+			if(monitor.finished(rr[0])) {
+				cusp::blas::copy(xx, left);
+				precond.solve(left, right);
+				cusp::blas::copy(right, x);
 				return;
 			}
 		}
@@ -220,9 +194,10 @@ void bicgstabl(SpmvOperator&                       spmv,
 
 		monitor.increment(0.25f);
 
-		if (monitor.done(rr[0])) {
-			// precond.solve(xx, x);
-			precondSolveWrapper(xx, x, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+		if (monitor.finished(rr[0])) {
+			cusp::blas::copy(xx, left);
+			precond.solve(left, right);
+			cusp::blas::copy(right, x);
 			return;
 		}
 
@@ -236,9 +211,10 @@ void bicgstabl(SpmvOperator&                       spmv,
 			cusp::blas::axpy(rr[j], xx,     gamma_primeprime[j]);
 			cusp::blas::axpy(rr[j], rr[0],  -gamma_prime[j]);
 
-			if (monitor.done(rr[0])) {
-				// precond.solve(xx, x);
-				precondSolveWrapper(xx, x, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+			if (monitor.finished(rr[0])) {
+				cusp::blas::copy(xx, left);
+				precond.solve(left, right);
+				cusp::blas::copy(right, x);
 				return;
 			}
 		}
@@ -257,44 +233,23 @@ void bicgstabl(SpmvOperator&                       spmv,
 /// Specializations of the generic spike::bicgstabl function for L=1
 template <typename SpmvOperator, typename SolverVector, typename PrecVector>
 void bicgstab (SpmvOperator&                       spmv,
-               const SolverVector&                 b,
                SolverVector&                       x,
+               const SolverVector&                 b,
                Monitor<SolverVector>&              monitor,
-               std::vector<Precond<PrecVector>*>&  precond_pointers,
-               IntVectorH&                         compIndices,
-               IntVectorH&                         comp_perms,
-               std::vector<IntVectorH>&            comp_reorderings)
+               Precond<PrecVector>&                precond)
 {
-	bicgstabl<SpmvOperator, SolverVector, PrecVector, 1>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+	bicgstabl<SpmvOperator, SolverVector, PrecVector, 1>(spmv, x, b, monitor, precond);
 }
 
 /// Specializations of the generic spike::bicgstabl function for L=2
 template <typename SpmvOperator, typename SolverVector, typename PrecVector>
 void bicgstab2(SpmvOperator&                       spmv,
-               const SolverVector&                 b,
                SolverVector&                       x,
-               Monitor<SolverVector>&              monitor,
-               std::vector<Precond<PrecVector>*>&  precond_pointers,
-               IntVectorH&                         compIndices,
-               IntVectorH&                         comp_perms,
-               std::vector<IntVectorH>&            comp_reorderings)
-{
-	bicgstabl<SpmvOperator, SolverVector, PrecVector, 2>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
-}
-
-
-/// Specializations of the generic spike::bicgstabl function for L=4
-template <typename SpmvOperator, typename SolverVector, typename PrecVector>
-void bicgstab4(SpmvOperator&                       spmv,
                const SolverVector&                 b,
-               SolverVector&                       x,
                Monitor<SolverVector>&              monitor,
-               std::vector<Precond<PrecVector>*>&  precond_pointers,
-               IntVectorH&                         compIndices,
-               IntVectorH&                         comp_perms,
-               std::vector<IntVectorH>&            comp_reorderings)
+               Precond<PrecVector>&                precond)
 {
-	bicgstabl<SpmvOperator, SolverVector, PrecVector, 4>(spmv, b, x, monitor, precond_pointers, compIndices, comp_perms, comp_reorderings);
+	bicgstabl<SpmvOperator, SolverVector, PrecVector, 2>(spmv, x, b, monitor, precond);
 }
 
 
@@ -306,13 +261,10 @@ void bicgstab4(SpmvOperator&                       spmv,
  */
 template <typename SpmvOperator, typename SolverVector, typename PrecVector>
 void cg(SpmvOperator&                       spmv,
-        const SolverVector&                 b,
         SolverVector&                       x,
+        const SolverVector&                 b,
         Monitor<SolverVector>&              monitor,
-        std::vector<Precond<PrecVector>*>&  precond_pointers,
-        IntVectorH&                         compIndices,
-        IntVectorH&                         comp_perms,
-        std::vector<IntVectorH>&            comp_reorderings)
+        Precond<PrecVector>&                precond)
 {
 	typedef typename SolverVector::value_type   SolverValueType;
 	typedef typename SolverVector::memory_space MemorySpace;
@@ -322,64 +274,56 @@ void cg(SpmvOperator&                       spmv,
 	// Allocate workspace
 	int  n = b.size();
 
-	IntVector              loc_compIndices = compIndices;
-	IntVector              loc_comp_perms = comp_perms;
-	std::vector<IntVector> loc_comp_reorderings;
-
-	int numComponents = comp_reorderings.size();
-
-	for (int i = 0; i < numComponents; i++)
-		loc_comp_reorderings.push_back(comp_reorderings[i]);
-
-	SolverVector r(n), r_new(n);
+	SolverVector r(n);
 
 	// r <- b - A * x
 	spmv(x, r);
 	cusp::blas::axpby(b, r, r, SolverValueType(1), SolverValueType(-1));
 
-	if (monitor.done(r))
+	if (monitor.finished(r))
 		return;
 
-	SolverVector z(n), p(n), z_new(n);
-	precondSolveWrapper(r, z, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+	SolverVector z(n), p(n);
+	PrecVector r_prec(n), z_prec(n);
+
+	{
+		cusp::blas::copy(r, r_prec);
+		precond.solve(r_prec, z_prec);
+		cusp::blas::copy(z_prec, z);
+	}
 
 	// p <- z
 	cusp::blas::copy(z, p);
 
 	SolverValueType alpha, beta, dot_rz;
 
+	SolverVector Ap(n);
+
+
 	while(true) {
 
-		SolverVector Ap(n);
-
 		spmv(p, Ap);
-		SolverValueType tmp = cusp::blas::dotc(p, Ap);
-		dot_rz = cusp::blas::dotc(r, z);
-		if (tmp == 0)
-			return;
 
-		alpha = dot_rz / tmp;
+		dot_rz = cusp::blas::dotc(r, z);
+
+		alpha = dot_rz / cusp::blas::dotc(p, Ap);
 
 		cusp::blas::axpy(p, x, SolverValueType(alpha));
 
-		cusp::blas::axpby(r, Ap, r_new, SolverValueType(1), SolverValueType(-alpha));
+		cusp::blas::axpy(Ap, r, SolverValueType(-alpha));
 
-		monitor.increment(0.5f);
-		if (monitor.done(r_new))
+		monitor.increment(1.f);
+		if (monitor.finished(r))
 			return;
 
-		precondSolveWrapper(r_new, z_new, precond_pointers, loc_compIndices, loc_comp_perms, loc_comp_reorderings);
+		{
+			cusp::blas::copy(r, r_prec);
+			precond.solve(r_prec, z_prec);
+			cusp::blas::copy(z_prec, z);
+		}
 
-		if (dot_rz == 0)
-			return;
-
-		beta = cusp::blas::dotc(r_new, z_new) / dot_rz;
-		cusp::blas::axpby(z_new, p, p, SolverValueType(1), SolverValueType(beta));
-
-		cusp::blas::copy(z_new, z);
-		cusp::blas::copy(r_new, r);
-
-		monitor.increment(0.5f);
+		beta = cusp::blas::dotc(r, z) / dot_rz;
+		cusp::blas::axpby(z, p, p, SolverValueType(1), SolverValueType(beta));
 	}
 }
 

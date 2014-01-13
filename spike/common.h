@@ -54,8 +54,12 @@ const unsigned int CRITICAL_THRESHOLD = 70;
 
 enum KrylovSolverType {
 	BiCGStab,
+	BiCGStab_SI,
 	BiCGStab2,
-	CG
+	CG,
+	CG_SI,
+	GMRES,
+	CR
 };
 
 enum FactorizationMethod {

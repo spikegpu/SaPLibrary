@@ -120,7 +120,6 @@ int main(int argc, char** argv)
 	spike::Options opts;
 
 	opts.trackReordering = false;
-	opts.singleComponent = true;
 	opts.variableBandwidth = false;
 	opts.factMethod = spike::LU_UL;
 	opts.performReorder = false;

@@ -7,6 +7,7 @@
 
 #include <cusp/blas.h>
 #include <cusp/print.h>
+#include <cusp/format.h>
 
 #include <thrust/logical.h>
 #include <thrust/functional.h>
@@ -38,8 +39,11 @@ class Precond
 {
 public:
 	typedef typename PrecVector::memory_space  MemorySpace;
+	typedef typename PrecVector::memory_space  memory_space;
 	typedef typename PrecVector::value_type    PrecValueType;
+	typedef typename PrecVector::value_type    value_type;
 	typedef typename PrecVector::iterator      PrecVectorIterator;
+	typedef typename cusp::unknown_format      format;
 
 	typedef typename cusp::array1d<int, MemorySpace>                  IntVector;
 	typedef IntVector                                                 MatrixMap;
@@ -111,6 +115,14 @@ public:
 	void   update(const PrecVector& entries);
 
 	void   solve(PrecVector& v, PrecVector& z);
+
+	template <typename SolverVector>
+	void   operator()(SolverVector& v, SolverVector& z) {
+		PrecVector vp = v;
+		PrecVector zp = z;
+		this -> solve(vp, zp);
+		z = zp;
+	}
 
 private:
 	int                  m_numPartitions;

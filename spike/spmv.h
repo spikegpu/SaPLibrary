@@ -44,16 +44,16 @@ public:
 	void operator()(const Array& v,
 	                Array&       Av)
 	{
-		m_timer.Start();
+		// m_timer.Start();
 		cusp::multiply(m_A, v, Av);
-		m_timer.Stop();
+		// m_timer.Stop();
 
-		m_count++;
-		m_time += m_timer.getElapsed();
+		// m_count++;
+		// m_time += m_timer.getElapsed();
 	}
+	Matrix&      m_A;
 
 private:
-	Matrix&      m_A;
 	GPUTimer     m_timer;
 	double       m_time;
 	int          m_count;

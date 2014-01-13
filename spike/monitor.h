@@ -33,12 +33,17 @@ public:
 
 	void init(const SolverVector& rhs);
 
-	bool done(const SolverVector& r);
+	bool finished(const SolverVector& r);
 
 	void increment(float incr) {m_iterations += incr;}
 
+	Monitor& operator++(int) {m_iterations += 1.f; return *this;}
+	Monitor& operator++()    {m_iterations += 1.f; return *this;}
+
 	bool             converged() const          {return m_state == Converged;}
 	int              getMaxIterations() const   {return m_maxIterations;}
+	size_t           iteration_count()  const   {return (size_t)(m_iterations + 0.5f);}
+	size_t           iteration_limit()  const   {return (size_t)(m_maxIterations);}
 	float            getNumIterations() const   {return m_iterations;}
 	SolverValueType  getTolerance() const       {return m_tolerance;}
 	SolverValueType  getRHSNorm() const         {return m_rhsNorm;}
@@ -86,7 +91,7 @@ Monitor<SolverVector>::init(const SolverVector& rhs)
 // ----------------------------------------------------------------------------
 template <typename SolverVector>
 inline bool
-Monitor<SolverVector>::done(const SolverVector& r)
+Monitor<SolverVector>::finished(const SolverVector& r)
 {
 	m_rNorm = cusp::blas::nrm2(r);
 
