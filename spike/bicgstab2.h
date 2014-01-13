@@ -57,10 +57,10 @@ void bicgstabl(SpmvOperator&                       spmv,
 	// Allocate workspace
 	int  n = b.size();
 
-	SolverValueType rou0  = SolverValueType(1);
+	SolverValueType rho0  = SolverValueType(1);
 	SolverValueType alpha = SolverValueType(0);
 	SolverValueType omega = SolverValueType(1);
-	SolverValueType rou1;
+	SolverValueType rho1;
 
 	SolverVector r0(n);
 	SolverVector r(n);
@@ -100,19 +100,19 @@ void bicgstabl(SpmvOperator&                       spmv,
 
 	while(!monitor.finished(r)) {
 
-		rou0 = -omega * rou0;
+		rho0 = -omega * rho0;
 
 		monitor.increment(0.25f);
 
 		for(int j = 0; j < L; j++) {
-			rou1 = cusp::blas::dotc(rr[j], r0);
+			rho1 = cusp::blas::dotc(rr[j], r0);
 
 			// return with failure
-			if(rou0 == 0)
+			if(rho0 == 0)
 				return;
 
-			SolverValueType beta = alpha * rou1 / rou0;
-			rou0 = rou1;
+			SolverValueType beta = alpha * rho1 / rho0;
+			rho0 = rho1;
 
 			for(int i = 0; i <= j; i++) {
 				// uu(i) = rr(i) - beta * uu(i)
@@ -132,7 +132,7 @@ void bicgstabl(SpmvOperator&                       spmv,
 			if(gamma == 0)
 				return;
 
-			alpha = rou0 / gamma;
+			alpha = rho0 / gamma;
 
 			for(int i = 0; i <= j; i++) {
 				// rr(i) <- rr(i) - alpha * uu(i+1)
