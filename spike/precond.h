@@ -1013,12 +1013,10 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	if (m_testMC64)
 		return;
 	
-	int dropped = 0;
-
 	if (m_k_reorder > m_maxBandwidth || m_dropOff_frac > 0) {
 		CPUTimer loc_timer;
 		loc_timer.Start();
-		dropped = graph.dropOff(m_dropOff_frac, m_maxBandwidth, m_dropOff_actual);
+		m_k = graph.dropOff(m_dropOff_frac, m_maxBandwidth, m_dropOff_actual);
 		loc_timer.Stop();
 
 		m_time_dropOff = loc_timer.getElapsed();
@@ -1026,11 +1024,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	else {
 		m_dropOff_actual = 0;
 		m_time_dropOff = 0;
+		m_k = m_k_reorder;
 	}
-
-	// FIXME: this is a little bit problematic when for some off-diagonals, there is no element at all.
-	m_k = m_k_reorder - dropped;
-
 
 	// Verify that the required number of partitions is consistent with the
 	// problem size and half-bandwidth.  If 'n' is the smallest partition size,
