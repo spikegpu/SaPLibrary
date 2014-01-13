@@ -431,8 +431,7 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 // Note that the final bandwidth is guranteed to be no more than the specified
 // maxBandwidth value.
 //
-// The return value is the number of dropped diagonals. We also return the
-// actual norm reduction fraction achieved.
+// The return value is the actual half-bandwidth we got after drop-off.
 // ----------------------------------------------------------------------------
 template <typename T>
 int
@@ -474,30 +473,53 @@ Graph<T>::dropOff(T   frac,
 	// exceed the specified maximum bandwidth.
 	m_first = m_edges.begin();
 	EdgeIterator  last = m_first;
-	int           dropped = 0;
+	int           final_half_bandwidth = abs(m_first->m_from - m_first->m_to);
+
+	// Remove all elements which are outside the specified max bandwidth
+	{
+		int bandwidth;
+		while ((bandwidth = abs(last->m_from - last -> m_to)) > maxBandwidth)
+			last ++;
+
+		norm_out -= std::accumulate(m_first, last, (T) 0, AccumulateEdgeValue());
+		m_first = last;
+		final_half_bandwidth = bandwidth;
+	}
+
+	// After the first stage, we have reached the budget, stop.
+	if (norm_out <= 0) {
+		timer.Stop();
+		m_timeDropoff = timer.getElapsed();
+
+		// Calculate the actual norm reduction fraction.
+		frac_actual = 1 - norm_out/norm_in;
+
+		return final_half_bandwidth;
+	}
 
 	while (true) {
 		// Current band
 		int bandwidth = abs(m_first->m_from - m_first->m_to);
 
 		// Stop now if we reached the main diagonal.
-		if (bandwidth == 0)
+		if (bandwidth == 0) {
+			final_half_bandwidth = bandwidth;
 			break;
+		}
 
 		// Find all edges in the current band and calculate the norm of the band.
 		do {last++;} while(abs(last->m_from - last->m_to) == bandwidth);
 
 		T band_norm = std::accumulate(m_first, last, (T) 0, AccumulateEdgeValue());
 
-		// Stop now if we are below the specified maximum and removing this band
-		// would reduce the norm by more than allowed.
-		if (bandwidth <= maxBandwidth && norm_out - band_norm < min_norm_out)
+		// Stop now if removing this band would reduce the norm by more than allowed.
+		if (norm_out - band_norm < min_norm_out)
 			break;
 
 		// Remove the norm of this band and move to the next one.
 		norm_out -= band_norm;
 		m_first = last;
-		dropped++;
+		final_half_bandwidth = bandwidth;
 	}
 
 	timer.Stop();
@@ -506,7 +528,7 @@ Graph<T>::dropOff(T   frac,
 	// Calculate the actual norm reduction fraction.
 	frac_actual = 1 - norm_out/norm_in;
 
-	return dropped;
+	return final_half_bandwidth;
 }
 
 
