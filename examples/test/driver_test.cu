@@ -503,23 +503,21 @@ int main(int argc, char** argv)
 				case spike::BiCGStab:
 					prec += "B1"; break;
 
-				case spike::BiCGStab_SI:
-					prec += "B1(SI)"; break;
-
-				case spike::BiCGStab2:
-					prec += "B2(SI)"; break;
-
 				case spike::CG:
 					prec += "CG"; break;
-
-				case spike::CG_SI:
-					prec += "CG(SI)"; break;
 
 				case spike::CR:
 					prec += "CR"; break;
 
 				case spike::GMRES:
 					prec += "GMRES"; break;
+
+				case spike::BiCGStab1:
+					prec += "B1(SI)"; break;
+
+				case spike::BiCGStab2:
+					prec += "B2(SI)"; break;
+
 			}
 			outputItem(prec.data());
 		}
@@ -767,18 +765,16 @@ GetProblemSpecs(int             argc,
 					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
 					if (kry == "0" || kry == "BICGSTAB")
 						opts.solverType = spike::BiCGStab;
-					else if (kry == "1" || kry == "BICGSTAB2")
-						opts.solverType = spike::BiCGStab2;
+					else if (kry == "1" || kry == "GMRES")
+						opts.solverType = spike::GMRES;
 					else if (kry == "2" || kry == "CG")
 						opts.solverType = spike::CG;
 					else if (kry == "3" || kry == "CR")
 						opts.solverType = spike::CR;
-					else if (kry == "4" || kry == "GMRES")
-						opts.solverType = spike::GMRES;
-					else if (kry == "5" || kry == "BICGSTAB_SI")
-						opts.solverType = spike::BiCGStab_SI;
-					else if (kry == "6" || kry == "CG_SI")
-						opts.solverType = spike::CG_SI;
+					else if (kry == "4" || kry == "BICGSTAB1")
+						opts.solverType = spike::BiCGStab1;
+					else if (kry == "5" || kry == "BICGSTAB2")
+						opts.solverType = spike::BiCGStab2;
 					else
 						return false;
 				}

@@ -74,12 +74,17 @@ CSimpleOptA::SOption g_options[] = {
 //
 // This class defines a custom SPMV functor for sparse matrix-vector product.
 // -----------------------------------------------------------------------------
-class CustomSpmv {
+class CustomSpmv : public cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> {
 public:
-	CustomSpmv(Matrix& A) : m_A(A) {}
+	typedef cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> Parent;
+
+	CustomSpmv(Matrix& A) : Parent(A.num_rows, A.num_cols), m_A(A) {}
 
 	void operator()(const Vector& v,
-	                Vector&       Av) {cusp::multiply(m_A, v, Av);}
+	                Vector&       Av) 
+	{
+		cusp::multiply(m_A, v, Av);
+	}
 
 	Matrix&      m_A;
 private:
