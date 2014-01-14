@@ -22,9 +22,17 @@ namespace spike {
  * \tparam Matrix is the type of the sparse matrix.
  */
 template <typename Matrix>
-class SpmvCusp {
+class SpmvCusp : public cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> 
+{
 public:
-	SpmvCusp(Matrix& A) : m_A(A), m_time(0), m_count(0) {}
+	typedef cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> Parent;
+
+	SpmvCusp(Matrix& A) 
+	:	Parent(A.num_rows, A.num_cols),
+		m_A(A),
+		m_time(0), 
+		m_count(0) 
+	{}
 
 	/// Cummulative time for all SPMV calls (ms).
 	double getTime() const   {return m_time;}
@@ -35,8 +43,9 @@ public:
 	/// Average GFLOP/s over all SPMV calls.
 	double getGFlops() const
 	{
-		double avgTime = m_time / m_count;
-		return 2 * m_A.num_entries / (1e6 * avgTime);
+		// double avgTime = m_time / m_count;
+		// return 2 * m_A.num_entries / (1e6 * avgTime);
+		return 0;
 	}
 
 	/// Implementation of the SPMV functor using cusp::multiply().
@@ -51,9 +60,10 @@ public:
 		// m_count++;
 		// m_time += m_timer.getElapsed();
 	}
-	Matrix&      m_A;
 
 private:
+	Matrix&      m_A;
+
 	GPUTimer     m_timer;
 	double       m_time;
 	int          m_count;
