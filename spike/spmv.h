@@ -22,10 +22,10 @@ namespace spike {
  * \tparam Matrix is the type of the sparse matrix.
  */
 template <typename Matrix>
-class SpmvCusp : public cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> 
+class SpmvCusp : public cusp::linear_operator<typename Matrix::value_type, typename Matrix::memory_space, typename Matrix::index_type> 
 {
 public:
-	typedef cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> Parent;
+	typedef typename cusp::linear_operator<typename Matrix::value_type, typename Matrix::memory_space, typename Matrix::index_type> Parent;
 
 	SpmvCusp(Matrix& A) 
 	:	Parent(A.num_rows, A.num_cols),
