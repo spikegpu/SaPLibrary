@@ -420,28 +420,26 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 
 	switch(m_solver)
 	{
+		// CUSP Krylov solvers
 		case BiCGStab:
-			cusp::krylov::bicgstab(spmv.m_A, x_vector, b_vector, m_monitor, m_precond);
+			cusp::krylov::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+		case GMRES:
+			cusp::krylov::gmres(spmv, x_vector, b_vector, 50, m_monitor, m_precond);
+			break;
+		case CG:
+			cusp::krylov::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+		case CR:
+			cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+
+		// SPIKE Krylov solvers
+		case BiCGStab1:
+			spike::bicgstab1(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 		case BiCGStab2:
 			spike::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		case CG:
-			cusp::krylov::cg(spmv.m_A, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		case CR:
-			cusp::krylov::cr(spmv.m_A, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		case GMRES:
-			cusp::krylov::gmres(spmv.m_A, x_vector, b_vector, 50, m_monitor, m_precond);
-			break;
-		case BiCGStab_SI:
-			spike::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		case CG_SI:
-			spike::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		default:
 			break;
 	}
 
