@@ -34,6 +34,7 @@ public:
 	void init(const SolverVector& rhs);
 
 	bool finished(const SolverVector& r);
+	bool finished(SolverValueType rNorm);
 
 	void increment(float incr) {m_iterations += incr;}
 
@@ -93,7 +94,14 @@ template <typename SolverVector>
 inline bool
 Monitor<SolverVector>::finished(const SolverVector& r)
 {
-	m_rNorm = cusp::blas::nrm2(r);
+	return finished(cusp::blas::nrm2(r));
+}
+
+template <typename SolverVector>
+inline bool
+Monitor<SolverVector>::finished(SolverValueType rNorm)
+{
+	m_rNorm = rNorm;
 
 	if (m_rNorm <= m_tolerance * m_rhsNorm)  m_state = Converged;
 	else if (isnan(m_rNorm))                 m_state = Failed;

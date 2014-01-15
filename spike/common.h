@@ -60,7 +60,8 @@ enum KrylovSolverType {
 	CR,
 	// SPIKE solvers
 	BiCGStab1,
-	BiCGStab2
+	BiCGStab2,
+	MINRES
 };
 
 enum FactorizationMethod {

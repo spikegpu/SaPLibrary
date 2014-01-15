@@ -306,6 +306,8 @@ GetProblemSpecs(int             argc,
 						opts.solverType = spike::BiCGStab1;
 					else if (kry == "5" || kry == "BICGSTAB2")
 						opts.solverType = spike::BiCGStab2;
+					else if (kry == "6" || kry == "MINRES")
+						opts.solverType = spike::MINRES;
 					else
 						return false;
 				}
@@ -368,6 +370,8 @@ GetProblemSpecs(int             argc,
 		cout << "BiCGStab1 (Spike::GPU)" << endl; break;
 	case spike::BiCGStab2:
 		cout << "BiCGStab2 (Spike::GPU)" << endl; break;
+	case spike::MINRES:
+		cout << "MINRES (Spike::GPU)" << endl; break;
 	}
 	cout << "Tolerance: " << opts.tolerance << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
@@ -445,12 +449,13 @@ void ShowUsage()
 	cout << " -k=METHOD" << endl;
 	cout << " --krylov-method=METHOD" << endl;
 	cout << "        Specify the iterative Krylov solver:" << endl;
-	cout << "        METHOD=0 or METHOD=bicgstab      use BiCGStab (Cusp)" << endl;
+	cout << "        METHOD=0 or METHOD=BICGSTAB      use BiCGStab (Cusp)" << endl;
 	cout << "        METHOD=1 or METHOD=GMRES         use GMRES (Cusp)" << endl;
 	cout << "        METHOD=2 or METHOD=CG            use CG (Cusp)" << endl;
 	cout << "        METHOD=3 or METHOD=CR            use CR (Cusp)" << endl;
-	cout << "        METHOD=4 or METHOD=bicgstab1     use BiCGStab(1) (Spike::GPU)" << endl;
-	cout << "        METHOD=5 or METHOD=bicgstab2     use BiCGStab(2) (Spike::GPU). This is the default." << endl;
+	cout << "        METHOD=4 or METHOD=BICGSTAB1     use BiCGStab(1) (Spike::GPU)" << endl;
+	cout << "        METHOD=5 or METHOD=BICGSTAB2     use BiCGStab(2) (Spike::GPU). This is the default." << endl;
+	cout << "        METHOD=6 or METHOD=MINRES        use MINRES (Spike::GPU)" << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;

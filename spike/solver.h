@@ -28,6 +28,7 @@
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
+#include <spike/minres.h>
 #include <spike/timer.h>
 
 
@@ -441,6 +442,8 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 		case BiCGStab2:
 			spike::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
+		case MINRES:
+			spike::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
 	}
 
 	thrust::copy(x_vector.begin(), x_vector.end(), x.begin());
