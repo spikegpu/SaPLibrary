@@ -149,8 +149,7 @@ void minres(LinearOperator&  A,
 			ValueType denom = 1/gamma;
 			cusp::blas::copy(w2, w1);
 			cusp::blas::copy(w, w2);
-			cusp::blas::axpby(w1, w2, w, -oldeps, -delta);
-			cusp::blas::axpby(v, w, w, denom, denom);
+			cusp::blas::axpbypcz(v, w1, w2, w, denom, -oldeps*denom, -delta*denom);
 			cusp::blas::axpby(x, w, x, ValueType(1), phi);
 
 			// Go round again
