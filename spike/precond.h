@@ -1032,9 +1032,9 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	MatrixMapH   bandedMatMap;
 	MatrixMapFH  scaleMap;
 
-
+	bool         doRCM = (m_maxBandwidth > 0);
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_MC64        = graph.getTimeMC64();
