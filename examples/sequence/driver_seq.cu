@@ -41,8 +41,7 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, 
       OPT_MATFILE,
-      OPT_SAFE_FACT,
-      OPT_SINGLE_COMP};
+      OPT_SAFE_FACT};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -60,7 +59,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
@@ -76,15 +74,20 @@ CSimpleOptA::SOption g_options[] = {
 //
 // This class defines a custom SPMV functor for sparse matrix-vector product.
 // -----------------------------------------------------------------------------
-class CustomSpmv {
+class CustomSpmv : public cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> {
 public:
-	CustomSpmv(Matrix& A) : m_A(A) {}
+	typedef cusp::linear_operator<Matrix::value_type, Matrix::memory_space, Matrix::index_type> Parent;
+
+	CustomSpmv(Matrix& A) : Parent(A.num_rows, A.num_cols), m_A(A) {}
 
 	void operator()(const Vector& v,
-	                Vector&       Av) {cusp::multiply(m_A, v, Av);}
+	                Vector&       Av) 
+	{
+		cusp::multiply(m_A, v, Av);
+	}
 
-private:
 	Matrix&      m_A;
+private:
 };
 
 
@@ -260,9 +263,6 @@ GetProblemSpecs(int             argc,
 			case OPT_MATFILE:
 				fileMat = args.OptionArg();
 				break;
-			case OPT_SINGLE_COMP:
-				opts.singleComponent = true;
-				break;
 			case OPT_SAFE_FACT:
 				opts.safeFactorization = true;
 				break;
@@ -293,7 +293,6 @@ GetProblemSpecs(int             argc,
 		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
 	else
 		cout << "No drop-off." << endl;
-	cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
 	cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
 	cout << endl << endl;
 
@@ -326,8 +325,6 @@ void ShowUsage()
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;
 	cout << "        element-wise 1-norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
-	cout << " --single-component" << endl;
-	cout << "        Do not attempt to break the problem into several components (default false)." << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization (default false)." << endl; 
 	cout << " -? -h --help" << endl;

@@ -45,7 +45,7 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_MATFILE, OPT_RHSFILE,
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT,
-      OPT_CONST_BAND, OPT_SINGLE_COMP};
+      OPT_CONST_BAND};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -69,7 +69,6 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_RHSFILE,       "--rhs-file",           SO_REQ_CMB },
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
-	{ OPT_SINGLE_COMP,   "--single-component",   SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
 	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
@@ -297,16 +296,21 @@ GetProblemSpecs(int             argc,
 					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
 					if (kry == "0" || kry == "BICGSTAB")
 						opts.solverType = spike::BiCGStab;
-					else if (kry == "1" || kry == "BICGSTAB2")
-						opts.solverType = spike::BiCGStab2;
+					else if (kry == "1" || kry == "GMRES")
+						opts.solverType = spike::GMRES;
 					else if (kry == "2" || kry == "CG")
 						opts.solverType = spike::CG;
+					else if (kry == "3" || kry == "CR")
+						opts.solverType = spike::CR;
+					else if (kry == "4" || kry == "BICGSTAB1")
+						opts.solverType = spike::BiCGStab1;
+					else if (kry == "5" || kry == "BICGSTAB2")
+						opts.solverType = spike::BiCGStab2;
+					else if (kry == "6" || kry == "MINRES")
+						opts.solverType = spike::MINRES;
 					else
 						return false;
 				}
-				break;
-			case OPT_SINGLE_COMP:
-				opts.singleComponent = true;
 				break;
 			case OPT_SAFE_FACT:
 				opts.safeFactorization = true;
@@ -355,28 +359,30 @@ GetProblemSpecs(int             argc,
 	cout << "Iterative solver: ";
 	switch (opts.solverType) {
 	case spike::BiCGStab:
-		cout << "BiCGStab" << endl;
-		break;
-	case spike::BiCGStab2:
-		cout << "BiCGStab2" << endl;
-		break;
+		cout << "BiCGStab (Cusp)" << endl; break;
+	case spike::GMRES:
+		cout << "GMRES (Cusp)" << endl; break;
 	case spike::CG:
-		cout << "CG" << endl;
-		break;
+		cout << "CG (Cusp)" << endl; break;
+	case spike::CR:
+		cout << "CR (Cusp)" << endl; break;
+	case spike::BiCGStab1:
+		cout << "BiCGStab1 (Spike::GPU)" << endl; break;
+	case spike::BiCGStab2:
+		cout << "BiCGStab2 (Spike::GPU)" << endl; break;
+	case spike::MINRES:
+		cout << "MINRES (Spike::GPU)" << endl; break;
 	}
 	cout << "Tolerance: " << opts.tolerance << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
 	cout << "Preconditioner: ";
 	switch (opts.precondType) {
 	case spike::Spike:
-		cout << "SPIKE" << endl;
-		break;
+		cout << "SPIKE" << endl; break;
 	case spike::Block:
-		cout << "BLOCK DIAGONAL" << endl;
-		break;
+		cout << "BLOCK DIAGONAL" << endl; break;
 	case spike::None:
-		cout << "NONE" << endl;
-		break;
+		cout << "NONE" << endl; break;
 	}
 	if (opts.precondType != spike::None) {
 		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
@@ -387,7 +393,6 @@ GetProblemSpecs(int             argc,
 			cout << "No drop-off." << endl;
 		if (maxBandwidth_specified)
 			cout << "Maximum bandwidth: " << opts.maxBandwidth << endl;
-		cout << (opts.singleComponent ? "Do not break the problem into several components." : "Attempt to break the problem into several components.") << endl;
 		cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
 		cout << (opts.performMC64 ? "Perform MC64 reordering." : "Do not perform MC64 reordering.") << endl;
 		cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
@@ -441,14 +446,16 @@ void ShowUsage()
 	cout << " -o=OUTFILE" << endl;
 	cout << " --output-file=OUTFILE" << endl;
 	cout << "        Write the solution to the file OUTFILE (MatrixMarket format)." << endl;
-	cout << " --single-component" << endl;
-	cout << "        Do not attempt to break the problem into disconnected components (default false)." << endl;
 	cout << " -k=METHOD" << endl;
 	cout << " --krylov-method=METHOD" << endl;
 	cout << "        Specify the iterative Krylov solver:" << endl;
-	cout << "        METHOD=0 or METHOD=bicgstab      use BiCGStab" << endl;
-	cout << "        METHOD=1 or METHOD=bicgstab2     use BiCGStab(2). This is the default." << endl;
-	cout << "        METHOD=2 or METHOD=CG            use CG." << endl;
+	cout << "        METHOD=0 or METHOD=BICGSTAB      use BiCGStab (Cusp)" << endl;
+	cout << "        METHOD=1 or METHOD=GMRES         use GMRES (Cusp)" << endl;
+	cout << "        METHOD=2 or METHOD=CG            use CG (Cusp)" << endl;
+	cout << "        METHOD=3 or METHOD=CR            use CR (Cusp)" << endl;
+	cout << "        METHOD=4 or METHOD=BICGSTAB1     use BiCGStab(1) (Spike::GPU)" << endl;
+	cout << "        METHOD=5 or METHOD=BICGSTAB2     use BiCGStab(2) (Spike::GPU). This is the default." << endl;
+	cout << "        METHOD=6 or METHOD=MINRES        use MINRES (Spike::GPU)" << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;
@@ -456,13 +463,13 @@ void ShowUsage()
 	cout << " -f=METHOD" << endl;
 	cout << " --factorization-method=METHOD" << endl;
 	cout << "        Specify the factorization type used to assemble the reduced matrix" << endl;
-	cout << "        METHOD=0 or METHOD=lu_ul                for both applying LU and UL." << endl;
-	cout << "        METHOD=1 or METHOD=lu_lu                for applying a complete LU. This is the default." << endl;
+	cout << "        METHOD=0 or METHOD=lu_ul         use LU and UL for right- and left-spikes." << endl;
+	cout << "        METHOD=1 or METHOD=lu_lu         use LU for both right- and left-spikes. This is the default." << endl;
 	cout << " --precond-method=METHOD" << endl;
 	cout << "        Specify the preconditioner to be used" << endl;
-	cout << "        METHOD=0 or METHOD=SPIKE                for using SPIKE preconditioner.  This is the default." << endl;
-	cout << "        METHOD=1 or METHOD=BLOCK                for using Block preconditioner." << endl;
-	cout << "        METHOD=2 or METHOD=NONE                 do not use a preconditioner." << endl;
+	cout << "        METHOD=0 or METHOD=SPIKE         SPIKE preconditioner.  This is the default." << endl;
+	cout << "        METHOD=1 or METHOD=BLOCK         Block-diagonal preconditioner." << endl;
+	cout << "        METHOD=2 or METHOD=NONE          no preconditioner." << endl;
 	cout << " -? -h --help" << endl;
 	cout << "        Print this message and exit." << endl;
 	cout << endl;

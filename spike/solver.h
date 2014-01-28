@@ -13,6 +13,10 @@
 #include <cusp/blas.h>
 #include <cusp/print.h>
 #include <cusp/io/matrix_market.h>
+#include <cusp/krylov/cg.h>
+#include <cusp/krylov/bicgstab.h>
+#include <cusp/krylov/cr.h>
+#include <cusp/krylov/gmres.h>
 
 #include <thrust/sequence.h>
 #include <thrust/scan.h>
@@ -21,10 +25,10 @@
 
 
 #include <spike/common.h>
-#include <spike/components.h>
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
+#include <spike/minres.h>
 #include <spike/timer.h>
 
 
@@ -62,7 +66,6 @@ struct Options
 	PreconditionerType  precondType;          /**< Preconditioner type; default: Spike */
 	bool                safeFactorization;    /**< Use safe factorization (diagonal boosting)? default: false */
 	bool                variableBandwidth;    /**< Allow variable partition bandwidths? default: true */
-	bool                singleComponent;      /**< Disable check for disconnected components? default: false */
 	bool                trackReordering;      /**< Keep track of the reordering information? default: false */
 };
 
@@ -129,7 +132,6 @@ class Solver
 public:
 	Solver(int             numPartitions,
 	       const Options&  opts);
-	~Solver();
 
 	template <typename Matrix>
 	bool setup(const Matrix& A);
@@ -162,14 +164,8 @@ private:
 	KrylovSolverType                    m_solver;
 	Monitor<SolverVector>               m_monitor;
 	Precond<PrecVector>                 m_precond;
-	std::vector<Precond<PrecVector>*>   m_precond_pointers;
-	std::vector<IntVectorH>             m_comp_reorderings;
-	IntVectorH                          m_comp_perms;
-	IntVectorH                          m_compIndices;
-	IntVectorH                          m_compMap;
 
 	int                                 m_n;
-	bool                                m_singleComponent;
 	bool                                m_trackReordering;
 	bool                                m_setupDone;
 
@@ -177,9 +173,8 @@ private:
 
 public:
 	// FIXME: this should only be used in nightly test, remove this
-	const std::vector<Precond<PrecVector>*>&
-		                                getPreconditioners() const
-										{return m_precond_pointers;}
+	const Precond<PrecVector>&          getPreconditioner() const
+										{return m_precond;}
 };
 
 
@@ -205,7 +200,6 @@ Options::Options()
 	precondType(Spike),
 	safeFactorization(false),
 	variableBandwidth(true),
-	singleComponent(false),
 	trackReordering(false)
 {
 }
@@ -261,23 +255,9 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
 	m_solver(opts.solverType),
-	m_singleComponent(opts.singleComponent),
 	m_trackReordering(opts.trackReordering),
 	m_setupDone(false)
 {
-}
-
-
-/// Spike solver destructor.
-/**
- * This is the destructor for the Solver class. It frees the preconditioner objects.
- */
-template <typename Array, typename PrecValueType>
-Solver<Array, PrecValueType>::~Solver()
-{
-		for (size_t i = 0; i < m_precond_pointers.size(); i++)
-			delete m_precond_pointers[i];
-		m_precond_pointers.clear();
 }
 
 
@@ -295,172 +275,44 @@ bool
 Solver<Array, PrecValueType>::setup(const Matrix& A)
 {
 	m_n = A.num_rows;
-	size_t nnz = A.num_entries;
 
 	CPUTimer timer;
 
 	timer.Start();
 
-	PrecMatrixCooH Acoo;
-	
-	Components sc(m_n);
-	size_t     numComponents;
-
-	if (m_singleComponent)
-		numComponents = 1;
-	else {
-		Acoo = A;
-		for (size_t i = 0; i < nnz; i++)
-			sc.combineComponents(Acoo.row_indices[i], Acoo.column_indices[i]);
-		sc.adjustComponentIndices();
-		numComponents = sc.m_numComponents;
-	}
-
-	if (m_trackReordering)
-		m_compMap.resize(nnz);
-
-	if (numComponents > 1) {
-		m_compIndices = sc.m_compIndices;
-
-		std::vector<PrecMatrixCooH> coo_matrices(numComponents);
-
-		m_comp_reorderings.resize(numComponents);
-		if (m_comp_perms.size() != m_n)
-			m_comp_perms.resize(m_n, -1);
-		else
-			cusp::blas::fill(m_comp_perms, -1);
-
-		for (size_t i=0; i < numComponents; i++)
-			m_comp_reorderings[i].clear();
-
-		IntVectorH cur_indices(numComponents, 0);
-
-		IntVectorH visited(m_n, 0);
-
-		for (size_t i = 0; i < nnz; i++) {
-			int from = Acoo.row_indices[i];
-			int to = Acoo.column_indices[i];
-			int compIndex = sc.m_compIndices[from];
-
-			visited[from] = visited[to] = 1;
-
-			if (m_comp_perms[from] < 0) {
-				m_comp_perms[from] = cur_indices[compIndex];
-				m_comp_reorderings[compIndex].push_back(from);
-				cur_indices[compIndex] ++;
-			}
-
-			if (m_comp_perms[to] < 0) {
-				m_comp_perms[to] = cur_indices[compIndex];
-				m_comp_reorderings[compIndex].push_back(to);
-				cur_indices[compIndex] ++;
-			}
-
-			PrecMatrixCooH& cur_matrix = coo_matrices[compIndex];
-
-			cur_matrix.row_indices.push_back(m_comp_perms[from]);
-			cur_matrix.column_indices.push_back(m_comp_perms[to]);
-			cur_matrix.values.push_back(Acoo.values[i]);
-
-			if (m_trackReordering)
-				m_compMap[i] = compIndex;
-		}
-
-		if (thrust::any_of(visited.begin(), visited.end(), thrust::logical_not<int>() ))
-			throw system_error(system_error::Matrix_singular, "Singular matrix found");
-
-		for (size_t i = 0; i < numComponents; i++) {
-			PrecMatrixCooH& cur_matrix = coo_matrices[i];
-
-			cur_matrix.num_entries = cur_matrix.values.size();
-			cur_matrix.num_rows = cur_matrix.num_cols = cur_indices[i];
-
-			if (m_precond_pointers.size() <= i)
-				m_precond_pointers.push_back(new Precond<PrecVector>(m_precond));
-
-			m_precond_pointers[i]->setup(cur_matrix);
-		}
-	} else {
-		m_compIndices.resize(m_n, 0);
-		m_comp_reorderings.resize(1);
-		m_comp_reorderings[0].resize(m_n);
-		m_comp_perms.resize(m_n);
-
-		if (m_trackReordering)
-			cusp::blas::fill(m_compMap, 0);
-
-		thrust::sequence(m_comp_perms.begin(), m_comp_perms.end());
-		thrust::sequence(m_comp_reorderings[0].begin(), m_comp_reorderings[0].end());
-
-		if (m_precond_pointers.size() == 0)
-			m_precond_pointers.push_back(new Precond<PrecVector>(m_precond));
-
-		m_precond_pointers[0]->setup(A);
-	}
+	m_precond.setup(A);
 
 	timer.Stop();
 
 	m_stats.timeSetup = timer.getElapsed();
 
-	m_stats.bandwidthReorder = m_precond_pointers[0]->getBandwidthReordering();
-	m_stats.bandwidth = m_precond_pointers[0]->getBandwidth();
-	m_stats.bandwidthMC64 = m_precond_pointers[0]->getBandwidthMC64();
-	m_stats.nuKf = cusp::blas::nrm1(m_precond_pointers[0]->m_ks_row_host) + cusp::blas::nrm1(m_precond_pointers[0]->m_ks_col_host);
+	m_stats.bandwidthReorder = m_precond.getBandwidthReordering();
+	m_stats.bandwidth = m_precond.getBandwidth();
+	m_stats.bandwidthMC64 = m_precond.getBandwidthMC64();
+	m_stats.nuKf = cusp::blas::nrm1(m_precond.m_ks_row_host) + cusp::blas::nrm1(m_precond.m_ks_col_host);
 	m_stats.flops_LU = 0;
 	{
-		int n = m_precond_pointers[0]->m_ks_row_host.size();
+		int n = m_precond.m_ks_row_host.size();
 		for (int i=0; i<n; i++)
-			m_stats.flops_LU += (double)(m_precond_pointers[0]->m_ks_row_host[i]) * (m_precond_pointers[0]->m_ks_col_host[i]);
+			m_stats.flops_LU += (double)(m_precond.m_ks_row_host[i]) * (m_precond.m_ks_col_host[i]);
 	}
-	m_stats.numPartitions = m_precond_pointers[0]->getNumPartitions();
-	m_stats.actualDropOff = m_precond_pointers[0]->getActualDropOff();
-	m_stats.time_MC64 = m_precond_pointers[0] -> getTimeMC64();
-	m_stats.time_MC64_pre = m_precond_pointers[0] -> getTimeMC64Pre();
-	m_stats.time_MC64_first = m_precond_pointers[0] -> getTimeMC64First();
-	m_stats.time_MC64_second = m_precond_pointers[0] -> getTimeMC64Second();
-	m_stats.time_MC64_post = m_precond_pointers[0] -> getTimeMC64Post();
-	m_stats.time_reorder = m_precond_pointers[0]->getTimeReorder();
-	m_stats.time_dropOff = m_precond_pointers[0]->getTimeDropOff();
-	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
-	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
-	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
-	m_stats.time_offDiags = m_precond_pointers[0]->getTimeCopyOffDiags();
-	m_stats.time_bandLU = m_precond_pointers[0]->getTimeBandLU();
-	m_stats.time_bandUL = m_precond_pointers[0]->getTimeBandUL();
-	m_stats.time_assembly = m_precond_pointers[0]->gettimeAssembly();
-	m_stats.time_fullLU = m_precond_pointers[0]->getTimeFullLU();
-
-	for (size_t i=1; i < numComponents; i++) {
-		if (m_stats.bandwidthReorder < m_precond_pointers[i]->getBandwidthReordering())
-			m_stats.bandwidthReorder = m_precond_pointers[i]->getBandwidthReordering();
-		if (m_stats.bandwidth < m_precond_pointers[i]->getBandwidth())
-			m_stats.bandwidth = m_precond_pointers[i]->getBandwidth();
-		if (m_stats.bandwidthMC64 < m_precond_pointers[i]->getBandwidthMC64())
-			m_stats.bandwidthMC64 = m_precond_pointers[i]->getBandwidthMC64();
-		if (m_stats.numPartitions > m_precond_pointers[i]->getNumPartitions())
-			m_stats.numPartitions = m_precond_pointers[i]->getNumPartitions();
-		m_stats.nuKf += cusp::blas::nrm1(m_precond_pointers[i]->m_ks_row_host) + cusp::blas::nrm1(m_precond_pointers[i]->m_ks_col_host);
-		{
-			int n = m_precond_pointers[i]->m_ks_row_host.size();
-			for (int j=0; j<n; j++)
-				m_stats.flops_LU += (double)(m_precond_pointers[i]->m_ks_row_host[j]) * (m_precond_pointers[i]->m_ks_col_host[j]);
-		}
-		m_stats.time_MC64 += m_precond_pointers[i] -> getTimeMC64();
-		m_stats.time_MC64_pre += m_precond_pointers[i] -> getTimeMC64Pre();
-		m_stats.time_MC64_first += m_precond_pointers[i] -> getTimeMC64First();
-		m_stats.time_MC64_second += m_precond_pointers[i] -> getTimeMC64Second();
-		m_stats.time_MC64_post += m_precond_pointers[i] -> getTimeMC64Post();
-		m_stats.time_reorder += m_precond_pointers[i]->getTimeReorder();
-		m_stats.time_dropOff += m_precond_pointers[i]->getTimeDropOff();
-		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
-		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
-		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
-		m_stats.time_offDiags += m_precond_pointers[i]->getTimeCopyOffDiags();
-		m_stats.time_bandLU += m_precond_pointers[i]->getTimeBandLU();
-		m_stats.time_bandUL += m_precond_pointers[i]->getTimeBandUL();
-		m_stats.time_assembly += m_precond_pointers[i]->gettimeAssembly();
-		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
-	}
+	m_stats.numPartitions = m_precond.getNumPartitions();
+	m_stats.actualDropOff = m_precond.getActualDropOff();
+	m_stats.time_MC64 = m_precond.getTimeMC64();
+	m_stats.time_MC64_pre = m_precond.getTimeMC64Pre();
+	m_stats.time_MC64_first = m_precond.getTimeMC64First();
+	m_stats.time_MC64_second = m_precond.getTimeMC64Second();
+	m_stats.time_MC64_post = m_precond.getTimeMC64Post();
+	m_stats.time_reorder = m_precond.getTimeReorder();
+	m_stats.time_dropOff = m_precond.getTimeDropOff();
+	m_stats.time_cpu_assemble = m_precond.getTimeCPUAssemble();
+	m_stats.time_transfer = m_precond.getTimeTransfer();
+	m_stats.time_toBanded = m_precond.getTimeToBanded();
+	m_stats.time_offDiags = m_precond.getTimeCopyOffDiags();
+	m_stats.time_bandLU = m_precond.getTimeBandLU();
+	m_stats.time_bandUL = m_precond.getTimeBandUL();
+	m_stats.time_assembly = m_precond.gettimeAssembly();
+	m_stats.time_fullLU = m_precond.getTimeFullLU();
 
 	if (m_stats.bandwidth == 0)
 		m_stats.nuKf = 0.0;
@@ -509,28 +361,10 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
 	CPUTimer timer;
 	timer.Start();
 
-	int numComponents = m_precond_pointers.size();
-
-	if (numComponents <= 1) {
+	{
 		PrecVector tmp_entries = entries;
 		
-		m_precond_pointers[0]->update(tmp_entries);
-	}
-	else {
-		PrecVectorH h_entries = entries;
-		
-		int nnz = h_entries.size();
-
-		std::vector<PrecVectorH> new_entries(numComponents);
-
-		for (int i=0; i < nnz; i++)
-			new_entries[m_compMap[i]].push_back(h_entries[i]);
-
-		for (int i=0; i < numComponents; i++) {
-			PrecVector tmp_entries = new_entries[i];
-
-			m_precond_pointers[i]->update(tmp_entries);
-		}
+		m_precond.update(tmp_entries);
 	}
 
 	timer.Stop();
@@ -538,25 +372,14 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
 	m_stats.timeUpdate = timer.getElapsed();
 
 	m_stats.time_reorder = 0;
-	m_stats.time_cpu_assemble = m_precond_pointers[0]->getTimeCPUAssemble();
-	m_stats.time_transfer = m_precond_pointers[0]->getTimeTransfer();
-	m_stats.time_toBanded = m_precond_pointers[0]->getTimeToBanded();
-	m_stats.time_offDiags = m_precond_pointers[0]->getTimeCopyOffDiags();
-	m_stats.time_bandLU = m_precond_pointers[0]->getTimeBandLU();
-	m_stats.time_bandUL = m_precond_pointers[0]->getTimeBandUL();
-	m_stats.time_assembly = m_precond_pointers[0]->gettimeAssembly();
-	m_stats.time_fullLU = m_precond_pointers[0]->getTimeFullLU();
-
-	for (int i=1; i < numComponents; i++) {
-		m_stats.time_cpu_assemble += m_precond_pointers[i]->getTimeCPUAssemble();
-		m_stats.time_transfer += m_precond_pointers[i]->getTimeTransfer();
-		m_stats.time_toBanded += m_precond_pointers[i]->getTimeToBanded();
-		m_stats.time_offDiags += m_precond_pointers[i]->getTimeCopyOffDiags();
-		m_stats.time_bandLU += m_precond_pointers[i]->getTimeBandLU();
-		m_stats.time_bandUL += m_precond_pointers[i]->getTimeBandUL();
-		m_stats.time_assembly += m_precond_pointers[i]->gettimeAssembly();
-		m_stats.time_fullLU += m_precond_pointers[i]->getTimeFullLU();
-	}
+	m_stats.time_cpu_assemble = m_precond.getTimeCPUAssemble();
+	m_stats.time_transfer = m_precond.getTimeTransfer();
+	m_stats.time_toBanded = m_precond.getTimeToBanded();
+	m_stats.time_offDiags = m_precond.getTimeCopyOffDiags();
+	m_stats.time_bandLU = m_precond.getTimeBandLU();
+	m_stats.time_bandUL = m_precond.getTimeBandUL();
+	m_stats.time_assembly = m_precond.gettimeAssembly();
+	m_stats.time_fullLU = m_precond.getTimeFullLU();
 
 	return true;
 }
@@ -598,15 +421,29 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 
 	switch(m_solver)
 	{
+		// CUSP Krylov solvers
 		case BiCGStab:
-			spike::bicgstab(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+			cusp::krylov::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+		case GMRES:
+			cusp::krylov::gmres(spmv, x_vector, b_vector, 50, m_monitor, m_precond);
+			break;
+		case CG:
+			cusp::krylov::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+		case CR:
+			cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+
+		// SPIKE Krylov solvers
+		case BiCGStab1:
+			spike::bicgstab1(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 		case BiCGStab2:
-			spike::bicgstab2(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
+			spike::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
-		default:
-			spike::cg(spmv, b_vector, x_vector, m_monitor, m_precond_pointers, m_compIndices, m_comp_perms, m_comp_reorderings);
-			break;
+		case MINRES:
+			spike::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
 	}
 
 	thrust::copy(x_vector.begin(), x_vector.end(), x.begin());
@@ -617,10 +454,7 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 	m_stats.relResidualNorm = m_monitor.getRelResidualNorm();
 	m_stats.numIterations = m_monitor.getNumIterations();
 
-	int numComponents = m_precond_pointers.size();
-	m_stats.time_shuffle = m_precond_pointers[0]->getTimeShuffle();
-	for (int i=1; i < numComponents; i++)
-		m_stats.time_shuffle += m_precond_pointers[i]->getTimeShuffle();
+	m_stats.time_shuffle = m_precond.getTimeShuffle();
 
 	return m_monitor.converged();
 }

@@ -124,6 +124,7 @@ public:
 	                   bool             doMC64,
 					   bool             mc64FirstStageOnly,
 	                   bool             scale,
+					   bool             doRCM,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
 	                   IntVector&       mc64RowPerm,
@@ -350,6 +351,7 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
                   bool              doMC64,
 				  bool              mc64FirstStageOnly,
                   bool              scale,
+				  bool              doRCM,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
                   IntVector&        mc64RowPerm,
@@ -407,7 +409,16 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 		return k_mc64;
 
 	// Apply reverse Cuthill-McKee algorithm.
-	int bandwidth = RCM(m_edges, optReordering, optPerm);
+	int bandwidth;
+	if (doRCM)
+		bandwidth = RCM(m_edges, optReordering, optPerm);
+	else {
+		bandwidth = k_mc64;
+		optReordering.resize(m_n);
+		optPerm.resize(m_n);
+		thrust::sequence(optReordering.begin(), optReordering.end());
+		thrust::sequence(optPerm.begin(), optPerm.end());
+	}
 
 	// Initialize the iterator m_first (in case dropOff() is not called).
 	m_first = m_edges.begin();

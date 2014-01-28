@@ -43,6 +43,7 @@ include_directories(..)
 
 SET(SPIKE_HEADERS
 	../../spike/bicgstab2.h
+  ../../spike/minres.h
 	../../spike/common.h
 	../../spike/components.h
 	../../spike/exception.h

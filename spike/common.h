@@ -53,9 +53,15 @@ const unsigned int MAX_GRID_DIMENSION = 32768;
 const unsigned int CRITICAL_THRESHOLD = 70;
 
 enum KrylovSolverType {
+	// CUSP solvers
 	BiCGStab,
+	GMRES,
+	CG,
+	CR,
+	// SPIKE solvers
+	BiCGStab1,
 	BiCGStab2,
-	CG
+	MINRES
 };
 
 enum FactorizationMethod {

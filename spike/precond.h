@@ -7,6 +7,7 @@
 
 #include <cusp/blas.h>
 #include <cusp/print.h>
+#include <cusp/format.h>
 
 #include <thrust/logical.h>
 #include <thrust/functional.h>
@@ -38,8 +39,11 @@ class Precond
 {
 public:
 	typedef typename PrecVector::memory_space  MemorySpace;
+	typedef typename PrecVector::memory_space  memory_space;
 	typedef typename PrecVector::value_type    PrecValueType;
+	typedef typename PrecVector::value_type    value_type;
 	typedef typename PrecVector::iterator      PrecVectorIterator;
+	typedef typename cusp::unknown_format      format;
 
 	typedef typename cusp::array1d<int, MemorySpace>                  IntVector;
 	typedef IntVector                                                 MatrixMap;
@@ -57,12 +61,12 @@ public:
 	Precond();
 
 	Precond(int                 numPart,
-			bool                isSPD,
-			bool                saveMem,
+	        bool                isSPD,
+	        bool                saveMem,
 	        bool                reorder,
-			bool                testMC64,
+	        bool                testMC64,
 	        bool                doMC64,
-            bool                mc64FirstStageOnly,
+	        bool                mc64FirstStageOnly,
 	        bool                scale,
 	        double              dropOff_frac,
 	        int                 maxBandwidth,
@@ -78,11 +82,11 @@ public:
 
 	Precond & operator = (const Precond &prec);
 
-	double getTimeMC64() const         {return m_time_MC64;}
+	double getTimeMC64() const            {return m_time_MC64;}
 	double getTimeMC64Pre() const         {return m_time_MC64_pre;}
-	double getTimeMC64First() const         {return m_time_MC64_first;}
-	double getTimeMC64Second() const         {return m_time_MC64_second;}
-	double getTimeMC64Post() const         {return m_time_MC64_post;}
+	double getTimeMC64First() const       {return m_time_MC64_first;}
+	double getTimeMC64Second() const      {return m_time_MC64_second;}
+	double getTimeMC64Post() const        {return m_time_MC64_post;}
 	double getTimeReorder() const         {return m_time_reorder;}
 	double getTimeDropOff() const         {return m_time_dropOff;}
 	double getTimeCPUAssemble() const     {return m_time_cpu_assemble;}
@@ -111,6 +115,9 @@ public:
 	void   update(const PrecVector& entries);
 
 	void   solve(PrecVector& v, PrecVector& z);
+
+	template <typename SolverVector>
+	void   operator()(SolverVector& v, SolverVector& z);
 
 private:
 	int                  m_numPartitions;
@@ -187,6 +194,10 @@ private:
 
 	PrecValueType        m_dropOff_actual;        // actual dropOff fraction achieved
 
+	// Temporary vectors used in preconditioner solve (to support mixed-precision).
+	PrecVector           m_vp;                    // copy of specified RHS vector
+	PrecVector           m_zp;                    // copy of solution vector
+
 	GPUTimer             m_timer;
 	double               m_time_MC64;             // CPU time for MC64 reordering
 	double               m_time_MC64_pre;         // CPU time for MC64 reordering (pre-processing)
@@ -247,7 +258,6 @@ private:
 
 	int adjustNumThreads(int inNumThreads);
 
-
 	void assembleReducedMat(PrecVector& WV);
 
 	void copyLastPartition(PrecVector& B2);
@@ -264,7 +274,7 @@ private:
 	bool hasZeroPivots(const PrecVectorIterator& start_B,
 	                   const PrecVectorIterator& end_B,
 	                   int                       k,
-					   int                       step,
+	                   int                       step,
 	                   PrecValueType             threshold);
 };
 
@@ -298,10 +308,10 @@ struct SmallerThan : public thrust::unary_function<T, bool>
  */
 template <typename PrecVector>
 Precond<PrecVector>::Precond(int                 numPart,
-		                     bool                isSPD,
-							 bool                saveMem,
+                             bool                isSPD,
+                             bool                saveMem,
                              bool                reorder,
-							 bool                testMC64,
+                             bool                testMC64,
                              bool                doMC64,
                              bool                mc64FirstStageOnly,
                              bool                scale,
@@ -648,6 +658,11 @@ Precond<PrecVector>::setup(const Matrix&  A)
 	else
 		convertToBandedMatrix(A);
 
+	// Allocate space for vectors used to interface the Krylov solver to 
+	// the preconditioner solve function (while allowing for different types).
+	m_vp.resize(m_n);
+	m_zp.resize(m_n);
+
 	// For MC64 test only, directly exit
 	if (m_testMC64)
 		return;
@@ -760,6 +775,30 @@ Precond<PrecVector>::setup(const Matrix&  A)
 }
 
 /**
+ * This is the wrapper around the preconditioner solve function. It is
+ * invoked by the Krylov solvers through the cusp::multiply() function.
+ * Note that this operator() is templatized by the SolverVector type
+ * to implement mixed-precision.
+ */
+template <typename PrecVector>
+template <typename SolverVector>
+void
+Precond<PrecVector>::operator()(SolverVector& v,
+                                SolverVector& z)
+{
+	// If no preconditioner, copy RHS vector v into solution vector z and return.
+	if (m_precondType == None) {
+		cusp::blas::copy(v, z);
+		return;
+	}
+
+	// Invoke the preconditioner solve function.
+	cusp::blas::copy(v, m_vp);
+	solve(m_vp, m_zp);
+	cusp::blas::copy(m_zp, z);
+}
+
+/**
  * This function solves the system Mz=v, for a specified vector v, where M is
  * the implicitly defined preconditioner matrix.
  */
@@ -768,11 +807,6 @@ void
 Precond<PrecVector>::solve(PrecVector&  v,
                            PrecVector&  z)
 {
-	if (m_precondType == None) {
-		cusp::blas::copy(v, z);
-		return;
-	}
-
 	if (m_reorder) {
 		leftTrans(v, z);
 		static PrecVector buffer;
@@ -998,9 +1032,9 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	MatrixMapH   bandedMatMap;
 	MatrixMapFH  scaleMap;
 
-
+	bool         doRCM = (m_maxBandwidth > 0);
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_MC64        = graph.getTimeMC64();
