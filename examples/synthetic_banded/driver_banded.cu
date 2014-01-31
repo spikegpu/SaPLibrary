@@ -281,7 +281,7 @@ GetProblemSpecs(int             argc,
 				numPart = atoi(args.OptionArg());
 				break;
 			case OPT_TOL:
-				opts.tolerance = atof(args.OptionArg());
+				opts.relTol = atof(args.OptionArg());
 				break;
 			case OPT_MAXIT:
 				opts.maxNumIterations = atoi(args.OptionArg());
@@ -348,7 +348,7 @@ GetProblemSpecs(int             argc,
 			cout << "Sol file:    " << fileSol << endl;
 		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
 		cout << "Iterative solver: " << (opts.solverType == spike::BiCGStab2 ? "BiCGStab2" : "BiCGStab") << endl;
-		cout << "Tolerance: " << opts.tolerance << endl;
+		cout << "Relative tolerance: " << opts.relTol << endl;
 		cout << "Max. iterations: " << opts.maxNumIterations << endl;
 		cout << "Preconditioner: " << (opts.precondType == spike::Spike ? "SPIKE" : "BLOCK DIAGONAL") << endl;
 		cout << "Factorization method: LU - UL" << endl;

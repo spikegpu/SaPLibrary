@@ -234,7 +234,7 @@ GetProblemSpecs(int             argc,
 				numPart = atoi(args.OptionArg());
 				break;
 			case OPT_TOL:
-				opts.tolerance = atof(args.OptionArg());
+				opts.relTol = atof(args.OptionArg());
 				break;
 			case OPT_MAXIT:
 				opts.maxNumIterations = atoi(args.OptionArg());
@@ -373,7 +373,7 @@ GetProblemSpecs(int             argc,
 	case spike::MINRES:
 		cout << "MINRES (Spike::GPU)" << endl; break;
 	}
-	cout << "Tolerance: " << opts.tolerance << endl;
+	cout << "Relative tolerance: " << opts.relTol << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
 	cout << "Preconditioner: ";
 	switch (opts.precondType) {
@@ -425,7 +425,7 @@ void ShowUsage()
 	cout << "        Do not perform MC64 scaling (ignored if --no-reordering or --no-mc64 is specified; default false)." << endl;
 	cout << " -t=TOLERANCE" << endl;
 	cout << " --tolerance=TOLERANCE" << endl;
-	cout << "        Use TOLERANCE for BiCGStab stopping criteria (default 1e-6)." << endl;
+	cout << "        Use (relative) TOLERANCE for BiCGStab stopping criteria (default 1e-6)." << endl;
 	cout << " -i=ITERATIONS" << endl;
 	cout << " --max-num-iterations=ITERATIONS" << endl;
 	cout << "        Use at most ITERATIONS for BiCGStab (default 100)." << endl;

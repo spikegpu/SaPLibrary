@@ -30,7 +30,8 @@ public:
 	};
 
 	Monitor(const int              maxIterations,
-	        const SolverValueType  tolerance);
+	        const SolverValueType  relTol,
+	        const SolverValueType  absTol = SolverValueType(0));
 	~Monitor() {}
 
 	// Initialize the monitor with the specified rhs vector.
@@ -62,7 +63,9 @@ public:
 	float            getNumIterations() const   {return m_iterations;}
 	int              getErrorCode() const       {return m_errCode;}
 	State            getState() const           {return m_state;}
-	SolverValueType  getTolerance() const       {return m_tolerance;}
+	SolverValueType  getRelTolerance() const    {return m_relTol;}
+	SolverValueType  getAbsTolerance() const    {return m_absTol;}
+	SolverValueType  getTolerance() const       {return m_absTol + m_relTol * m_rhsNorm;}
 	SolverValueType  getRHSNorm() const         {return m_rhsNorm;}
 	SolverValueType  getResidualNorm() const    {return m_rNorm;}
 	SolverValueType  getRelResidualNorm() const {return m_rNorm / m_rhsNorm;}
@@ -73,7 +76,8 @@ private:
 	float            m_iterations;
 	int              m_errCode;
 
-	SolverValueType  m_tolerance;
+	SolverValueType  m_relTol;
+	SolverValueType  m_absTol;
 	SolverValueType  m_rhsNorm;
 	SolverValueType  m_rNorm;
 };
@@ -84,10 +88,12 @@ private:
 template <typename SolverVector>
 inline
 Monitor<SolverVector>::Monitor(const int              maxIterations,
-                               const SolverValueType  tolerance)
+                               const SolverValueType  relTol,
+                               const SolverValueType  absTol)
 :	m_rNorm(std::numeric_limits<SolverValueType>::max()),
 	m_maxIterations(maxIterations),
-	m_tolerance(tolerance),
+	m_relTol(relTol),
+	m_absTol(absTol),
 	m_iterations(0),
 	m_errCode(0),
 	m_state(Continue)
@@ -123,7 +129,7 @@ Monitor<SolverVector>::finished(SolverValueType rNorm)
 {
 	m_rNorm = rNorm;
 
-	if (m_rNorm <= m_tolerance * m_rhsNorm)  m_state = Converged;
+	if (m_rNorm <= getTolerance())           m_state = Converged;
 	else if (isnan(m_rNorm))                 m_state = FailedNaN;
 	else if (m_iterations > m_maxIterations) m_state = FailedLimit;
 

@@ -698,7 +698,7 @@ GetProblemSpecs(int             argc,
 				numPart = atoi(args.OptionArg());
 				break;
 			case OPT_TOL:
-				opts.tolerance = atof(args.OptionArg());
+				opts.relTol = atof(args.OptionArg());
 				break;
 			case OPT_MAXIT:
 				opts.maxNumIterations = atoi(args.OptionArg());
