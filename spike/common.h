@@ -54,13 +54,14 @@ const unsigned int CRITICAL_THRESHOLD = 70;
 
 enum KrylovSolverType {
 	// CUSP solvers
-	BiCGStab,
-	GMRES,
-	CG,
-	CR,
+	BiCGStab_C,
+	GMRES_C,
+	CG_C,
+	CR_C,
 	// SPIKE solvers
 	BiCGStab1,
 	BiCGStab2,
+	BiCGStab,
 	MINRES
 };
 

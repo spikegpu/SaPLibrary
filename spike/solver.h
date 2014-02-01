@@ -28,6 +28,7 @@
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
+#include <spike/bicgstab.h>
 #include <spike/minres.h>
 #include <spike/timer.h>
 
@@ -424,16 +425,16 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 	switch(m_solver)
 	{
 		// CUSP Krylov solvers
-		case BiCGStab:
+		case BiCGStab_C:
 			cusp::krylov::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
-		case GMRES:
+		case GMRES_C:
 			cusp::krylov::gmres(spmv, x_vector, b_vector, 50, m_monitor, m_precond);
 			break;
-		case CG:
+		case CG_C:
 			cusp::krylov::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
-		case CR:
+		case CR_C:
 			cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 
@@ -444,8 +445,12 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 		case BiCGStab2:
 			spike::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
+		case BiCGStab:
+			spike::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
 		case MINRES:
 			spike::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
 	}
 
 	thrust::copy(x_vector.begin(), x_vector.end(), x.begin());
