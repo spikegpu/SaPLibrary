@@ -40,7 +40,7 @@ using std::vector;
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
-      OPT_TOL, OPT_MAXIT,
+      OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE,
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
@@ -55,8 +55,10 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
 CSimpleOptA::SOption g_options[] = {
 	{ OPT_PART,          "-p",                   SO_REQ_CMB },
 	{ OPT_PART,          "--num-partitions",     SO_REQ_CMB },
-	{ OPT_TOL,           "-t",                   SO_REQ_CMB },
-	{ OPT_TOL,           "--tolerance",          SO_REQ_CMB },
+	{ OPT_RTOL,          "-t",                   SO_REQ_CMB },
+	{ OPT_RTOL,          "--tolerance",          SO_REQ_CMB },
+	{ OPT_RTOL,          "--relTol",             SO_REQ_CMB },
+	{ OPT_ATOL,          "--absTol",             SO_REQ_CMB },
 	{ OPT_MAXIT,         "-i",                   SO_REQ_CMB },
 	{ OPT_MAXIT,         "--max-num-iterations", SO_REQ_CMB },
 	{ OPT_DROPOFF_FRAC,  "-d",                   SO_REQ_CMB },
@@ -233,8 +235,11 @@ GetProblemSpecs(int             argc,
 			case OPT_PART:
 				numPart = atoi(args.OptionArg());
 				break;
-			case OPT_TOL:
-				opts.tolerance = atof(args.OptionArg());
+			case OPT_RTOL:
+				opts.relTol = atof(args.OptionArg());
+				break;
+			case OPT_ATOL:
+				opts.absTol = atof(args.OptionArg());
 				break;
 			case OPT_MAXIT:
 				opts.maxNumIterations = atoi(args.OptionArg());
@@ -373,7 +378,8 @@ GetProblemSpecs(int             argc,
 	case spike::MINRES:
 		cout << "MINRES (Spike::GPU)" << endl; break;
 	}
-	cout << "Tolerance: " << opts.tolerance << endl;
+	cout << "Relative tolerance: " << opts.relTol << endl;
+	cout << "Absolute tolerance: " << opts.absTol << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
 	cout << "Preconditioner: ";
 	switch (opts.precondType) {
@@ -425,10 +431,13 @@ void ShowUsage()
 	cout << "        Do not perform MC64 scaling (ignored if --no-reordering or --no-mc64 is specified; default false)." << endl;
 	cout << " -t=TOLERANCE" << endl;
 	cout << " --tolerance=TOLERANCE" << endl;
-	cout << "        Use TOLERANCE for BiCGStab stopping criteria (default 1e-6)." << endl;
+	cout << " --relTol=TOLERANCE" << endl;
+	cout << "        Use relative tolerance TOLERANCE for Krylov stopping criteria (default 1e-6)." << endl;
+	cout << " --absTol=TOLERANCE" << endl;
+	cout << "        Use absolute tolerance TOLERANCE for Krylov stopping criteria (default 0)." << endl;
 	cout << " -i=ITERATIONS" << endl;
 	cout << " --max-num-iterations=ITERATIONS" << endl;
-	cout << "        Use at most ITERATIONS for BiCGStab (default 100)." << endl;
+	cout << "        Use at most ITERATIONS for Krylov solver (default 100)." << endl;
 	cout << " -d=FRACTION" << endl;
 	cout << " --drop-off-fraction=FRACTION" << endl;
 	cout << "        Drop off-diagonal elements such that FRACTION of the matrix" << endl;

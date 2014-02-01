@@ -252,8 +252,8 @@ GetProblemSpecs(int             argc,
 				numPart = atoi(args.OptionArg());
 				break;
 			case OPT_TOL:
-				opts.tolerance = atof(args.OptionArg());
-				break;	
+				opts.relTol = atof(args.OptionArg());
+				break;
 			case OPT_MAXIT:
 				opts.maxNumIterations = atoi(args.OptionArg());
 				break;
@@ -287,7 +287,7 @@ GetProblemSpecs(int             argc,
 	cout << endl;
 	cout << "Matrix file: " << fileMat << endl;
 	cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
-	cout << "Tolerance: " << opts.tolerance << endl;
+	cout << "Relative tolerance: " << opts.relTol << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
 	if (opts.dropOffFraction > 0)
 		cout << "Drop-off fraction: " << opts.dropOffFraction << endl;

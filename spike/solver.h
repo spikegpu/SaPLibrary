@@ -50,7 +50,8 @@ struct Options
 
 	KrylovSolverType    solverType;           /**< Krylov method to use; default: BiCGStab2 */
 	int                 maxNumIterations;     /**< Maximum number of iterations; default: 100 */
-	double              tolerance;            /**< Relative tolerance; default: 1e-6 */
+	double              relTol;               /**< Relative tolerance; default: 1e-6 */
+	double              absTol;               /**< Absolute tolerance; default: 0 */
 
 	bool                testMC64;             /**< Indicate that we are running the test for MC64*/
 	bool                isSPD;                /**< Indicate whether the matrix is symmetric positive definitive; default: false*/
@@ -186,7 +187,8 @@ inline
 Options::Options()
 :	solverType(BiCGStab2),
 	maxNumIterations(100),
-	tolerance(1e-6),
+	relTol(1e-6),
+	absTol(0),
 	testMC64(false),
 	isSPD(false),
 	saveMem(false),
@@ -250,7 +252,7 @@ Stats::Stats()
 template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
-:	m_monitor(opts.maxNumIterations, opts.tolerance),
+:	m_monitor(opts.maxNumIterations, opts.relTol, opts.absTol),
 	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testMC64, opts.performMC64, opts.mc64FirstStageOnly, opts.applyScaling,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering),
