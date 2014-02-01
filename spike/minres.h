@@ -47,8 +47,8 @@ void minres(LinearOperator&  A,
 	int  n = b.size();
 
 	// Set up y and v for the first Lanczos vector v1.
-	Vector y(n);
-	Vector r1(n);
+	cusp::array1d<ValueType,MemorySpace>  y(n);
+	cusp::array1d<ValueType,MemorySpace>  r1(n);
 
 	cusp::multiply(A, x, r1);
 	////cusp::blas::axpby(r1, x, r1, ValueType(1), -shift);
@@ -83,11 +83,11 @@ void minres(LinearOperator&  A,
 	ValueType delta(0), gbar(0);
 	ValueType z(0);
 
-	Vector v(n);
-	Vector w(n, 0);
-	Vector w1(n, 0);
-	Vector w2(n, 0);
-	Vector r2 = r1;
+	cusp::array1d<ValueType,MemorySpace>  v(n);
+	cusp::array1d<ValueType,MemorySpace>  w(n, 0);
+	cusp::array1d<ValueType,MemorySpace>  w1(n, 0);
+	cusp::array1d<ValueType,MemorySpace>  w2(n, 0);
+	cusp::array1d<ValueType,MemorySpace>  r2 = r1;
 
 	// Main loop
 	while (!monitor.finished(phibar)) {

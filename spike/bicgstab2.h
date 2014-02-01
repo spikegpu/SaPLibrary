@@ -12,7 +12,6 @@
 #include <cusp/array1d.h>
 
 #include <spike/monitor.h>
-#include <spike/precond.h>
 
 
 namespace spike {
@@ -43,14 +42,14 @@ void bicgstabl(LinearOperator&  A,
 	ValueType omega = ValueType(1);
 	ValueType rho1;
 
-	Vector r0(n);
-	Vector r(n);
-	Vector u(n,0);
-	Vector xx(n);
-	Vector Pv(n);
+	cusp::array1d<ValueType,MemorySpace>  r0(n);
+	cusp::array1d<ValueType,MemorySpace>  r(n);
+	cusp::array1d<ValueType,MemorySpace>  u(n,0);
+	cusp::array1d<ValueType,MemorySpace>  xx(n);
+	cusp::array1d<ValueType,MemorySpace>  Pv(n);
 
-	std::vector<Vector> rr(L+1);
-	std::vector<Vector> uu(L+1);
+	std::vector<cusp::array1d<ValueType,MemorySpace> >  rr(L+1);
+	std::vector<cusp::array1d<ValueType,MemorySpace> >  uu(L+1);
 
 	for(int k = 0; k <= L; k++) {
 		rr[k].resize(n, 0);
