@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <vector>
+#include <string>
 
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
@@ -22,7 +23,6 @@
 #include <thrust/scan.h>
 #include <thrust/functional.h>
 #include <thrust/logical.h>
-
 
 #include <spike/common.h>
 #include <spike/monitor.h>
@@ -113,6 +113,7 @@ struct Stats
 	double      actualDropOff;          /**< Actual fraction of the element-wise matrix 1-norm dropped off. */
 
 	float       numIterations;          /**< Number of iterations required for iterative solver to converge. */
+	double      rhsNorm;                /**< RHS norm (i.e. ||b||_2). */
 	double      residualNorm;           /**< Final residual norm (i.e. ||b-Ax||_2). */
 	double      relResidualNorm;        /**< Final relative residual norm (i.e. ||b-Ax||_2 / ||b||_2)*/
 };
@@ -147,8 +148,9 @@ public:
 	           Array&         x);
 
 	/// Extract solver statistics.
-	const Stats&  getStats() const {return m_stats;}
-
+	const Stats&       getStats() const          {return m_stats;}
+	int                getMonitorCode() const    {return m_monitor.getCode();}
+	const std::string& getMonitorMessage() const {return m_monitor.getMessage();}
 
 private:
 	typedef typename Array::value_type    SolverValueType;
@@ -239,6 +241,7 @@ Stats::Stats()
 	numPartitions(0),
 	actualDropOff(0),
 	numIterations(0),
+	rhsNorm(std::numeric_limits<double>::max()),
 	residualNorm(std::numeric_limits<double>::max()),
 	relResidualNorm(std::numeric_limits<double>::max())
 {
@@ -457,6 +460,7 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 	timer.Stop();
 
 	m_stats.timeSolve = timer.getElapsed();
+	m_stats.rhsNorm = m_monitor.getRHSNorm();
 	m_stats.residualNorm = m_monitor.getResidualNorm();
 	m_stats.relResidualNorm = m_monitor.getRelResidualNorm();
 	m_stats.numIterations = m_monitor.getNumIterations();

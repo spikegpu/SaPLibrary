@@ -81,6 +81,12 @@ void bicgstab(LinearOperator&  A,
 	ValueType r_r_star_old = blas::dotc(r_star, r);
 
 	while (!monitor.finished(r)) {
+		// Prevent divison by zero at this iteration.
+		if (r_r_star_old == 0) {
+			monitor.stop(-10, "r_r_star is zero");
+			break;
+		}
+
 		// Mp = M*p
 		cusp::multiply(M, p, Mp);
 

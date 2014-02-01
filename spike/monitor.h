@@ -2,6 +2,7 @@
 #define SPIKE_MONITOR_H
 
 #include <limits>
+#include <string>
 
 #include <cusp/array1d.h>
 #include <cusp/blas.h>
@@ -13,21 +14,14 @@ namespace spike {
 // ----------------------------------------------------------------------------
 // Monitor
 //
-// This class encapsulates...
+// This class provides support for monitoring progress of iterative linear
+// solvers, check for convergence, and stop on various error conditions.
 // ----------------------------------------------------------------------------
 template <typename SolverVector>
 class Monitor
 {
 public:
 	typedef typename SolverVector::value_type  SolverValueType;
-
-	enum State {
-		Continue,
-		Converged,
-		FailedLimit,
-		FailedNaN,
-		FailedOther
-	};
 
 	Monitor(const int              maxIterations,
 	        const SolverValueType  relTol,
@@ -37,18 +31,24 @@ public:
 	// Initialize the monitor with the specified rhs vector.
 	void init(const SolverVector& rhs);
 
-	// Check if we are done. Return true if:
-	//   (1) the given residual has relative norm below the tolerance (state = Converged)
-	//   (2) the given residual has norm NaN (state = FailedNaN)
-	//   (3) the iteration limit was reached (state = FailedLimit)
-	//   (4) the monitor state was forced to FailedOther
-	// Otherwise, return false (state = Continue)
+	// Check if we are done (success or failure).
+	// Return true if:
+	//   (1) stop() was invoked to set code != 0
+	//   (2) the given residual has norm below the tolerance (code = 1)
+	//   (3) the given residual has norm NaN (code = -2)
+	//   (4) the iteration limit was reached (code = -1)
+	// Otherwise, return false (code = 0) to continue iterations.
 	bool finished(const SolverVector& r);
 	bool finished(SolverValueType rNorm);
 
-	// Force the monitor state to FailOther and cache the error code.
-	// The next call to finished() will report true.
-	void fail(int errCode) {m_errCode = errCode; m_state = FailedOther;}
+	// Force stop, specifying the reason (as a code and message). 
+	// A positive code indicates success; a negative code indicates failure.
+	// If invoked by the solver, a success code should be >= 10 and a failure code <= -10.
+	void stop(int code, const char* message)
+	{
+		m_code = code;
+		m_message = message;
+	}
 
 	// Increment the iteration count by the specified value.
 	void increment(float incr) {m_iterations += incr;}
@@ -56,30 +56,32 @@ public:
 	// Prefix increment: increase iteration count by 1.
 	Monitor& operator++()    {m_iterations += 1.f; return *this;}
 
-	bool             converged() const          {return m_state == Converged;}
-	int              getMaxIterations() const   {return m_maxIterations;}
-	size_t           iteration_count()  const   {return (size_t)(m_iterations + 0.5f);}
-	size_t           iteration_limit()  const   {return (size_t)(m_maxIterations);}
-	float            getNumIterations() const   {return m_iterations;}
-	int              getErrorCode() const       {return m_errCode;}
-	State            getState() const           {return m_state;}
-	SolverValueType  getRelTolerance() const    {return m_relTol;}
-	SolverValueType  getAbsTolerance() const    {return m_absTol;}
-	SolverValueType  getTolerance() const       {return m_absTol + m_relTol * m_rhsNorm;}
-	SolverValueType  getRHSNorm() const         {return m_rhsNorm;}
-	SolverValueType  getResidualNorm() const    {return m_rNorm;}
-	SolverValueType  getRelResidualNorm() const {return m_rNorm / m_rhsNorm;}
+	int                getMaxIterations() const   {return m_maxIterations;}
+	size_t             iteration_limit()  const   {return (size_t)(m_maxIterations);}
+	SolverValueType    getRelTolerance() const    {return m_relTol;}
+	SolverValueType    getAbsTolerance() const    {return m_absTol;}
+	SolverValueType    getTolerance() const       {return m_absTol + m_relTol * m_rhsNorm;}
+	SolverValueType    getRHSNorm() const         {return m_rhsNorm;}
+
+	bool               converged() const          {return m_code > 0;}
+	size_t             iteration_count()  const   {return (size_t)(m_iterations + 0.5f);}
+	float              getNumIterations() const   {return m_iterations;}
+	int                getCode() const            {return m_code;}
+	const std::string& getMessage() const         {return m_message;}
+	SolverValueType    getResidualNorm() const    {return m_rNorm;}
+	SolverValueType    getRelResidualNorm() const {return m_rNorm / m_rhsNorm;}
 
 private:
-	State            m_state;
 	int              m_maxIterations;
 	float            m_iterations;
-	int              m_errCode;
 
 	SolverValueType  m_relTol;
 	SolverValueType  m_absTol;
 	SolverValueType  m_rhsNorm;
 	SolverValueType  m_rNorm;
+
+	int              m_code;
+	std::string      m_message;
 };
 
 
@@ -95,8 +97,8 @@ Monitor<SolverVector>::Monitor(const int              maxIterations,
 	m_relTol(relTol),
 	m_absTol(absTol),
 	m_iterations(0),
-	m_errCode(0),
-	m_state(Continue)
+	m_code(0),
+	m_message("")
 {
 }
 
@@ -109,8 +111,8 @@ Monitor<SolverVector>::init(const SolverVector& rhs)
 {
 	m_rhsNorm = cusp::blas::nrm2(rhs);
 	m_iterations = 0;
-	m_errCode = 0;
-	m_state = Continue;
+	m_code = 0;
+	m_message = "";
 }
 
 
@@ -129,11 +131,14 @@ Monitor<SolverVector>::finished(SolverValueType rNorm)
 {
 	m_rNorm = rNorm;
 
-	if (m_rNorm <= getTolerance())           m_state = Converged;
-	else if (isnan(m_rNorm))                 m_state = FailedNaN;
-	else if (m_iterations > m_maxIterations) m_state = FailedLimit;
+	if (m_code != 0)
+		return true;
 
-	return m_state != Continue;
+	if (isnan(m_rNorm))                      stop(-2, "Residual norm is NaN");
+	else if (m_rNorm <= getTolerance())      stop( 1, "Converged");
+	else if (m_iterations > m_maxIterations) stop(-1, "Maximum number of iterations was reached");
+
+	return m_code != 0;
 }
 
 

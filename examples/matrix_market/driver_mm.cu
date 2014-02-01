@@ -504,7 +504,11 @@ void PrintStats(bool               success,
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;
 
+	cout << "Code: " << mySolver.getMonitorCode();
+	cout << "  " << mySolver.getMonitorMessage() << endl;
+
 	cout << "Number of iterations = " << stats.numIterations << endl;
+	cout << "RHS norm             = " << stats.rhsNorm << endl;
 	cout << "Residual norm        = " << stats.residualNorm << endl;
 	cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
 	cout << endl;

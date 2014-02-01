@@ -86,8 +86,10 @@ void bicgstabl(LinearOperator&  A,
 			rho1 = cusp::blas::dotc(rr[j], r0);
 
 			// return with failure
-			if(rho0 == 0)
+			if(rho0 == 0) {
+				monitor.stop(-10, "rho0 is zero");
 				return;
+			}
 
 			ValueType beta = alpha * rho1 / rho0;
 			rho0 = rho1;
@@ -103,8 +105,11 @@ void bicgstabl(LinearOperator&  A,
 
 			// gamma <- uu(j+1) . r0;
 			ValueType gamma = cusp::blas::dotc(uu[j+1], r0);
-			if(gamma == 0)
+
+			if(gamma == 0) {
+				monitor.stop(-11, "gamma is zero");
 				return;
+			}
 
 			alpha = rho0 / gamma;
 
@@ -133,8 +138,10 @@ void bicgstabl(LinearOperator&  A,
 				cusp::blas::axpy(rr[i], rr[j], -tao[i][j]);
 			}
 			sigma[j] = cusp::blas::dotc(rr[j], rr[j]);
-			if(sigma[j] == 0)
+			if(sigma[j] == 0) {
+				monitor.stop(-12, "a sigma value is zero");
 				return;
+			}
 			gamma_prime[j] = cusp::blas::dotc(rr[j], rr[0]) / sigma[j];
 		}
 
