@@ -94,7 +94,12 @@ void bicgstab(LinearOperator&  A,
 		cusp::multiply(A, Mp, AMp);
 
 		// alpha = (r_j, r_star) / (A*M*p, r_star)
-		ValueType alpha = r_r_star_old / blas::dotc(r_star, AMp);
+		ValueType tmp1 = blas::dotc(r_star, AMp);
+		if (tmp1 == 0) {
+			monitor.stop(-11, "r_star * AMp is zero");
+			break;
+		}
+		ValueType alpha = r_r_star_old / tmp1;
 
 		// s_j = r_j - alpha * AMp
 		blas::axpby(r, AMp, s, ValueType(1), ValueType(-alpha));
@@ -112,7 +117,12 @@ void bicgstab(LinearOperator&  A,
 		cusp::multiply(A, Ms, AMs);
 
 		// omega = (AMs, s) / (AMs, AMs)
-		ValueType omega = blas::dotc(AMs, s) / blas::dotc(AMs, AMs);
+		ValueType tmp2 = blas::dotc(AMs, AMs);
+		if (tmp2 == 0) {
+			monitor.stop(-12, "AMs * AMs is zero");
+			break;
+		}
+		ValueType omega = blas::dotc(AMs, s) / tmp2;
 
 		// x_{j+1} = x_j + alpha*M*p_j + omega*M*s_j
 		blas::axpbypcz(x, Mp, Ms, x, ValueType(1), alpha, omega);
