@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <vector>
+#include <string>
 
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
@@ -23,11 +24,11 @@
 #include <thrust/functional.h>
 #include <thrust/logical.h>
 
-
 #include <spike/common.h>
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
+#include <spike/bicgstab.h>
 #include <spike/minres.h>
 #include <spike/timer.h>
 
@@ -112,6 +113,7 @@ struct Stats
 	double      actualDropOff;          /**< Actual fraction of the element-wise matrix 1-norm dropped off. */
 
 	float       numIterations;          /**< Number of iterations required for iterative solver to converge. */
+	double      rhsNorm;                /**< RHS norm (i.e. ||b||_2). */
 	double      residualNorm;           /**< Final residual norm (i.e. ||b-Ax||_2). */
 	double      relResidualNorm;        /**< Final relative residual norm (i.e. ||b-Ax||_2 / ||b||_2)*/
 };
@@ -146,8 +148,9 @@ public:
 	           Array&         x);
 
 	/// Extract solver statistics.
-	const Stats&  getStats() const {return m_stats;}
-
+	const Stats&       getStats() const          {return m_stats;}
+	int                getMonitorCode() const    {return m_monitor.getCode();}
+	const std::string& getMonitorMessage() const {return m_monitor.getMessage();}
 
 private:
 	typedef typename Array::value_type    SolverValueType;
@@ -238,6 +241,7 @@ Stats::Stats()
 	numPartitions(0),
 	actualDropOff(0),
 	numIterations(0),
+	rhsNorm(std::numeric_limits<double>::max()),
 	residualNorm(std::numeric_limits<double>::max()),
 	relResidualNorm(std::numeric_limits<double>::max())
 {
@@ -424,16 +428,16 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 	switch(m_solver)
 	{
 		// CUSP Krylov solvers
-		case BiCGStab:
+		case BiCGStab_C:
 			cusp::krylov::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
-		case GMRES:
+		case GMRES_C:
 			cusp::krylov::gmres(spmv, x_vector, b_vector, 50, m_monitor, m_precond);
 			break;
-		case CG:
+		case CG_C:
 			cusp::krylov::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
-		case CR:
+		case CR_C:
 			cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 
@@ -444,14 +448,19 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 		case BiCGStab2:
 			spike::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
+		case BiCGStab:
+			spike::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
 		case MINRES:
 			spike::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
 	}
 
 	thrust::copy(x_vector.begin(), x_vector.end(), x.begin());
 	timer.Stop();
 
 	m_stats.timeSolve = timer.getElapsed();
+	m_stats.rhsNorm = m_monitor.getRHSNorm();
 	m_stats.residualNorm = m_monitor.getResidualNorm();
 	m_stats.relResidualNorm = m_monitor.getRelResidualNorm();
 	m_stats.numIterations = m_monitor.getNumIterations();

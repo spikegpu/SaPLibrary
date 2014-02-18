@@ -486,13 +486,13 @@ GetProblemSpecs(int             argc,
 					string kry = args.OptionArg();
 					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
 					if (kry == "0" || kry == "BICGSTAB")
-						opts.solverType = spike::BiCGStab;
+						opts.solverType = spike::BiCGStab_C;
 					else if (kry == "1" || kry == "GMRES")
-						opts.solverType = spike::GMRES;
+						opts.solverType = spike::GMRES_C;
 					else if (kry == "2" || kry == "CG")
-						opts.solverType = spike::CG;
+						opts.solverType = spike::CG_C;
 					else if (kry == "3" || kry == "CR")
-						opts.solverType = spike::CR;
+						opts.solverType = spike::CR_C;
 					else if (kry == "4" || kry == "BICGSTAB1")
 						opts.solverType = spike::BiCGStab1;
 					else if (kry == "5" || kry == "BICGSTAB2")
@@ -528,7 +528,7 @@ GetProblemSpecs(int             argc,
 	if (opts.isSPD) {
 		opts.performMC64 = false;
 		opts.applyScaling = false;
-		opts.solverType = spike::CG;
+		opts.solverType = spike::CG_C;
 		opts.saveMem = true;
 	} else
 		opts.saveMem = false;

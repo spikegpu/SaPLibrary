@@ -17,12 +17,12 @@
 
 namespace spike {
 
-// Additional failure conditions specific to MINRES:
-//   errorCode = 2      A least-squares solution was found, given tol 
-//   errorCode = 3      Reasonable accuracy achieved, given eps
-//   errorCode = 4      x has converged to an eigenvector
-//   errorCode = 9      The preconditioner is not positive definite
-//   errorCode = 10     beta2 = 0.  If M = I, b and x are eigenvectors
+// Additional stopping conditions, specific to MINRES:
+//   code =  10     beta2 = 0.  If M = I, b and x are eigenvectors
+//   code =  11     x has converged to an eigenvector
+//   code =  12     Reasonable accuracy achieved, given eps
+//   code =  13     A least-squares solution was found, given tol 
+//   code = -10     The preconditioner is not positive definite
 
 /// Preconditioned MINRES method
 /**
@@ -47,8 +47,8 @@ void minres(LinearOperator&  A,
 	int  n = b.size();
 
 	// Set up y and v for the first Lanczos vector v1.
-	Vector y(n);
-	Vector r1(n);
+	cusp::array1d<ValueType,MemorySpace>  y(n);
+	cusp::array1d<ValueType,MemorySpace>  r1(n);
 
 	cusp::multiply(A, x, r1);
 	////cusp::blas::axpby(r1, x, r1, ValueType(1), -shift);
@@ -59,11 +59,11 @@ void minres(LinearOperator&  A,
 	ValueType beta1 = cusp::blas::dotc(r1, y);
 
 	// Test for indefinite preconditioner.
-	//    beta1 < 0  --> P is not positive definite
+	//    beta1 < 0  --> P is not positive definite.
 	//    beta1 = 0  --> will stop later with x=x0
 	//    beta1 > 0  --> normalize to get v1 later
 	if (beta1 < 0) {
-		monitor.fail(9);  // force failure
+		monitor.stop(-10, "The preconditioner is not positive definite");
 		beta1 *= -1;      // ensure we do not incorrectly report convergence
 	} else if (beta1 > 0) {
 		beta1 = std::sqrt(beta1);
@@ -83,11 +83,11 @@ void minres(LinearOperator&  A,
 	ValueType delta(0), gbar(0);
 	ValueType z(0);
 
-	Vector v(n);
-	Vector w(n, 0);
-	Vector w1(n, 0);
-	Vector w2(n, 0);
-	Vector r2 = r1;
+	cusp::array1d<ValueType,MemorySpace>  v(n);
+	cusp::array1d<ValueType,MemorySpace>  w(n, 0);
+	cusp::array1d<ValueType,MemorySpace>  w1(n, 0);
+	cusp::array1d<ValueType,MemorySpace>  w2(n, 0);
+	cusp::array1d<ValueType,MemorySpace>  r2 = r1;
 
 	// Main loop
 	while (!monitor.finished(phibar)) {
@@ -112,8 +112,8 @@ void minres(LinearOperator&  A,
 		beta = cusp::blas::dotc(r2, y);
 
 		if (beta < 0) {
-			// Preconditioner is not positive definite
-			monitor.fail(9);
+			// Preconditioner is not positive definite. Force failure.
+			monitor.stop(-10, "The preconditioner is not positive definite");
 			break;
 		}
 
@@ -122,7 +122,8 @@ void minres(LinearOperator&  A,
 
 		if (monitor.iteration_count() == 0) {
 			if (beta/beta1 <= 10 * eps)
-				monitor.fail(10);  // terminate later
+				monitor.stop(10, "beta2 = 0. If M = I, b and x are eigenvectors");
+			// Terminate later
 		}
 
 		// Apply previous rotation Q_{k-1}
@@ -161,13 +162,13 @@ void minres(LinearOperator&  A,
 		ynorm = cusp::blas::nrm2(x);
 
 		// Additional checks that can trigger termination.
-		if(monitor.getErrorCode() != 10) {
+		if(monitor.getCode() != 10) {
 			ValueType test2  = root/ Anorm;  // ||A r_{k-1}|| / (||A|| ||r_{k-1}||)
 			ValueType Acond = gmax/gmin;     // Estimate cond(A)
 
-			if(Acond >= ValueType(0.1)/eps)      monitor.fail(4);
-			if(Anorm*eps*ynorm >= beta1)         monitor.fail(3);
-			if(test2 <= monitor.getTolerance())  monitor.fail(2);
+			if(Acond >= ValueType(0.1)/eps)         monitor.stop(11, "x has converged to an eigenvector");
+			if(Anorm*eps*ynorm >= beta1)            monitor.stop(12, "Reasonable accuracy achieved, given eps");
+			if(test2 <= monitor.getAbsTolerance())  monitor.stop(13, "A least-squares solution was found, given tol");
 		}
 
 		++monitor;

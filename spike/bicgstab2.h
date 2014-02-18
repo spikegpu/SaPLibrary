@@ -12,7 +12,6 @@
 #include <cusp/array1d.h>
 
 #include <spike/monitor.h>
-#include <spike/precond.h>
 
 
 namespace spike {
@@ -43,14 +42,14 @@ void bicgstabl(LinearOperator&  A,
 	ValueType omega = ValueType(1);
 	ValueType rho1;
 
-	Vector r0(n);
-	Vector r(n);
-	Vector u(n,0);
-	Vector xx(n);
-	Vector Pv(n);
+	cusp::array1d<ValueType,MemorySpace>  r0(n);
+	cusp::array1d<ValueType,MemorySpace>  r(n);
+	cusp::array1d<ValueType,MemorySpace>  u(n,0);
+	cusp::array1d<ValueType,MemorySpace>  xx(n);
+	cusp::array1d<ValueType,MemorySpace>  Pv(n);
 
-	std::vector<Vector> rr(L+1);
-	std::vector<Vector> uu(L+1);
+	std::vector<cusp::array1d<ValueType,MemorySpace> >  rr(L+1);
+	std::vector<cusp::array1d<ValueType,MemorySpace> >  uu(L+1);
 
 	for(int k = 0; k <= L; k++) {
 		rr[k].resize(n, 0);
@@ -87,8 +86,10 @@ void bicgstabl(LinearOperator&  A,
 			rho1 = cusp::blas::dotc(rr[j], r0);
 
 			// return with failure
-			if(rho0 == 0)
+			if(rho0 == 0) {
+				monitor.stop(-10, "rho0 is zero");
 				return;
+			}
 
 			ValueType beta = alpha * rho1 / rho0;
 			rho0 = rho1;
@@ -104,8 +105,11 @@ void bicgstabl(LinearOperator&  A,
 
 			// gamma <- uu(j+1) . r0;
 			ValueType gamma = cusp::blas::dotc(uu[j+1], r0);
-			if(gamma == 0)
+
+			if(gamma == 0) {
+				monitor.stop(-11, "gamma is zero");
 				return;
+			}
 
 			alpha = rho0 / gamma;
 
@@ -134,8 +138,10 @@ void bicgstabl(LinearOperator&  A,
 				cusp::blas::axpy(rr[i], rr[j], -tao[i][j]);
 			}
 			sigma[j] = cusp::blas::dotc(rr[j], rr[j]);
-			if(sigma[j] == 0)
+			if(sigma[j] == 0) {
+				monitor.stop(-12, "a sigma value is zero");
 				return;
+			}
 			gamma_prime[j] = cusp::blas::dotc(rr[j], rr[0]) / sigma[j];
 		}
 

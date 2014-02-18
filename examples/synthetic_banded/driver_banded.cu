@@ -333,19 +333,21 @@ GetProblemSpecs(int             argc,
 				{
 					string kry = args.OptionArg();
 					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
-					if (kry == "0" || kry == "BICGSTAB")
-						opts.solverType = spike::BiCGStab;
-					else if (kry == "1" || kry == "GMRES")
-						opts.solverType = spike::GMRES;
-					else if (kry == "2" || kry == "CG")
-						opts.solverType = spike::CG;
-					else if (kry == "3" || kry == "CR")
-						opts.solverType = spike::CR;
+					if (kry == "0" || kry == "BICGSTAB_C")
+						opts.solverType = spike::BiCGStab_C;
+					else if (kry == "1" || kry == "GMRES_C")
+						opts.solverType = spike::GMRES_C;
+					else if (kry == "2" || kry == "CG_C")
+						opts.solverType = spike::CG_C;
+					else if (kry == "3" || kry == "CR_C")
+						opts.solverType = spike::CR_C;
 					else if (kry == "4" || kry == "BICGSTAB1")
 						opts.solverType = spike::BiCGStab1;
 					else if (kry == "5" || kry == "BICGSTAB2")
 						opts.solverType = spike::BiCGStab2;
-					else if (kry == "6" || kry == "MINRES")
+					else if (kry == "6" || kry == "BICGSTAB")
+						opts.solverType = spike::BiCGStab;
+					else if (kry == "7" || kry == "MINRES")
 						opts.solverType = spike::MINRES;
 					else
 						return false;
@@ -380,18 +382,20 @@ GetProblemSpecs(int             argc,
 			cout << "Sol file:    " << fileSol << endl;
 		cout << "Iterative solver: ";
 		switch (opts.solverType) {
-		case spike::BiCGStab:
+		case spike::BiCGStab_C:
 			cout << "BiCGStab (Cusp)" << endl; break;
-		case spike::GMRES:
+		case spike::GMRES_C:
 			cout << "GMRES (Cusp)" << endl; break;
-		case spike::CG:
+		case spike::CG_C:
 			cout << "CG (Cusp)" << endl; break;
-		case spike::CR:
+		case spike::CR_C:
 			cout << "CR (Cusp)" << endl; break;
 		case spike::BiCGStab1:
 			cout << "BiCGStab1 (Spike::GPU)" << endl; break;
 		case spike::BiCGStab2:
 			cout << "BiCGStab2 (Spike::GPU)" << endl; break;
+		case spike::BiCGStab:
+			cout << "BiCGStab (Spike::GPU)" << endl; break;
 		case spike::MINRES:
 			cout << "MINRES (Spike::GPU)" << endl; break;
 		}
@@ -457,6 +461,17 @@ void ShowUsage()
 	cout << "        Frobenius norm is ignored (default 0.0 -- i.e. no drop-off)." << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
+	cout << " -k=METHOD" << endl;
+	cout << " --krylov-method=METHOD" << endl;
+	cout << "        Specify the iterative Krylov solver:" << endl;
+	cout << "        METHOD=0 or METHOD=BICGSTAB_C    use BiCGStab (Cusp)" << endl;
+	cout << "        METHOD=1 or METHOD=GMRES_C       use GMRES (Cusp)" << endl;
+	cout << "        METHOD=2 or METHOD=CG_C          use CG (Cusp)" << endl;
+	cout << "        METHOD=3 or METHOD=CR_C          use CR (Cusp)" << endl;
+	cout << "        METHOD=4 or METHOD=BICGSTAB1     use BiCGStab(1) (Spike::GPU)" << endl;
+	cout << "        METHOD=5 or METHOD=BICGSTAB2     use BiCGStab(2) (Spike::GPU). This is the default." << endl;
+	cout << "        METHOD=6 or METHOD=BICGSTAB      use BiCGStab (Spike::GPU)" << endl;
+	cout << "        METHOD=7 or METHOD=MINRES        use MINRES (Spike::GPU)" << endl;
 	cout << " --precond-method=METHOD" << endl;
 	cout << "        Specify the preconditioner to be used" << endl;
 	cout << "        METHOD=0 or METHOD=SPIKE         SPIKE preconditioner.  This is the default." << endl;
@@ -529,7 +544,11 @@ void PrintStats(bool               success,
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;
 
+	cout << "Code: " << mySolver.getMonitorCode();
+	cout << "  " << mySolver.getMonitorMessage() << endl;
+
 	cout << "Number of iterations = " << stats.numIterations << endl;
+	cout << "RHS norm             = " << stats.rhsNorm << endl;
 	cout << "Residual norm        = " << stats.residualNorm << endl;
 	cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
 	cout << endl;
