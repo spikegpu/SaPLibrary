@@ -1590,12 +1590,12 @@ Precond<PrecVector>::partBandedLU_one()
 		}
 	} else if (m_k > 27) {
 		if (m_safeFactorization)
-			device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
+			device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0, false);
 		else
 			device::bandLU_g32<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
 	} else {
 		if (m_safeFactorization)
-			device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
+			device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0, false);
 		else
 			device::bandLU<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
@@ -1694,12 +1694,12 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 		}
 	} else if (m_k > 27) {
 		if (m_safeFactorization)
-			device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
+			device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0, false);
 		else
 			device::bandLU_g32<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
 	} else {
 		if (m_safeFactorization)
-			device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
+			device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0, false);
 		else
 			device::bandLU<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
@@ -1779,15 +1779,9 @@ Precond<PrecVector>::partBlockedBandedCholesky_one()
 		}
 
 	} else if (m_k > 27) {
-		if (m_safeFactorization)
-			device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
-		else
-			device::bandLU_g32<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0);
+		device::bandLU_g32_safe<PrecValueType><<<1, 512>>>(dB, m_k, m_n, 0, true);
 	} else {
-		if (m_safeFactorization)
-			device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
-		else
-			device::bandLU<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0);
+		device::bandLU_safe<PrecValueType><<<1,  m_k * m_k>>>(dB, m_k, m_n, 0, true);
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
 	}
 }
@@ -1865,12 +1859,12 @@ Precond<PrecVector>::partBandedLU_const()
 		}
 	} else if (m_k > 27) {
 		if (m_safeFactorization)
-			device::bandLU_g32_safe<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder);
+			device::bandLU_g32_safe<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder, false);
 		else
 			device::bandLU_g32<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder);
 	} else {
 		if (m_safeFactorization)
-			device::bandLU_safe<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
+			device::bandLU_safe<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder, false);
 		else
 			device::bandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
 			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
