@@ -56,6 +56,7 @@ public:
 
 	typedef typename cusp::coo_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCoo;
 	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
+	typedef typename cusp::csr_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCsrH;
 
 
 	Precond();
@@ -74,7 +75,8 @@ public:
 	        PreconditionerType  precondType,
 	        bool                safeFactorization,
 	        bool                variableBandwidth,
-	        bool                trackReordering);
+	        bool                trackReordering,
+			int                 ilu_level);
 
 	Precond(const Precond&  prec);
 
@@ -139,6 +141,8 @@ private:
 	bool                 m_variableBandwidth;
 	bool                 m_trackReordering;
 
+	int                  m_ilu_level;
+
 	MatrixMap            m_offDiagMap;
 	MatrixMap            m_WVMap;
 	MatrixMap            m_typeMap;
@@ -185,6 +189,8 @@ private:
 	PrecVector           m_B;                     // banded matrix (LU factors)
 	PrecVector           m_offDiags;              // contains the off-diagonal blocks of the original banded matrix
 	PrecVector           m_R;                     // diagonal blocks in the reduced matrix (LU factors)
+	PrecMatrixCsrH       m_Acsrh;
+	PrecVectorH          m_pivots;
 
 	PrecVectorH          m_offDiags_host;         // Used with second-stage reorder only, copy the offDiags in SpikeGragh
 	PrecVectorH          m_WV_host;
@@ -321,7 +327,8 @@ Precond<PrecVector>::Precond(int                 numPart,
                              PreconditionerType  precondType,
                              bool                safeFactorization,
                              bool                variableBandwidth,
-                             bool                trackReordering)
+                             bool                trackReordering,
+							 int                 ilu_level)
 :	m_numPartitions(numPart),
 	m_isSPD(isSPD),
 	m_saveMem(saveMem),
@@ -337,6 +344,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_safeFactorization(safeFactorization),
 	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
+	m_ilu_level(ilu_level),
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_k(0),
@@ -438,6 +446,7 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_safeFactorization  = prec.m_safeFactorization;
 	m_variableBandwidth  = prec.m_variableBandwidth;
 	m_trackReordering    = prec.m_trackReordering;
+	m_ilu_level          = prec.m_ilu_level;
 }
 
 template <typename PrecVector>
@@ -460,6 +469,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_safeFactorization  = prec.m_safeFactorization;
 	m_variableBandwidth  = prec.m_variableBandwidth;
 	m_trackReordering    = prec.m_trackReordering;
+	m_ilu_level          = prec.m_ilu_level;
 
 	m_k                        = prec.m_k;
 	m_ks_host                  = prec.m_ks_host;
@@ -671,6 +681,8 @@ Precond<PrecVector>::setup(const Matrix&  A)
 	if (m_k == 0)
 		return;
 
+	if (m_ilu_level >= 0)
+		return;
 
 	// If we are using a single partition, perform the LU factorization
 	// of the banded matrix and return.
@@ -830,6 +842,35 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 {
 	if (m_k == 0) {
 		thrust::transform(rhs.begin(), rhs.end(), m_B.begin(), sol.begin(), thrust::divides<PrecValueType>());
+		return;
+	}
+
+	if (m_ilu_level >= 0) {
+		PrecVectorH sol_h = rhs;
+
+		for (int i=1; i<m_n; i++) {
+			int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = m_Acsrh.column_indices[l];
+				if (cur_k >= i)
+					break;
+				sol_h[i] -= sol_h[cur_k] * m_Acsrh.values[l];
+			}
+		}
+		thrust::transform(sol_h.begin(), sol_h.end(), m_pivots.begin(), sol_h.begin(), thrust::divides<PrecValueType>());
+
+		for (int i = m_n - 2; i >= 0; i--) {
+			int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+
+			for (int l = end_idx - 1; l >= start_idx; l--) {
+				int cur_k = m_Acsrh.column_indices[l];
+				if (cur_k <= i)
+					break;
+				sol_h[i] -= sol_h[cur_k] * m_Acsrh.values[l];
+			}
+		}
+
+		sol = sol_h;
 		return;
 	}
 
@@ -1070,9 +1111,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
 
 	// If there is just one partition, force using constant bandwidth method.
-	if (m_numPartitions == 1 || m_k == 0)
+	if (m_numPartitions == 1 || m_k == 0 || m_ilu_level >= 0)
 		m_variableBandwidth = false;
-
 
 	// Assemble the banded matrix.
 	if (m_variableBandwidth) {
@@ -1116,6 +1156,71 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 		m_timer.Stop();
 		m_time_toBanded = m_timer.getElapsed();
+	} else if (m_ilu_level >= 0) {
+		graph.get_csr_matrix(m_Acsrh);
+		m_pivots.resize(m_n);
+
+		m_timer.Start();
+		// Do ILU here, now only ILU0 is implemented
+		for (int i = 1; i < m_n; i++) {
+			int start_idx = m_Acsrh.row_offsets[i];
+			int end_idx = m_Acsrh.row_offsets[i+1];
+
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = m_Acsrh.column_indices[l];
+				if (cur_k >= i)
+					break;
+
+				int start_k_idx = m_Acsrh.row_offsets[cur_k];
+				int end_k_idx = m_Acsrh.row_offsets[cur_k+1];
+
+				int l2;
+				PrecValueType val_i_k = 0.0;
+
+				for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+					int pivot = m_Acsrh.column_indices[l2];
+					if (pivot > cur_k)
+						throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+					else if (pivot == cur_k) {
+						val_i_k = (m_Acsrh.values[l] /= m_Acsrh.values[l2]);
+						break;
+					}
+				}
+
+				if (l2 >= end_k_idx)
+					throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+
+				int l3 = l + 1;
+				for (l2++; l2 < end_k_idx; l2++) {
+					int tar_j = m_Acsrh.column_indices[l2];
+					for (; l3 < end_idx; l3++) {
+						int tmp_j = m_Acsrh.column_indices[l3];
+						if (tmp_j > tar_j) break;
+						else if (tmp_j == tar_j) {
+							m_Acsrh.values[l3] -= m_Acsrh.values[l2] * val_i_k;
+							l3 ++;
+							break;
+						}
+					}
+					if (l3 >= end_idx) break;
+				}
+			}
+		}
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = m_Acsrh.row_offsets[i];
+			int end_idx = m_Acsrh.row_offsets[i+1];
+
+			PrecValueType pivot_val = (PrecValueType)(0);
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = m_Acsrh.column_indices[l];
+				if (cur_k == i)
+					m_pivots[i] = pivot_val = m_Acsrh.values[l];
+				else if (cur_k > i)
+					m_Acsrh.values[l] /= pivot_val;
+			}
+		}
+		m_timer.Stop();
+		m_time_bandLU = m_timer.getElapsed();
 	} else {
 		assemble_timer.Start();
 		PrecMatrixCooH Acooh;

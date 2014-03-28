@@ -92,6 +92,7 @@ class Graph
 {
 public:
 	typedef typename cusp::coo_matrix<int, T, cusp::host_memory> MatrixCoo;
+	typedef typename cusp::csr_matrix<int, T, cusp::host_memory> MatrixCsr;
 	typedef typename cusp::array1d<T, cusp::host_memory>         Vector;
 	typedef typename cusp::array1d<double, cusp::host_memory>    DoubleVector;
 	typedef typename cusp::array1d<int, cusp::host_memory>       IntVector;
@@ -172,6 +173,8 @@ public:
 	                                IntVector&  BOffsets,
 	                                MatrixMap&  typeMap,
 	                                MatrixMap&  bandedMatMap);
+
+	void       get_csr_matrix(MatrixCsr&        Acsr);
 
 private:
 	int           m_n;
@@ -1456,6 +1459,40 @@ Graph<T>::get_csc_matrix(const MatrixCoo& Acoo,
 		device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs);
 
 		c_val = dc_val;
+	}
+}
+
+template<typename T>
+void
+Graph<T>::get_csr_matrix(MatrixCsr&       Acsr)
+{
+	Acsr.resize(m_n, m_n, m_edges.end() - m_first);
+	cusp::blas::fill(Acsr.row_offsets, 0);
+
+	EdgeVector edges_tmp(m_edges.end() - m_first);
+
+	for (EdgeIterator edgeIt = m_first; edgeIt != m_edges.end(); edgeIt++)
+		Acsr.row_offsets[edgeIt -> m_to]++;
+
+	thrust::exclusive_scan(Acsr.row_offsets.begin(), Acsr.row_offsets.end(), Acsr.row_offsets.begin());
+
+	for (EdgeIterator edgeIt = m_first; edgeIt != m_edges.end(); edgeIt++) {
+		int idx = Acsr.row_offsets[edgeIt -> m_to];
+		Acsr.row_offsets[edgeIt -> m_to] ++;
+		edges_tmp[idx] = *edgeIt;
+	}
+
+	cusp::blas::fill(Acsr.row_offsets, 0);
+
+	for (EdgeIterator edgeIt = edges_tmp.begin(); edgeIt != edges_tmp.end(); edgeIt++)
+		Acsr.row_offsets[edgeIt -> m_from]++;
+
+	thrust::inclusive_scan(Acsr.row_offsets.begin(), Acsr.row_offsets.end(), Acsr.row_offsets.begin());
+
+	for (EdgeRevIterator edgeIt = edges_tmp.rbegin(); edgeIt != edges_tmp.rend(); edgeIt++) {
+		int idx = --Acsr.row_offsets[edgeIt -> m_from];
+		Acsr.column_indices[idx] = edgeIt -> m_to;
+		Acsr.values[idx] = edgeIt -> m_val;
 	}
 }
 
