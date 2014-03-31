@@ -24,6 +24,10 @@
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
 
+#include <queue>
+#include <vector>
+#include <functional>
+#include <stdlib.h>
 
 namespace spike {
 
@@ -51,8 +55,12 @@ public:
 
 	typedef typename cusp::array1d<PrecValueType, cusp::host_memory>  PrecVectorH;
 	typedef typename cusp::array1d<int, cusp::host_memory>            IntVectorH;
+	typedef typename cusp::array1d<bool, cusp::host_memory>           BoolVectorH;
 	typedef IntVectorH                                                MatrixMapH;
 	typedef typename cusp::array1d<PrecValueType, cusp::host_memory>  MatrixMapFH;
+
+	typedef typename IntVectorH::iterator                             IntHIterator;
+	typedef typename PrecVectorH::iterator                            PrecHIterator;
 
 	typedef typename cusp::coo_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCoo;
 	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
@@ -76,7 +84,8 @@ public:
 	        bool                safeFactorization,
 	        bool                variableBandwidth,
 	        bool                trackReordering,
-			int                 ilu_level);
+			int                 ilu_level,
+			PrecValueType       tolerance);
 
 	Precond(const Precond&  prec);
 
@@ -142,6 +151,7 @@ private:
 	bool                 m_trackReordering;
 
 	int                  m_ilu_level;
+	PrecValueType        m_tolerance;
 
 	MatrixMap            m_offDiagMap;
 	MatrixMap            m_WVMap;
@@ -282,6 +292,12 @@ private:
 	                   int                       k,
 	                   int                       step,
 	                   PrecValueType             threshold);
+
+	void findPthMax(const IntHIterator&          ibegin,
+			        const IntHIterator&          iend,
+					const PrecHIterator&         vbegin,
+					const PrecHIterator&         vend,
+					int                          p);
 };
 
 
@@ -328,7 +344,8 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                safeFactorization,
                              bool                variableBandwidth,
                              bool                trackReordering,
-							 int                 ilu_level)
+							 int                 ilu_level,
+							 PrecValueType       tolerance)
 :	m_numPartitions(numPart),
 	m_isSPD(isSPD),
 	m_saveMem(saveMem),
@@ -345,6 +362,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_variableBandwidth(variableBandwidth),
 	m_trackReordering(trackReordering),
 	m_ilu_level(ilu_level),
+	m_tolerance(tolerance),
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_k(0),
@@ -447,6 +465,7 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_variableBandwidth  = prec.m_variableBandwidth;
 	m_trackReordering    = prec.m_trackReordering;
 	m_ilu_level          = prec.m_ilu_level;
+	m_tolerance          = prec.m_tolerance;
 }
 
 template <typename PrecVector>
@@ -470,6 +489,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_variableBandwidth  = prec.m_variableBandwidth;
 	m_trackReordering    = prec.m_trackReordering;
 	m_ilu_level          = prec.m_ilu_level;
+	m_tolerance          = prec.m_tolerance;
 
 	m_k                        = prec.m_k;
 	m_ks_host                  = prec.m_ks_host;
@@ -1160,52 +1180,254 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		graph.get_csr_matrix(m_Acsrh);
 		m_pivots.resize(m_n);
 
+
 		m_timer.Start();
 		// Do ILU here, now only ILU0 is implemented
-		for (int i = 1; i < m_n; i++) {
-			int start_idx = m_Acsrh.row_offsets[i];
-			int end_idx = m_Acsrh.row_offsets[i+1];
+		if (m_ilu_level == 0) {
+			for (int i = 1; i < m_n; i++) {
+				int start_idx = m_Acsrh.row_offsets[i];
+				int end_idx = m_Acsrh.row_offsets[i+1];
 
-			for (int l = start_idx; l < end_idx; l++) {
-				int cur_k = m_Acsrh.column_indices[l];
-				if (cur_k >= i)
-					break;
-
-				int start_k_idx = m_Acsrh.row_offsets[cur_k];
-				int end_k_idx = m_Acsrh.row_offsets[cur_k+1];
-
-				int l2;
-				PrecValueType val_i_k = 0.0;
-
-				for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
-					int pivot = m_Acsrh.column_indices[l2];
-					if (pivot > cur_k)
-						throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
-					else if (pivot == cur_k) {
-						val_i_k = (m_Acsrh.values[l] /= m_Acsrh.values[l2]);
+				for (int l = start_idx; l < end_idx; l++) {
+					int cur_k = m_Acsrh.column_indices[l];
+					if (cur_k >= i)
 						break;
-					}
-				}
 
-				if (l2 >= end_k_idx)
-					throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+					int start_k_idx = m_Acsrh.row_offsets[cur_k];
+					int end_k_idx = m_Acsrh.row_offsets[cur_k+1];
 
-				int l3 = l + 1;
-				for (l2++; l2 < end_k_idx; l2++) {
-					int tar_j = m_Acsrh.column_indices[l2];
-					for (; l3 < end_idx; l3++) {
-						int tmp_j = m_Acsrh.column_indices[l3];
-						if (tmp_j > tar_j) break;
-						else if (tmp_j == tar_j) {
-							m_Acsrh.values[l3] -= m_Acsrh.values[l2] * val_i_k;
-							l3 ++;
+					int l2;
+					PrecValueType val_i_k = 0.0;
+
+					for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+						int pivot = m_Acsrh.column_indices[l2];
+						if (pivot > cur_k)
+							throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+						else if (pivot == cur_k) {
+							val_i_k = (m_Acsrh.values[l] /= m_Acsrh.values[l2]);
 							break;
 						}
 					}
-					if (l3 >= end_idx) break;
+
+					if (l2 >= end_k_idx)
+						throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+
+					int l3 = l + 1;
+					for (l2++; l2 < end_k_idx; l2++) {
+						int tar_j = m_Acsrh.column_indices[l2];
+						for (; l3 < end_idx; l3++) {
+							int tmp_j = m_Acsrh.column_indices[l3];
+							if (tmp_j > tar_j) break;
+							else if (tmp_j == tar_j) {
+								m_Acsrh.values[l3] -= m_Acsrh.values[l2] * val_i_k;
+								l3 ++;
+								break;
+							}
+						}
+						if (l3 >= end_idx) break;
+					}
+				}
+			} 
+		} else {
+			/*
+			cusp::print(m_Acsrh.row_offsets);
+			cusp::print(m_Acsrh.column_indices);
+			cusp::print(m_Acsrh.values);
+			*/
+
+			IntVectorH    lu_row_offsets(m_n + 1, 0);
+			IntVectorH    lu_column_indices;
+			PrecVectorH   lu_values;
+			PrecVectorH   wvector(m_n, 0);
+			BoolVectorH   in_wvector(m_n, 0);
+
+			{
+				lu_row_offsets[0] = m_Acsrh.row_offsets[0];
+				lu_row_offsets[1] = m_Acsrh.row_offsets[1];
+				int start_idx = m_Acsrh.row_offsets[0];
+				int end_idx = m_Acsrh.row_offsets[1];
+
+				lu_column_indices.resize(end_idx - start_idx);
+				lu_values.resize(end_idx - start_idx);
+
+				thrust::copy(m_Acsrh.column_indices.begin() + start_idx, m_Acsrh.column_indices.begin() + end_idx, lu_column_indices.begin());
+				thrust::copy(m_Acsrh.values.begin() + start_idx, m_Acsrh.values.begin() + end_idx, lu_values.begin());
+			}
+
+			for (int i = 1; i < m_n; i++) {
+				int start_idx = m_Acsrh.row_offsets[i];
+				int end_idx = m_Acsrh.row_offsets[i+1];
+
+				int nl = 0, nu = 0;
+
+				PrecValueType tau_i = (PrecValueType)0;
+
+				IntVectorH w_nonzeros(end_idx - start_idx);
+
+				std::priority_queue<int, std::vector<int>, std::greater<int> > pq;
+				for (int l = start_idx; l < end_idx; l++) {
+					PrecValueType tmp_val = m_Acsrh.values[l];
+					int cur_k = m_Acsrh.column_indices[l];
+					wvector[cur_k] = tmp_val;
+					in_wvector[cur_k] = true;
+					tau_i += tmp_val * tmp_val;
+					w_nonzeros[l - start_idx] = cur_k;
+					if (cur_k < i) {
+						pq.push(cur_k);
+						nl ++;
+					} else  if (cur_k > i)
+						nu ++;
+				}
+				tau_i = sqrt(tau_i) / m_n * m_tolerance;
+
+				while (!pq.empty()) {
+					int cur_k = pq.top();
+					pq.pop();
+
+					int start_k_idx = lu_row_offsets[cur_k];
+					int end_k_idx = lu_row_offsets[cur_k+1];
+
+					int l2;
+					PrecValueType val_i_k = 0.0;
+
+					for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+						int pivot = lu_column_indices[l2];
+						if (pivot == cur_k) {
+							val_i_k = (wvector[cur_k] /= lu_values[l2]);
+							break;
+						}
+					}
+
+					if (l2 >= end_k_idx)
+						throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+
+					// Applying drop-off to w[cur_k]
+					if (fabs(val_i_k) < tau_i)
+						continue;
+
+					for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+						int tar_j = lu_column_indices[l2];
+						if (tar_j <= cur_k) continue;
+
+						wvector[tar_j] -= val_i_k * lu_values[l2];
+
+						if(!in_wvector[tar_j]) {
+							in_wvector[tar_j] = true;
+							w_nonzeros.push_back(tar_j);
+							if (tar_j < i)
+								pq.push(tar_j);
+						}
+					}
+				} // end while
+
+				// Apply drop-off to wvector
+				{
+					int wvec_size = w_nonzeros.size();
+					IntVectorH l_columns, u_columns;
+					PrecVectorH l_values, u_values;
+					for (int w_it = 0; w_it < wvec_size; w_it++) {
+						int cur_k = w_nonzeros[w_it];
+						PrecValueType tmp_val = wvector[cur_k];
+
+						if (cur_k == i) {
+							m_pivots[i] = tmp_val;
+							continue;
+						}
+
+						if (fabs(tmp_val) < tau_i) continue;
+
+						if (cur_k < i) {
+							l_columns.push_back(cur_k);
+							l_values.push_back(tmp_val);
+						} else {
+							u_columns.push_back(cur_k);
+							u_values.push_back(tmp_val);
+						}
+					}
+
+					for (int w_it = 0; w_it < wvec_size; w_it++) {
+						int cur_k = w_nonzeros[w_it];
+						wvector[cur_k] = (PrecValueType)0;
+						in_wvector[cur_k] = false;
+					}
+
+					int l_size = l_columns.size(), u_size = u_columns.size();
+
+					if (l_size > m_ilu_level + nl) {
+						l_size = m_ilu_level + nl;
+						findPthMax(l_columns.begin(), l_columns.end(), 
+								   l_values.begin(),  l_values.end(),
+								   l_size);
+					}
+
+					if (u_size > m_ilu_level + nu) {
+						u_size = m_ilu_level + nu;
+						findPthMax(u_columns.begin(), u_columns.end(), 
+								   u_values.begin(),  u_values.end(),
+								   u_size);
+					}
+
+					for (int tmp_it = 0; tmp_it < l_size; tmp_it++) {
+						lu_column_indices.push_back(l_columns[tmp_it]);
+						lu_values.push_back(l_values[tmp_it]);
+					}
+
+					lu_column_indices.push_back(i);
+					lu_values.push_back(m_pivots[i]);
+
+					for (int tmp_it = 0; tmp_it < u_size; tmp_it++) {
+						lu_column_indices.push_back(u_columns[tmp_it]);
+						lu_values.push_back(u_values[tmp_it]);
+					}
+
+
+					lu_row_offsets[i+1] = lu_column_indices.end() - lu_column_indices.begin();
+				}
+
+			} // end for
+
+			int new_nnz = lu_column_indices.size();
+			m_Acsrh.resize(m_n, m_n, new_nnz);
+			cusp::blas::fill(m_Acsrh.row_offsets, 0);
+
+			IntVectorH  tmp_row_indices(new_nnz);
+			IntVectorH  tmp_column_indices(new_nnz);
+			PrecVectorH tmp_values(new_nnz);
+
+			for (int i = 0; i < new_nnz; i++)
+				m_Acsrh.row_offsets[lu_column_indices[i]] ++;
+
+			thrust::exclusive_scan(m_Acsrh.row_offsets.begin(), m_Acsrh.row_offsets.end(), m_Acsrh.row_offsets.begin());
+
+			for (int i = 0; i < m_n; i++) {
+				int start_idx = lu_row_offsets[i];
+				int end_idx   = lu_row_offsets[i+1];
+
+				for (int l = start_idx; l < end_idx; l++) {
+					int cur_k = lu_column_indices[l];
+					int idx = m_Acsrh.row_offsets[cur_k];
+					m_Acsrh.row_offsets[cur_k] ++;
+					tmp_row_indices[idx] = i;
+					tmp_column_indices[idx] = cur_k; 
+					tmp_values[idx] = lu_values[l]; 
 				}
 			}
-		}
+
+			cusp::blas::fill(m_Acsrh.row_offsets, 0);
+			for (int i = 0; i < new_nnz; i++)
+				m_Acsrh.row_offsets[tmp_row_indices[i]] ++;
+
+			thrust::inclusive_scan(m_Acsrh.row_offsets.begin(), m_Acsrh.row_offsets.end(), m_Acsrh.row_offsets.begin());
+
+			for (int i = new_nnz - 1; i >= 0; i--) {
+				int idx = --m_Acsrh.row_offsets[tmp_row_indices[i]];
+				m_Acsrh.column_indices[idx] = tmp_column_indices[i];
+				m_Acsrh.values[idx] = tmp_values[i];
+			}
+
+			cusp::blas::copy(lu_row_offsets, m_Acsrh.row_offsets);
+		} // end else
+
 		for (int i = 0; i < m_n; i++) {
 			int start_idx = m_Acsrh.row_offsets[i];
 			int end_idx = m_Acsrh.row_offsets[i+1];
@@ -1221,6 +1443,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		}
 		m_timer.Stop();
 		m_time_bandLU = m_timer.getElapsed();
+
 	} else {
 		assemble_timer.Start();
 		PrecMatrixCooH Acooh;
@@ -3227,6 +3450,95 @@ Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
 
 	// Check if any of the diagonal elements is within the specified threshold
 	return thrust::any_of(diag.begin(), diag.end(), SmallerThan<PrecValueType>(threshold));
+}
+
+/**
+ * This function put p largest elements at the beginning p positions of
+ * an array. This is used in ILUT(p, tau) factorization algorithm.
+ */
+template <typename PrecVector>
+void
+Precond<PrecVector>::findPthMax(const IntHIterator&          ibegin,
+								const IntHIterator&          iend,
+								const PrecHIterator&         vbegin,
+								const PrecHIterator&         vend,
+								int                          p)
+{
+	int dist = iend - ibegin;
+	if (p <= 0 || p >= dist)
+		return;
+
+	if (dist == 2) {
+		if (fabs(*(vend-1)) > fabs(*vbegin)) {
+			int tmp_int = *(iend - 1);
+			*(iend - 1) = *ibegin;
+			*ibegin = tmp_int;
+			PrecValueType tmp_val = *(vend - 1);
+			*(vend - 1) = *vbegin;
+			*vbegin = tmp_val;
+		}
+		return;
+	}
+
+	int x1 = rand() % dist, x2 = rand() % dist, x3 = rand() % dist;
+	if (fabs(*(vbegin + x1)) > fabs(*(vbegin + x2))) {
+		x1 ^= x2;
+		x2 ^= x1;
+		x1 ^= x2;
+	}
+	if (fabs(*(vbegin + x2)) > fabs(*(vbegin + x3))) {
+		x3 ^= x2;
+		x2 ^= x3;
+		x3 ^= x2;
+	}
+
+	int pivot_column = *(ibegin + x2);
+	PrecValueType pivot_val = *(vbegin + x2);
+
+	if (vbegin + x2 != vend - 1) {
+		*(ibegin + x2) ^= *(iend - 1);
+		*(iend - 1) ^= *(ibegin + x2);
+		*(ibegin + x2) ^= *(iend - 1);
+		PrecValueType tmp_val = *(vend - 1);
+		*(vend - 1) = *(vbegin + x2);
+		*(vbegin + x2)= tmp_val;
+	}
+
+	x1 = 0;
+	x3 = x2 = (vend - vbegin) - 1;
+
+	while(true) {
+		while (x1 < x3 && fabs(*(vbegin + x1)) >= fabs(pivot_val)) x1++;
+
+		if (x1 == x3) {
+			*(vbegin + x2) = pivot_val;
+			*(ibegin + x2) = pivot_column;
+			break;
+		}
+		*(vbegin + x2) = *(vbegin + x1);
+		*(ibegin + x2) = *(ibegin + x1);
+		x2 = x1;
+		x3 --;
+
+		while (x1 < x3 && fabs(*(vbegin + x3)) < fabs(pivot_val)) x3--;
+		if (x1 == x3) {
+			*(vbegin + x2) = pivot_val;
+			*(ibegin + x2) = pivot_column;
+			break;
+		}
+		*(vbegin + x2) = *(vbegin + x3);
+		*(ibegin + x2) = *(ibegin + x3);
+		x2 = x3;
+		x1++;
+	}
+
+	if (x2 == p || x2 == p - 1)
+		return;
+
+	if (x2 > p)
+		findPthMax(ibegin, ibegin + x2, vbegin, vbegin + x2, p);
+	else
+		findPthMax(ibegin + (x2 + 1), iend, vbegin + (x2 + 1), vend, p - x2 - 1);
 }
 
 

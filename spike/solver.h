@@ -262,7 +262,7 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
 :	m_monitor(opts.maxNumIterations, opts.relTol, opts.absTol),
 	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testMC64, opts.performMC64, opts.mc64FirstStageOnly, opts.applyScaling,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
-	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering, opts.ilu_level),
+	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering, opts.ilu_level, opts.relTol),
 	m_solver(opts.solverType),
 	m_trackReordering(opts.trackReordering),
 	m_setupDone(false)
