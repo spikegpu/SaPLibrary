@@ -1229,17 +1229,12 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 				}
 			} 
 		} else {
-			/*
-			cusp::print(m_Acsrh.row_offsets);
-			cusp::print(m_Acsrh.column_indices);
-			cusp::print(m_Acsrh.values);
-			*/
 
 			IntVectorH    lu_row_offsets(m_n + 1, 0);
 			IntVectorH    lu_column_indices;
 			PrecVectorH   lu_values;
 			PrecVectorH   wvector(m_n, 0);
-			BoolVectorH   in_wvector(m_n, 0);
+			IntVectorH    in_wvector(m_n, 0);
 
 			{
 				lu_row_offsets[0] = m_Acsrh.row_offsets[0];
@@ -1253,6 +1248,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 				thrust::copy(m_Acsrh.column_indices.begin() + start_idx, m_Acsrh.column_indices.begin() + end_idx, lu_column_indices.begin());
 				thrust::copy(m_Acsrh.values.begin() + start_idx, m_Acsrh.values.begin() + end_idx, lu_values.begin());
 			}
+
+			IntVectorH pivot_positions(m_n, -1);
 
 			for (int i = 1; i < m_n; i++) {
 				int start_idx = m_Acsrh.row_offsets[i];
@@ -1269,7 +1266,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 					PrecValueType tmp_val = m_Acsrh.values[l];
 					int cur_k = m_Acsrh.column_indices[l];
 					wvector[cur_k] = tmp_val;
-					in_wvector[cur_k] = true;
+					in_wvector[cur_k] = l - start_idx + 1;
 					tau_i += tmp_val * tmp_val;
 					w_nonzeros[l - start_idx] = cur_k;
 					if (cur_k < i) {
@@ -1287,14 +1284,19 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 					int start_k_idx = lu_row_offsets[cur_k];
 					int end_k_idx = lu_row_offsets[cur_k+1];
 
-					int l2;
-					PrecValueType val_i_k = 0.0;
+					int l2 = pivot_positions[cur_k];
+					PrecValueType val_i_k = (PrecValueType)0;
 
-					for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
-						int pivot = lu_column_indices[l2];
-						if (pivot == cur_k) {
-							val_i_k = (wvector[cur_k] /= lu_values[l2]);
-							break;
+					if (l2 >= 0)
+						val_i_k = (wvector[cur_k] /= lu_values[l2]);
+					else {
+						for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+							int pivot = lu_column_indices[l2];
+							if (pivot == cur_k) {
+								val_i_k = (wvector[cur_k] /= lu_values[l2]);
+								pivot_positions[cur_k] = l2;
+								break;
+							}
 						}
 					}
 
@@ -1302,18 +1304,19 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 						throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
 
 					// Applying drop-off to w[cur_k]
-					if (fabs(val_i_k) < tau_i)
+					if (fabs(val_i_k) < tau_i) {
+						in_wvector[cur_k] = 0;
 						continue;
+					}
 
-					for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+					for (l2++; l2 < end_k_idx; l2++) {
 						int tar_j = lu_column_indices[l2];
-						if (tar_j <= cur_k) continue;
 
 						wvector[tar_j] -= val_i_k * lu_values[l2];
 
 						if(!in_wvector[tar_j]) {
-							in_wvector[tar_j] = true;
 							w_nonzeros.push_back(tar_j);
+							in_wvector[tar_j] = w_nonzeros.size();
 							if (tar_j < i)
 								pq.push(tar_j);
 						}
@@ -1327,6 +1330,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 					PrecVectorH l_values, u_values;
 					for (int w_it = 0; w_it < wvec_size; w_it++) {
 						int cur_k = w_nonzeros[w_it];
+						if (!in_wvector[cur_k])
+							continue;
 						PrecValueType tmp_val = wvector[cur_k];
 
 						if (cur_k == i) {
@@ -1334,7 +1339,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 							continue;
 						}
 
-						if (fabs(tmp_val) < tau_i) continue;
+						if (fabs(tmp_val) < tau_i)
+							continue;
 
 						if (cur_k < i) {
 							l_columns.push_back(cur_k);
@@ -1345,10 +1351,11 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 						}
 					}
 
+					// Clear the content of wvector and in_wvector for usage of next iteration
 					for (int w_it = 0; w_it < wvec_size; w_it++) {
 						int cur_k = w_nonzeros[w_it];
 						wvector[cur_k] = (PrecValueType)0;
-						in_wvector[cur_k] = false;
+						in_wvector[cur_k] = 0;
 					}
 
 					int l_size = l_columns.size(), u_size = u_columns.size();
@@ -1380,8 +1387,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 						lu_values.push_back(u_values[tmp_it]);
 					}
 
-
-					lu_row_offsets[i+1] = lu_column_indices.end() - lu_column_indices.begin();
+					lu_row_offsets[i+1] = lu_column_indices.size();
 				}
 
 			} // end for
