@@ -262,6 +262,8 @@ private:
 	void partFullLU_var();
 	void partBlockedFullLU_var();
 
+	void ILUT(PrecMatrixCsrH& Acsrh, int p, PrecValueType tau);
+
 	void partFullFwdSweep(PrecVector& v);
 	void partFullBckSweep(PrecVector& v);
 	void purifyRHS(PrecVector& v, PrecVector& res);
@@ -1228,211 +1230,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 					}
 				}
 			} 
-		} else {
-
-			IntVectorH    lu_row_offsets(m_n + 1, 0);
-			IntVectorH    lu_column_indices;
-			PrecVectorH   lu_values;
-			PrecVectorH   wvector(m_n, 0);
-			IntVectorH    in_wvector(m_n, 0);
-
-			{
-				lu_row_offsets[0] = m_Acsrh.row_offsets[0];
-				lu_row_offsets[1] = m_Acsrh.row_offsets[1];
-				int start_idx = m_Acsrh.row_offsets[0];
-				int end_idx = m_Acsrh.row_offsets[1];
-
-				lu_column_indices.resize(end_idx - start_idx);
-				lu_values.resize(end_idx - start_idx);
-
-				thrust::copy(m_Acsrh.column_indices.begin() + start_idx, m_Acsrh.column_indices.begin() + end_idx, lu_column_indices.begin());
-				thrust::copy(m_Acsrh.values.begin() + start_idx, m_Acsrh.values.begin() + end_idx, lu_values.begin());
-			}
-
-			IntVectorH pivot_positions(m_n, -1);
-
-			for (int i = 1; i < m_n; i++) {
-				int start_idx = m_Acsrh.row_offsets[i];
-				int end_idx = m_Acsrh.row_offsets[i+1];
-
-				int nl = 0, nu = 0;
-
-				PrecValueType tau_i = (PrecValueType)0;
-
-				IntVectorH w_nonzeros(end_idx - start_idx);
-
-				std::priority_queue<int, std::vector<int>, std::greater<int> > pq;
-				for (int l = start_idx; l < end_idx; l++) {
-					PrecValueType tmp_val = m_Acsrh.values[l];
-					int cur_k = m_Acsrh.column_indices[l];
-					wvector[cur_k] = tmp_val;
-					in_wvector[cur_k] = l - start_idx + 1;
-					tau_i += tmp_val * tmp_val;
-					w_nonzeros[l - start_idx] = cur_k;
-					if (cur_k < i) {
-						pq.push(cur_k);
-						nl ++;
-					} else  if (cur_k > i)
-						nu ++;
-				}
-				tau_i = sqrt(tau_i) / m_n * m_tolerance;
-
-				while (!pq.empty()) {
-					int cur_k = pq.top();
-					pq.pop();
-
-					int start_k_idx = lu_row_offsets[cur_k];
-					int end_k_idx = lu_row_offsets[cur_k+1];
-
-					int l2 = pivot_positions[cur_k];
-					PrecValueType val_i_k = (PrecValueType)0;
-
-					if (l2 >= 0)
-						val_i_k = (wvector[cur_k] /= lu_values[l2]);
-					else {
-						for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
-							int pivot = lu_column_indices[l2];
-							if (pivot == cur_k) {
-								val_i_k = (wvector[cur_k] /= lu_values[l2]);
-								pivot_positions[cur_k] = l2;
-								break;
-							}
-						}
-					}
-
-					if (l2 >= end_k_idx)
-						throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
-
-					// Applying drop-off to w[cur_k]
-					if (fabs(val_i_k) < tau_i) {
-						in_wvector[cur_k] = 0;
-						continue;
-					}
-
-					for (l2++; l2 < end_k_idx; l2++) {
-						int tar_j = lu_column_indices[l2];
-
-						wvector[tar_j] -= val_i_k * lu_values[l2];
-
-						if(!in_wvector[tar_j]) {
-							w_nonzeros.push_back(tar_j);
-							in_wvector[tar_j] = w_nonzeros.size();
-							if (tar_j < i)
-								pq.push(tar_j);
-						}
-					}
-				} // end while
-
-				// Apply drop-off to wvector
-				{
-					int wvec_size = w_nonzeros.size();
-					IntVectorH l_columns, u_columns;
-					PrecVectorH l_values, u_values;
-					for (int w_it = 0; w_it < wvec_size; w_it++) {
-						int cur_k = w_nonzeros[w_it];
-						if (!in_wvector[cur_k])
-							continue;
-						PrecValueType tmp_val = wvector[cur_k];
-
-						if (cur_k == i) {
-							m_pivots[i] = tmp_val;
-							continue;
-						}
-
-						if (fabs(tmp_val) < tau_i)
-							continue;
-
-						if (cur_k < i) {
-							l_columns.push_back(cur_k);
-							l_values.push_back(tmp_val);
-						} else {
-							u_columns.push_back(cur_k);
-							u_values.push_back(tmp_val);
-						}
-					}
-
-					// Clear the content of wvector and in_wvector for usage of next iteration
-					for (int w_it = 0; w_it < wvec_size; w_it++) {
-						int cur_k = w_nonzeros[w_it];
-						wvector[cur_k] = (PrecValueType)0;
-						in_wvector[cur_k] = 0;
-					}
-
-					int l_size = l_columns.size(), u_size = u_columns.size();
-
-					if (l_size > m_ilu_level + nl) {
-						l_size = m_ilu_level + nl;
-						findPthMax(l_columns.begin(), l_columns.end(), 
-								   l_values.begin(),  l_values.end(),
-								   l_size);
-					}
-
-					if (u_size > m_ilu_level + nu) {
-						u_size = m_ilu_level + nu;
-						findPthMax(u_columns.begin(), u_columns.end(), 
-								   u_values.begin(),  u_values.end(),
-								   u_size);
-					}
-
-					for (int tmp_it = 0; tmp_it < l_size; tmp_it++) {
-						lu_column_indices.push_back(l_columns[tmp_it]);
-						lu_values.push_back(l_values[tmp_it]);
-					}
-
-					lu_column_indices.push_back(i);
-					lu_values.push_back(m_pivots[i]);
-
-					for (int tmp_it = 0; tmp_it < u_size; tmp_it++) {
-						lu_column_indices.push_back(u_columns[tmp_it]);
-						lu_values.push_back(u_values[tmp_it]);
-					}
-
-					lu_row_offsets[i+1] = lu_column_indices.size();
-				}
-
-			} // end for
-
-			int new_nnz = lu_column_indices.size();
-			m_Acsrh.resize(m_n, m_n, new_nnz);
-			cusp::blas::fill(m_Acsrh.row_offsets, 0);
-
-			IntVectorH  tmp_row_indices(new_nnz);
-			IntVectorH  tmp_column_indices(new_nnz);
-			PrecVectorH tmp_values(new_nnz);
-
-			for (int i = 0; i < new_nnz; i++)
-				m_Acsrh.row_offsets[lu_column_indices[i]] ++;
-
-			thrust::exclusive_scan(m_Acsrh.row_offsets.begin(), m_Acsrh.row_offsets.end(), m_Acsrh.row_offsets.begin());
-
-			for (int i = 0; i < m_n; i++) {
-				int start_idx = lu_row_offsets[i];
-				int end_idx   = lu_row_offsets[i+1];
-
-				for (int l = start_idx; l < end_idx; l++) {
-					int cur_k = lu_column_indices[l];
-					int idx = m_Acsrh.row_offsets[cur_k];
-					m_Acsrh.row_offsets[cur_k] ++;
-					tmp_row_indices[idx] = i;
-					tmp_column_indices[idx] = cur_k; 
-					tmp_values[idx] = lu_values[l]; 
-				}
-			}
-
-			cusp::blas::fill(m_Acsrh.row_offsets, 0);
-			for (int i = 0; i < new_nnz; i++)
-				m_Acsrh.row_offsets[tmp_row_indices[i]] ++;
-
-			thrust::inclusive_scan(m_Acsrh.row_offsets.begin(), m_Acsrh.row_offsets.end(), m_Acsrh.row_offsets.begin());
-
-			for (int i = new_nnz - 1; i >= 0; i--) {
-				int idx = --m_Acsrh.row_offsets[tmp_row_indices[i]];
-				m_Acsrh.column_indices[idx] = tmp_column_indices[i];
-				m_Acsrh.values[idx] = tmp_values[i];
-			}
-
-			cusp::blas::copy(lu_row_offsets, m_Acsrh.row_offsets);
-		} // end else
+		} else
+			ILUT(m_Acsrh, m_ilu_level, m_tolerance);
 
 		for (int i = 0; i < m_n; i++) {
 			int start_idx = m_Acsrh.row_offsets[i];
@@ -1837,6 +1636,220 @@ Precond<PrecVector>::partBlockedFullLU_var()
 		else
 			device::var::fullLU_post_divide<PrecValueType><<<grids, m_k-1>>>(d_R, p_spike_ks, p_ROffsets);
 	}
+}
+
+/*! \brief This function does incomplete LU to the provided
+ * CSR matrix.
+ *
+ * The integer p specifies the filling-in factor and tau
+ * indicates the threshold of drop-off.
+ */
+template <typename PrecVector>
+void
+Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
+{
+	IntVectorH    lu_row_offsets(m_n + 1, 0);
+	IntVectorH    lu_column_indices;
+	PrecVectorH   lu_values;
+	PrecVectorH   wvector(m_n, 0);
+	IntVectorH    in_wvector(m_n, 0);
+
+	{
+		lu_row_offsets[0] = Acsrh.row_offsets[0];
+		lu_row_offsets[1] = Acsrh.row_offsets[1];
+		int start_idx = Acsrh.row_offsets[0];
+		int end_idx = Acsrh.row_offsets[1];
+
+		lu_column_indices.resize(end_idx - start_idx);
+		lu_values.resize(end_idx - start_idx);
+
+		thrust::copy(Acsrh.column_indices.begin() + start_idx, Acsrh.column_indices.begin() + end_idx, lu_column_indices.begin());
+		thrust::copy(Acsrh.values.begin() + start_idx, Acsrh.values.begin() + end_idx, lu_values.begin());
+	}
+
+	IntVectorH pivot_positions(m_n, -1);
+
+	for (int i = 1; i < m_n; i++) {
+		int start_idx = Acsrh.row_offsets[i];
+		int end_idx = Acsrh.row_offsets[i+1];
+
+		int nl = 0, nu = 0;
+
+		PrecValueType tau_i = (PrecValueType)0;
+
+		IntVectorH w_nonzeros(end_idx - start_idx);
+
+		std::priority_queue<int, std::vector<int>, std::greater<int> > pq;
+		for (int l = start_idx; l < end_idx; l++) {
+			PrecValueType tmp_val = Acsrh.values[l];
+			int cur_k = Acsrh.column_indices[l];
+			wvector[cur_k] = tmp_val;
+			in_wvector[cur_k] = l - start_idx + 1;
+			tau_i += tmp_val * tmp_val;
+			w_nonzeros[l - start_idx] = cur_k;
+			if (cur_k < i) {
+				pq.push(cur_k);
+				nl ++;
+			} else  if (cur_k > i)
+				nu ++;
+		}
+		tau_i = sqrt(tau_i) / m_n * tau;
+
+		while (!pq.empty()) {
+			int cur_k = pq.top();
+			pq.pop();
+
+			int start_k_idx = lu_row_offsets[cur_k];
+			int end_k_idx = lu_row_offsets[cur_k+1];
+
+			int l2 = pivot_positions[cur_k];
+			PrecValueType val_i_k = (PrecValueType)0;
+
+			if (l2 >= 0)
+				val_i_k = (wvector[cur_k] /= lu_values[l2]);
+			else {
+				for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
+					int pivot = lu_column_indices[l2];
+					if (pivot == cur_k) {
+						val_i_k = (wvector[cur_k] /= lu_values[l2]);
+						pivot_positions[cur_k] = l2;
+						break;
+					}
+				}
+			}
+
+			if (l2 >= end_k_idx)
+				throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
+
+			// Applying drop-off to w[cur_k]
+			if (fabs(val_i_k) < tau_i) {
+				in_wvector[cur_k] = 0;
+				continue;
+			}
+
+			for (l2++; l2 < end_k_idx; l2++) {
+				int tar_j = lu_column_indices[l2];
+
+				wvector[tar_j] -= val_i_k * lu_values[l2];
+
+				if(!in_wvector[tar_j]) {
+					w_nonzeros.push_back(tar_j);
+					in_wvector[tar_j] = w_nonzeros.size();
+					if (tar_j < i)
+						pq.push(tar_j);
+				}
+			}
+		} // end while
+
+		// Apply drop-off to wvector
+		{
+			int wvec_size = w_nonzeros.size();
+			IntVectorH l_columns, u_columns;
+			PrecVectorH l_values, u_values;
+			for (int w_it = 0; w_it < wvec_size; w_it++) {
+				int cur_k = w_nonzeros[w_it];
+				if (!in_wvector[cur_k])
+					continue;
+				PrecValueType tmp_val = wvector[cur_k];
+
+				if (cur_k == i) {
+					m_pivots[i] = tmp_val;
+					continue;
+				}
+
+				if (fabs(tmp_val) < tau_i)
+					continue;
+
+				if (cur_k < i) {
+					l_columns.push_back(cur_k);
+					l_values.push_back(tmp_val);
+				} else {
+					u_columns.push_back(cur_k);
+					u_values.push_back(tmp_val);
+				}
+			}
+
+			// Clear the content of wvector and in_wvector for usage of next iteration
+			for (int w_it = 0; w_it < wvec_size; w_it++) {
+				int cur_k = w_nonzeros[w_it];
+				wvector[cur_k] = (PrecValueType)0;
+				in_wvector[cur_k] = 0;
+			}
+
+			int l_size = l_columns.size(), u_size = u_columns.size();
+
+			if (l_size > p + nl) {
+				l_size = p + nl;
+				findPthMax(l_columns.begin(), l_columns.end(), 
+						l_values.begin(),  l_values.end(),
+						l_size);
+			}
+
+			if (u_size > p + nu) {
+				u_size = p + nu;
+				findPthMax(u_columns.begin(), u_columns.end(), 
+						u_values.begin(),  u_values.end(),
+						u_size);
+			}
+
+			for (int tmp_it = 0; tmp_it < l_size; tmp_it++) {
+				lu_column_indices.push_back(l_columns[tmp_it]);
+				lu_values.push_back(l_values[tmp_it]);
+			}
+
+			lu_column_indices.push_back(i);
+			lu_values.push_back(m_pivots[i]);
+
+			for (int tmp_it = 0; tmp_it < u_size; tmp_it++) {
+				lu_column_indices.push_back(u_columns[tmp_it]);
+				lu_values.push_back(u_values[tmp_it]);
+			}
+
+			lu_row_offsets[i+1] = lu_column_indices.size();
+		}
+
+	} // end for
+
+	int new_nnz = lu_column_indices.size();
+	Acsrh.resize(m_n, m_n, new_nnz);
+	cusp::blas::fill(Acsrh.row_offsets, 0);
+
+	IntVectorH  tmp_row_indices(new_nnz);
+	IntVectorH  tmp_column_indices(new_nnz);
+	PrecVectorH tmp_values(new_nnz);
+
+	for (int i = 0; i < new_nnz; i++)
+		Acsrh.row_offsets[lu_column_indices[i]] ++;
+
+	thrust::exclusive_scan(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), Acsrh.row_offsets.begin());
+
+	for (int i = 0; i < m_n; i++) {
+		int start_idx = lu_row_offsets[i];
+		int end_idx   = lu_row_offsets[i+1];
+
+		for (int l = start_idx; l < end_idx; l++) {
+			int cur_k = lu_column_indices[l];
+			int idx = Acsrh.row_offsets[cur_k];
+			Acsrh.row_offsets[cur_k] ++;
+			tmp_row_indices[idx] = i;
+			tmp_column_indices[idx] = cur_k; 
+			tmp_values[idx] = lu_values[l]; 
+		}
+	}
+
+	cusp::blas::fill(Acsrh.row_offsets, 0);
+	for (int i = 0; i < new_nnz; i++)
+		Acsrh.row_offsets[tmp_row_indices[i]] ++;
+
+	thrust::inclusive_scan(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), Acsrh.row_offsets.begin());
+
+	for (int i = new_nnz - 1; i >= 0; i--) {
+		int idx = --Acsrh.row_offsets[tmp_row_indices[i]];
+		Acsrh.column_indices[idx] = tmp_column_indices[i];
+		Acsrh.values[idx] = tmp_values[i];
+	}
+
+	cusp::blas::copy(lu_row_offsets, Acsrh.row_offsets);
 }
 
 /*! \brief This function will call Precond::partBandedLU_one(), 
