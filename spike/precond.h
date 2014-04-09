@@ -1342,8 +1342,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_optPerm = buffer2;
 
 		if (m_ilu_level > 0 && m_safeFactorization) {
-			buffer = pivotPerm;
-			combinePermutation(m_optReordering, buffer, buffer2);
+			buffer = pivotReordering;
+			combinePermutation(buffer, m_optReordering, buffer2);
 			m_optReordering = buffer2;
 		}
 	}
@@ -1921,23 +1921,31 @@ Precond<PrecVector>::ILUTP(PrecMatrixCsrH&    Acsrh,
 		int pivot_col = -1;
 		int pivot_pos = -1;
 		PrecValueType max_pivot_val = 0.0;
+		PrecValueType cur_pivot_val = 0.0;
 		for (l = start_idx; l < end_idx; l++) {
 			PrecValueType tmp_val = Acsrh.values[l];
 			int           tmp_col = Acsrh.column_indices[l];
+
 			if (tmp_col == 0) {
-				if (fabs(tmp_val) > perm_tol) {
-					m_pivots[0] = tmp_val;
-					pivot_col = 0;
-					pivot_pos = l;
-					break;
-				}
-			} else {
-				if (fabs(tmp_val) > perm_tol) {
+				cur_pivot_val = tmp_val;
+				max_pivot_val = fabs(tmp_val);
+				pivot_col = tmp_col;
+				pivot_pos = l;
+				break;
+			}
+		}
+
+		for (l = start_idx; l < end_idx; l++) {
+			PrecValueType tmp_val = Acsrh.values[l];
+			int           tmp_col = Acsrh.column_indices[l];
+			if (tmp_col == 0)
+				continue;
+			else {
+				if (fabs(tmp_val) * perm_tol > fabs(cur_pivot_val)) {
 					if (fabs(tmp_val) > max_pivot_val) {
 						pivot_col = tmp_col;
 						pivot_pos = l;
 						max_pivot_val = fabs(tmp_val);
-						m_pivots[0] = tmp_val;
 					}
 				}
 			}
@@ -1946,6 +1954,7 @@ Precond<PrecVector>::ILUTP(PrecMatrixCsrH&    Acsrh,
 		if (pivot_col < 0)
 			throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
 
+		m_pivots[0] = Acsrh.values[pivot_pos];
 		pivot_positions[0] = pivot_pos;
 
 		if (pivot_col != 0) {
@@ -2033,42 +2042,58 @@ Precond<PrecVector>::ILUTP(PrecMatrixCsrH&    Acsrh,
 		// Apply drop-off to wvector
 		{
 			int pivot_col = -1;
+			int pivot_pos = -1;
 			PrecValueType max_pivot_val = 0.0;
+			PrecValueType cur_pivot_val = 0.0;
 			for (int w_it = 0; w_it < wvec_size; w_it++) {
 				int cur_k = w_nonzeros[w_it];
 				if (!in_wvector[cur_k])
 					continue;
 				int permed_k = perm[cur_k];
-				if (permed_k < i)
-					continue;
 
 				PrecValueType tmp_val = wvector[cur_k];
 
 				if (permed_k == i) {
-					if (fabs(tmp_val) > perm_tol) {
-						m_pivots[i] = tmp_val;
-						pivot_col = i;
-						break;
-					}
-				} else { 
-					if (fabs(tmp_val) > perm_tol) {
-						if (fabs(tmp_val) > max_pivot_val) {
-							pivot_col = permed_k;
-							max_pivot_val = fabs(tmp_val);
-							m_pivots[i] = tmp_val;
-						}
+					pivot_col     = i;
+					max_pivot_val = fabs(tmp_val);
+					cur_pivot_val = tmp_val;
+					pivot_pos     = w_it;
+					break;
+				}
+			}
+
+			for (int w_it = 0; w_it < wvec_size; w_it++) {
+				int cur_k = w_nonzeros[w_it];
+				if (!in_wvector[cur_k])
+					continue;
+				int permed_k = perm[cur_k];
+				if (permed_k <= i)
+					continue;
+
+				PrecValueType tmp_val = wvector[cur_k];
+
+				if (fabs(tmp_val) * perm_tol > fabs(cur_pivot_val)) {
+					if (fabs(tmp_val) > max_pivot_val) {
+						pivot_col = permed_k;
+						max_pivot_val = fabs(tmp_val);
+						pivot_pos   = w_it;
 					}
 				}
 			}
 
-			if (pivot_col >= 0 && pivot_col != i) {
-				int cur_col = reordering[pivot_col];
-				int cur_i   = reordering[i];
-				perm[cur_col] = i;
-				perm[cur_i]   = pivot_col;
-				reordering[i] = cur_col;
-				reordering[pivot_col] = cur_i;
-			}
+			if (pivot_col >= 0) {
+				m_pivots[i] = wvector[w_nonzeros[pivot_pos]];
+
+				if (pivot_col != i) {
+					int cur_col = reordering[pivot_col];
+					int cur_i   = reordering[i];
+					perm[cur_col] = i;
+					perm[cur_i]   = pivot_col;
+					reordering[i] = cur_col;
+					reordering[pivot_col] = cur_i;
+				}
+			} else
+				throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ILUTP).");
 
 			l_size = u_size = 0;
 			for (int w_it = 0; w_it < wvec_size; w_it++) {
