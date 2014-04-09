@@ -878,24 +878,28 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 
 		for (int i=1; i<m_n; i++) {
 			int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+			PrecValueType tmp_val = sol_h[i];
 			for (int l = start_idx; l < end_idx; l++) {
 				int cur_k = m_Acsrh.column_indices[l];
 				if (cur_k >= i)
 					break;
-				sol_h[i] -= sol_h[cur_k] * m_Acsrh.values[l];
+				tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
 			}
+			sol_h[i] = tmp_val;
 		}
 		thrust::transform(sol_h.begin(), sol_h.end(), m_pivots.begin(), sol_h.begin(), thrust::divides<PrecValueType>());
 
 		for (int i = m_n - 2; i >= 0; i--) {
 			int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+			PrecValueType tmp_val = sol_h[i];
 
 			for (int l = end_idx - 1; l >= start_idx; l--) {
 				int cur_k = m_Acsrh.column_indices[l];
 				if (cur_k <= i)
 					break;
-				sol_h[i] -= sol_h[cur_k] * m_Acsrh.values[l];
+				tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
 			}
+			sol_h[i] = tmp_val;
 		}
 
 		sol = sol_h;
