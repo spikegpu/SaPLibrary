@@ -24,6 +24,7 @@
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
 
+#include <omp.h>
 #include <queue>
 #include <vector>
 #include <functional>
@@ -886,12 +887,17 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 		return;
 	}
 
+	const int CPU_GPU_SWEEP_THRESHOLD = 4;
+
 	if (m_numPartitions > 1 && m_precondType == Spike) {
 		if (!m_variableBandwidth) {
 			sol = rhs;
 			// Calculate modified RHS
-			partBandedFwdSweep(rhs);
-			partBandedBckSweep(rhs);
+			if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
+				partBandedFwdSweep(rhs);
+				partBandedBckSweep(rhs);
+			} else
+				partBandedSweepsH(rhs);
 
 			// Solve reduced system
 			partFullFwdSweep(rhs);
@@ -904,8 +910,11 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 			buffer.resize(m_n);
 			permute(rhs, m_secondReordering,buffer);
 			// Calculate modified RHS
-			partBandedFwdSweep(rhs);
-			partBandedBckSweep(rhs);
+			if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
+				partBandedFwdSweep(rhs);
+				partBandedBckSweep(rhs);
+			} else
+				partBandedSweepsH(rhs);
 
 			permute(rhs, m_secondReordering, sol);
 
@@ -920,7 +929,7 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 		sol = rhs;
 
 	// Get purified solution
-	if (m_numPartitions > 1) {
+	if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
 	    partBandedFwdSweep(sol);
 	    partBandedBckSweep(sol);
 	} else
@@ -3122,10 +3131,14 @@ Precond<PrecVector>::partBandedSweepsH(PrecVector& v)
 {
 	PrecVectorH sol_h = v;
 
-	int partSize  = m_n / m_numPartitions;
-	int remainder = m_n % m_numPartitions;
+	int numPartitions = m_numPartitions;
+	int partSize  = m_n / numPartitions;
+	int remainder = m_n % numPartitions;
 
-	for (int p = 0; p < m_numPartitions; p++) {
+	omp_set_num_threads(std::min(numPartitions, 8));
+
+#pragma omp parallel for shared(numPartitions, partSize, remainder, sol_h)
+	for (int p = 0; p < numPartitions; p++) {
 		int start_idx = 0, end_idx = 0;
 
 		if (p < remainder) {
