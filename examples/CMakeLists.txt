@@ -20,7 +20,7 @@ include(SBELUtils.cmake)
 
 
 #enable_mpi_support()
-#enable_openmp_support()
+enable_openmp_support()
 enable_cuda_support()
 
 # CUSP dependency. Note that we always include CUSP headers using 

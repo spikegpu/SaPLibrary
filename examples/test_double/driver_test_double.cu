@@ -68,7 +68,7 @@ enum {OPT_HELP, OPT_PART,
       OPT_MATFILE, OPT_RHSFILE, 
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT,
-      OPT_CONST_BAND};
+      OPT_CONST_BAND, OPT_ILU_LEVEL};
 
 // Color to print
 enum TestColor {COLOR_NO = 0,
@@ -113,6 +113,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_CONST_BAND,    "--const-band",         SO_NONE    },
+	{ OPT_ILU_LEVEL,     "--ilu-level",          SO_REQ_CMB },
 	{ OPT_HELP,          "-?",                   SO_NONE    },
 	{ OPT_HELP,          "-h",                   SO_NONE    },
 	{ OPT_HELP,          "--help",               SO_NONE    },
@@ -803,8 +804,14 @@ GetProblemSpecs(int             argc,
 			case OPT_CONST_BAND:
 				opts.variableBandwidth = false;
 				break;
+			case OPT_ILU_LEVEL:
+				opts.ilu_level = atoi(args.OptionArg());
+				break;
 		}
 	}
+
+	if (opts.ilu_level >= 0)
+		numPart = 1;
 
 	// If the number of partitions was not defined, show usage and exit.
 	if (numPart <= 0) {
