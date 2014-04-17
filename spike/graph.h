@@ -174,7 +174,8 @@ public:
 	                                MatrixMap&  typeMap,
 	                                MatrixMap&  bandedMatMap);
 
-	void       get_csr_matrix(MatrixCsr&        Acsr);
+	void       get_csr_matrix(MatrixCsr&        Acsr,
+							  int               numPartitions);
 
 private:
 	int           m_n;
@@ -367,13 +368,14 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	m_nnz = Acoo.num_entries;
 
 	// Create the edges in the graph.
+	m_edges.resize(m_nnz);
 	if (m_trackReordering) {
 		for (int i = 0; i < m_nnz; i++) {
-			m_edges.push_back(EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
+			m_edges[i] = (EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 		}
 	} else {
 		for (int i = 0; i < m_nnz; i++)
-			m_edges.push_back(EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
+			m_edges[i] = (EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 	}
 
 	// Apply mc64 algorithm. Note that we must ensure we always work with
@@ -1464,19 +1466,30 @@ Graph<T>::get_csc_matrix(const MatrixCoo& Acoo,
 
 template<typename T>
 void
-Graph<T>::get_csr_matrix(MatrixCsr&       Acsr)
+Graph<T>::get_csr_matrix(MatrixCsr&       Acsr, int numPartitions)
 {
-	Acsr.resize(m_n, m_n, m_edges.end() - m_first);
+	EdgeIterator toStart, toEnd;
+	if (numPartitions == 1) {
+		toEnd   = m_edges.end();
+		toStart = m_first;
+	}
+	else {
+		toEnd   = m_major_edges.end();
+		toStart = m_major_edges.begin();
+	}
+
+	Acsr.resize(m_n, m_n, toEnd - toStart);
+
 	cusp::blas::fill(Acsr.row_offsets, 0);
 
-	EdgeVector edges_tmp(m_edges.end() - m_first);
+	EdgeVector edges_tmp(toEnd - toStart);
 
-	for (EdgeIterator edgeIt = m_first; edgeIt != m_edges.end(); edgeIt++)
+	for (EdgeIterator edgeIt = toStart; edgeIt != toEnd; edgeIt++)
 		Acsr.row_offsets[edgeIt -> m_to]++;
 
 	thrust::exclusive_scan(Acsr.row_offsets.begin(), Acsr.row_offsets.end(), Acsr.row_offsets.begin());
 
-	for (EdgeIterator edgeIt = m_first; edgeIt != m_edges.end(); edgeIt++) {
+	for (EdgeIterator edgeIt = toStart; edgeIt != toEnd; edgeIt++) {
 		int idx = Acsr.row_offsets[edgeIt -> m_to];
 		Acsr.row_offsets[edgeIt -> m_to] ++;
 		edges_tmp[idx] = *edgeIt;

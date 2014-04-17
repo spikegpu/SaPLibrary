@@ -810,9 +810,6 @@ GetProblemSpecs(int             argc,
 		}
 	}
 
-	if (opts.ilu_level >= 0)
-		numPart = 1;
-
 	// If the number of partitions was not defined, show usage and exit.
 	if (numPart <= 0) {
 		cout << "The number of partitions must be specified." << endl << endl;
