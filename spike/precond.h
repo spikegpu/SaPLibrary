@@ -1642,7 +1642,7 @@ Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 	omp_set_num_threads(num_threads);
 
 	IntVectorH    lu_row_offsets(m_n + 1, 0);
-	IntVectorH    lu_column_indices[num_threads];
+	IntVectorH    lu_column_indices[numPartitions];
 	PrecVectorH   lu_values[numPartitions];
 	PrecVectorH   wvector(m_n, 0);
 	IntVectorH    in_wvector(m_n, 0);
@@ -1657,6 +1657,7 @@ Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 
 #pragma omp parallel for shared (numPartitions, remainder, partSize, lu_row_offsets, wvector, in_wvector, pivot_positions, l_columns, u_columns, l_values, u_values, w_nonzeros)
 	for (int q = 0; q < numPartitions; q++) {
+		// fprintf(stderr, "%d %d\n", omp_get_thread_num(), q);
 		int start_row = 0, end_row = 0;
 
 		PrecVectorH& loc_lu_values         = lu_values[q];
