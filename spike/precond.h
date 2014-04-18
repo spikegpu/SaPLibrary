@@ -20,6 +20,7 @@
 #include <spike/device/factor_band_var.cuh>
 #include <spike/device/sweep_band_const.cuh>
 #include <spike/device/sweep_band_var.cuh>
+#include <spike/device/sweep_band_sparse.cuh>
 #include <spike/device/inner_product.cuh>
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
@@ -65,6 +66,7 @@ public:
 
 	typedef typename cusp::coo_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCoo;
 	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
+	typedef typename cusp::csr_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCsr;
 	typedef typename cusp::csr_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCsrH;
 
 
@@ -716,10 +718,40 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		return;
 
 	if (m_ilu_level >= 0) {
+		m_timer.Start();
 		sparseFactorization();
+		m_timer.Stop();
+		m_time_bandLU = m_timer.getElapsed();
+
+		if (m_precondType == Block || m_numPartitions == 1)
+			return;
+
+		// We are using more than one partition, so we must assemble the
+		// truncated Spike reduced matrix R.
+		m_R.resize((2 * m_k) * (2 * m_k) * (m_numPartitions - 1));
+
+		// Extract off-diagonal blocks from the banded matrix and store them
+		// in the array m_offDiags.
+		PrecVector mat_WV;
+		mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
+
+		m_timer.Start();
+		extractOffDiagonal(mat_WV);
+		m_timer.Stop();
+		m_time_offDiags = m_timer.getElapsed();
+
+		m_timer.Start();
+		calculateSpikes(mat_WV);
+		assembleReducedMat(mat_WV);
+		m_timer.Stop();
+		m_time_assembly = m_timer.getElapsed();
+
+		m_timer.Start();
+		partFullLU();
+		m_timer.Stop();
+		m_time_fullLU = m_timer.getElapsed();
 		return;
 	}
-
 
 	// If we are using a single partition, perform the LU factorization
 	// of the banded matrix and return.
@@ -883,7 +915,24 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 	}
 
 	if (m_ilu_level >= 0) {
-		sparseSweep(rhs, sol);
+		if (m_numPartitions > 1 && m_precondType == Spike) {
+			static PrecVector buffer(m_n);
+			permute(rhs, m_secondReordering,buffer);
+			// Calculate modified RHS
+			sparseSweep(rhs, rhs);
+
+			permute(rhs, m_secondReordering, sol);
+
+			// Solve reduced system
+			partFullFwdSweep(sol);
+			partFullBckSweep(sol);
+
+			purifyRHS(sol, buffer);
+			permute(buffer, m_secondPerm, sol);
+		} else 
+			sol = rhs;
+
+		sparseSweep(sol, sol);
 		return;
 	}
 
@@ -2232,7 +2281,6 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::sparseFactorization()
 {
-	m_timer.Start();
 	m_pivots.resize(m_n);
 
 	IntVectorH pivotPerm, pivotReordering;
@@ -2260,8 +2308,6 @@ Precond<PrecVector>::sparseFactorization()
 				m_Acsrh.values[l] /= pivot_val;
 		}
 	}
-	m_timer.Stop();
-	m_time_bandLU = m_timer.getElapsed();
 
 	if (m_ilu_level > 0 && m_safeFactorization) {
 		IntVector buffer = pivotReordering, buffer2(m_n);
@@ -3453,6 +3499,11 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  WV)
 		return;
 	}
 
+	if (m_ilu_level >= 0) {
+		calculateSpikes_var(WV);
+		return;
+	}
+
 	int totalRHSCount = cusp::blas::nrm1(m_offDiagWidths_right_host) + cusp::blas::nrm1(m_offDiagWidths_left_host);
 	if (totalRHSCount >= 2800) {
 		calculateSpikes_var(WV);
@@ -3841,7 +3892,22 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			kernelConfigAdjust(sweepBlockX, sweepGridX, SWEEP_MAX_NUM_THREADS);
 			dim3 sweepGrids(sweepGridX, 2*numPart_eff-2);
 
-			device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			PrecMatrixCsr Acsr;
+			int *row_offsets;   
+			int *column_indices;
+			PrecValueType *values;
+
+			if (m_ilu_level >= 0) {
+				Acsr           = m_Acsrh;
+				row_offsets    = thrust::raw_pointer_cast(&(Acsr.row_offsets[0]));
+				column_indices = thrust::raw_pointer_cast(&(Acsr.column_indices[0]));
+				values         = thrust::raw_pointer_cast(&(Acsr.values[0]));
+			}
+
+			if (m_ilu_level < 0)
+				device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			else
+				device::sparse::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, m_numPartitions, leftOffDiagWidth + rightOffDiagWidth, row_offsets, column_indices, values, p_buffer, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
 
 			int preBckBlockX = leftOffDiagWidth + rightOffDiagWidth;
 			int preBckGridX  = 1;
@@ -3851,7 +3917,13 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			kernelConfigAdjust(preBckGridY, preBckGridZ, MAX_GRID_DIMENSION);
 			dim3 preBckGrids(preBckGridX, preBckGridY, preBckGridZ);
 
-			device::var::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, p_ks, p_offsets, p_B, p_buffer, partSize, remainder, m_saveMem);
+			if (m_ilu_level < 0)
+				device::var::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, p_ks, p_offsets, p_B, p_buffer, partSize, remainder, m_saveMem);
+			else {
+				PrecVector pivots = m_pivots;
+				PrecValueType *d_pivots = thrust::raw_pointer_cast(&pivots[0]);
+				device::sparse::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, d_pivots, p_buffer);
+			}
 
 			{
 				int last_row = 0;
@@ -3867,7 +3939,10 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 				p_first_rows = thrust::raw_pointer_cast(&m_first_rows[0]);
 			}
 
-			device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			if (m_ilu_level < 0)
+				device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			else
+				device::sparse::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, m_numPartitions, leftOffDiagWidth + rightOffDiagWidth, row_offsets, column_indices, values, p_buffer, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
 		}
 
 
