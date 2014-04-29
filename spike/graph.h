@@ -1016,9 +1016,8 @@ Graph<T>::RCM(EdgeVector&  edges,
 	int bandwidth = tmp_bdwidth;
 	buildTopology(begin, end, degrees, in_out_graph);
 
-	const int MAX_NUM_TRIAL = 10;
+	const int MAX_NUM_TRIAL = 5;
 	const int BANDWIDTH_THRESHOLD = 256;
-	const int BANDWIDTH_MIN_REQUIRED = 10000;
 
 	CPUTimer timer;
 	timer.Start();
@@ -1028,7 +1027,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	int last_tried = 0;
 
-	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL || (bandwidth >= BANDWIDTH_MIN_REQUIRED && trial_num < 10*MAX_NUM_TRIAL); trial_num++)
+	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL ; trial_num++)
 	{
 		std::queue<int> q;
 		std::priority_queue<NodeType> pq;
@@ -1180,7 +1179,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	int opt_bdwidth = tmp_bdwidth;
 	buildTopology(begin, end, degrees, in_out_graph);
 
-	const int MAX_NUM_TRIAL = 10;
+	const int MAX_NUM_TRIAL = 5;
 	const int BANDWIDTH_THRESHOLD = 128;
 
 	static BoolVector tried(m_n, false);

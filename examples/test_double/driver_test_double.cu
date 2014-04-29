@@ -142,7 +142,7 @@ void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name,
 class OutputItem
 {
 public:
-	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(17) {}
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(19) {}
 
 	int           m_additional_item_count;
 
@@ -473,16 +473,16 @@ int main(int argc, char** argv)
 		outputItem (opts.safeFactorization);
 
 		// The relative infinity norm of solution
-		if (solveSuccess) {
-			REAL nrm_target = cusp::blas::nrmmax(x_target);
-			cusp::blas::axpy(x_target, x, (REAL)(-1));
-			REAL rel_err = fabs(cusp::blas::nrmmax(x))/ nrm_target;
-			if (rel_err >= 1)
-				outputItem(rel_err, COLOR_RED);
-			else
-				outputItem(rel_err);
-		} else
-			outputItem("");
+		REAL nrm_target = cusp::blas::nrmmax(x_target);
+		cusp::blas::axpy(x_target, x, (REAL)(-1));
+		REAL rel_err = fabs(cusp::blas::nrmmax(x))/ nrm_target;
+
+		if (isnan(cusp::blas::nrm1(x)))
+			outputItem("NaN", COLOR_RED);
+		if (rel_err >= 1)
+			outputItem(rel_err, COLOR_RED);
+		else
+			outputItem(rel_err);
 		
 		// Time for MC64 reordering
 		outputItem( stats.time_MC64);
@@ -495,6 +495,16 @@ int main(int argc, char** argv)
 		// Time to assemble banded and off-diagonal matrices on CPU
 		outputItem( stats.time_cpu_assemble);
 
+		// LU method
+		if (opts.ilu_level >= 0) {
+			if (opts.variableBandwidth)
+				outputItem("ILUT");
+			else
+				outputItem("ILUULT");
+		} else
+			outputItem("LU");
+		// Fill-in factor
+		outputItem( opts.ilu_level);
 		// Number of partitions
 		outputItem( numPart);
 		// Time to extract all off-diagonal matrices on GPU

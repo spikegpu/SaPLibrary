@@ -298,7 +298,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.bandwidthReorder = m_precond.getBandwidthReordering();
 	m_stats.bandwidth = m_precond.getBandwidth();
 	m_stats.bandwidthMC64 = m_precond.getBandwidthMC64();
-	m_stats.nuKf = cusp::blas::nrm1(m_precond.m_ks_row_host) + cusp::blas::nrm1(m_precond.m_ks_col_host);
+	m_stats.nuKf = (double) cusp::blas::nrm1(m_precond.m_ks_row_host) + cusp::blas::nrm1(m_precond.m_ks_col_host);
 	m_stats.flops_LU = 0;
 	{
 		int n = m_precond.m_ks_row_host.size();
@@ -326,7 +326,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	if (m_stats.bandwidth == 0)
 		m_stats.nuKf = 0.0;
 	else
-		m_stats.nuKf = (2 * m_stats.bandwidth * m_n- m_stats.nuKf) / (2 * m_stats.bandwidth * m_n);
+		m_stats.nuKf = (2.0 * m_stats.bandwidth * m_n- m_stats.nuKf) / (2.0 * m_stats.bandwidth * m_n);
 
 	if (m_stats.time_bandLU == 0)
 		m_stats.flops_LU = 0;
