@@ -174,7 +174,8 @@ public:
 	                                MatrixMap&  typeMap,
 	                                MatrixMap&  bandedMatMap);
 
-	void       get_csr_matrix(MatrixCsr&        Acsr);
+	void       get_csr_matrix(MatrixCsr&        Acsr,
+							  int               numPartitions);
 
 private:
 	int           m_n;
@@ -367,13 +368,14 @@ Graph<T>::reorder(const MatrixCoo&  Acoo,
 	m_nnz = Acoo.num_entries;
 
 	// Create the edges in the graph.
+	m_edges.resize(m_nnz);
 	if (m_trackReordering) {
 		for (int i = 0; i < m_nnz; i++) {
-			m_edges.push_back(EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
+			m_edges[i] = (EdgeType(i, Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 		}
 	} else {
 		for (int i = 0; i < m_nnz; i++)
-			m_edges.push_back(EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
+			m_edges[i] = (EdgeType(Acoo.row_indices[i], Acoo.column_indices[i], (T)Acoo.values[i]));
 	}
 
 	// Apply mc64 algorithm. Note that we must ensure we always work with
@@ -1014,9 +1016,8 @@ Graph<T>::RCM(EdgeVector&  edges,
 	int bandwidth = tmp_bdwidth;
 	buildTopology(begin, end, degrees, in_out_graph);
 
-	const int MAX_NUM_TRIAL = 10;
+	const int MAX_NUM_TRIAL = 5;
 	const int BANDWIDTH_THRESHOLD = 256;
-	const int BANDWIDTH_MIN_REQUIRED = 10000;
 
 	CPUTimer timer;
 	timer.Start();
@@ -1026,7 +1027,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	int last_tried = 0;
 
-	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL || (bandwidth >= BANDWIDTH_MIN_REQUIRED && trial_num < 10*MAX_NUM_TRIAL); trial_num++)
+	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL ; trial_num++)
 	{
 		std::queue<int> q;
 		std::priority_queue<NodeType> pq;
@@ -1178,7 +1179,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	int opt_bdwidth = tmp_bdwidth;
 	buildTopology(begin, end, degrees, in_out_graph);
 
-	const int MAX_NUM_TRIAL = 10;
+	const int MAX_NUM_TRIAL = 5;
 	const int BANDWIDTH_THRESHOLD = 128;
 
 	static BoolVector tried(m_n, false);
@@ -1464,19 +1465,30 @@ Graph<T>::get_csc_matrix(const MatrixCoo& Acoo,
 
 template<typename T>
 void
-Graph<T>::get_csr_matrix(MatrixCsr&       Acsr)
+Graph<T>::get_csr_matrix(MatrixCsr&       Acsr, int numPartitions)
 {
-	Acsr.resize(m_n, m_n, m_edges.end() - m_first);
+	EdgeIterator toStart, toEnd;
+	if (numPartitions == 1) {
+		toEnd   = m_edges.end();
+		toStart = m_first;
+	}
+	else {
+		toEnd   = m_major_edges.end();
+		toStart = m_major_edges.begin();
+	}
+
+	Acsr.resize(m_n, m_n, toEnd - toStart);
+
 	cusp::blas::fill(Acsr.row_offsets, 0);
 
-	EdgeVector edges_tmp(m_edges.end() - m_first);
+	EdgeVector edges_tmp(toEnd - toStart);
 
-	for (EdgeIterator edgeIt = m_first; edgeIt != m_edges.end(); edgeIt++)
+	for (EdgeIterator edgeIt = toStart; edgeIt != toEnd; edgeIt++)
 		Acsr.row_offsets[edgeIt -> m_to]++;
 
 	thrust::exclusive_scan(Acsr.row_offsets.begin(), Acsr.row_offsets.end(), Acsr.row_offsets.begin());
 
-	for (EdgeIterator edgeIt = m_first; edgeIt != m_edges.end(); edgeIt++) {
+	for (EdgeIterator edgeIt = toStart; edgeIt != toEnd; edgeIt++) {
 		int idx = Acsr.row_offsets[edgeIt -> m_to];
 		Acsr.row_offsets[edgeIt -> m_to] ++;
 		edges_tmp[idx] = *edgeIt;

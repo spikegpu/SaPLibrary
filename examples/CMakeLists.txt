@@ -65,6 +65,7 @@ SET(SPIKE_CUHEADERS
 	../../spike/device/shuffle.cuh
 	../../spike/device/sweep_band_const.cuh
 	../../spike/device/sweep_band_var.cuh
+	../../spike/device/sweep_band_sparse.cuh
 )
 
 ADD_SUBDIRECTORY(matrix_market)

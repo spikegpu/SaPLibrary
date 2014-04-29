@@ -20,6 +20,7 @@
 #include <spike/device/factor_band_var.cuh>
 #include <spike/device/sweep_band_const.cuh>
 #include <spike/device/sweep_band_var.cuh>
+#include <spike/device/sweep_band_sparse.cuh>
 #include <spike/device/inner_product.cuh>
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
@@ -65,6 +66,7 @@ public:
 
 	typedef typename cusp::coo_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCoo;
 	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
+	typedef typename cusp::csr_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCsr;
 	typedef typename cusp::csr_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCsrH;
 
 
@@ -202,7 +204,9 @@ private:
 	PrecVector           m_offDiags;              // contains the off-diagonal blocks of the original banded matrix
 	PrecVector           m_R;                     // diagonal blocks in the reduced matrix (LU factors)
 	PrecMatrixCsrH       m_Acsrh;
+	PrecMatrixCsrH       m_Acsrh_ul;
 	PrecVectorH          m_pivots;
+	PrecVectorH          m_pivots_ul;
 
 	PrecVectorH          m_offDiags_host;         // Used with second-stage reorder only, copy the offDiags in SpikeGragh
 	PrecVectorH          m_WV_host;
@@ -269,6 +273,7 @@ private:
 
 	void ILU0(PrecMatrixCsrH& Acsrh);
 	void ILUT(PrecMatrixCsrH& Acsrh, int p, PrecValueType tau);
+	void ILUULT(PrecMatrixCsrH& Acsrh, PrecMatrixCsrH& Acsrh2, int p, PrecValueType tau);
 	void ILUTP(PrecMatrixCsrH&    Acsrh,
 			   int                p,
 			   PrecValueType      tau,
@@ -716,10 +721,40 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		return;
 
 	if (m_ilu_level >= 0) {
+		m_timer.Start();
 		sparseFactorization();
+		m_timer.Stop();
+		m_time_bandLU = m_timer.getElapsed();
+
+		if (m_precondType == Block || m_numPartitions == 1)
+			return;
+
+		// We are using more than one partition, so we must assemble the
+		// truncated Spike reduced matrix R.
+		m_R.resize((2 * m_k) * (2 * m_k) * (m_numPartitions - 1));
+
+		// Extract off-diagonal blocks from the banded matrix and store them
+		// in the array m_offDiags.
+		PrecVector mat_WV;
+		mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
+
+		m_timer.Start();
+		extractOffDiagonal(mat_WV);
+		m_timer.Stop();
+		m_time_offDiags = m_timer.getElapsed();
+
+		m_timer.Start();
+		calculateSpikes(mat_WV);
+		assembleReducedMat(mat_WV);
+		m_timer.Stop();
+		m_time_assembly = m_timer.getElapsed();
+
+		m_timer.Start();
+		partFullLU();
+		m_timer.Stop();
+		m_time_fullLU = m_timer.getElapsed();
 		return;
 	}
-
 
 	// If we are using a single partition, perform the LU factorization
 	// of the banded matrix and return.
@@ -883,21 +918,46 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 	}
 
 	if (m_ilu_level >= 0) {
-		sparseSweep(rhs, sol);
+		if (m_numPartitions > 1 && m_precondType == Spike) {
+			if (m_variableBandwidth) {
+				static PrecVector buffer(m_n);
+				permute(rhs, m_secondReordering,buffer);
+				// Calculate modified RHS
+				sparseSweep(rhs, rhs);
+
+				permute(rhs, m_secondReordering, sol);
+
+				// Solve reduced system
+				partFullFwdSweep(sol);
+				partFullBckSweep(sol);
+
+				purifyRHS(sol, buffer);
+				permute(buffer, m_secondPerm, sol);
+			} else {
+				sol = rhs;
+				// Calculate modified RHS
+				sparseSweep(rhs, rhs);
+
+				// Solve reduced system
+				partFullFwdSweep(rhs);
+				partFullBckSweep(rhs);
+
+				// Purify RHS
+				purifyRHS(rhs, sol);
+			}
+		} else 
+			sol = rhs;
+
+		sparseSweep(sol, sol);
 		return;
 	}
-
-	const int CPU_GPU_SWEEP_THRESHOLD = 4;
 
 	if (m_numPartitions > 1 && m_precondType == Spike) {
 		if (!m_variableBandwidth) {
 			sol = rhs;
 			// Calculate modified RHS
-			if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
-				partBandedFwdSweep(rhs);
-				partBandedBckSweep(rhs);
-			} else
-				partBandedSweepsH(rhs);
+			partBandedFwdSweep(rhs);
+			partBandedBckSweep(rhs);
 
 			// Solve reduced system
 			partFullFwdSweep(rhs);
@@ -910,11 +970,8 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 			buffer.resize(m_n);
 			permute(rhs, m_secondReordering,buffer);
 			// Calculate modified RHS
-			if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
-				partBandedFwdSweep(rhs);
-				partBandedBckSweep(rhs);
-			} else
-				partBandedSweepsH(rhs);
+			partBandedFwdSweep(rhs);
+			partBandedBckSweep(rhs);
 
 			permute(rhs, m_secondReordering, sol);
 
@@ -929,11 +986,11 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 		sol = rhs;
 
 	// Get purified solution
-	if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
+	// if (m_numPartitions > CPU_GPU_SWEEP_THRESHOLD) {
 	    partBandedFwdSweep(sol);
 	    partBandedBckSweep(sol);
-	} else
-		partBandedSweepsH(sol);
+	// } else
+		// partBandedSweepsH(sol);
 }
 
 /**
@@ -1097,7 +1154,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	MatrixMapH   bandedMatMap;
 	MatrixMapFH  scaleMap;
 
-	bool         doRCM = (m_maxBandwidth > 0);
+	const int    BANDWIDTH_THRESHOLD = 64;
+	bool         doRCM = (m_maxBandwidth > BANDWIDTH_THRESHOLD);
 	reorder_timer.Start();
 	m_k_reorder = graph.reorder(Acoo, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
@@ -1135,7 +1193,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
 
 	// If there is just one partition, force using constant bandwidth method.
-	if (m_numPartitions == 1 || m_k == 0 || m_ilu_level >= 0)
+	if (m_numPartitions == 1 || m_k == 0)
 		m_variableBandwidth = false;
 
 	// Assemble the banded matrix.
@@ -1159,61 +1217,81 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 
 		m_timer.Start();
-		PrecMatrixCoo Acoo = Acooh;
-		m_B.resize(m_BOffsets_host[m_numPartitions], 0);
-		int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
-		kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
-		dim3 grids(gridX, gridY);
 
-		int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
-		int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
-		PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
-		PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
+		if (m_ilu_level >= 0)
+			graph.get_csr_matrix(m_Acsrh, m_numPartitions);
+		else {
+			PrecMatrixCoo Acoo = Acooh;
+			m_B.resize(m_BOffsets_host[m_numPartitions], 0);
+			int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
+			kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
+			dim3 grids(gridX, gridY);
 
-		m_ks = m_ks_host;
-		m_BOffsets = m_BOffsets_host;
+			int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
+			int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
+			PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
+			PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
 
-		int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
-		int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
+			m_ks = m_ks_host;
+			m_BOffsets = m_BOffsets_host;
 
-		device::copyFromCOOMatrixToBandedMatrix_variableBandwidth<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
+			int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
+			int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
+
+			device::copyFromCOOMatrixToBandedMatrix_variableBandwidth<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
+		}
 
 		m_timer.Stop();
 		m_time_toBanded = m_timer.getElapsed();
-	} else if (m_ilu_level < 0) {
-		assemble_timer.Start();
+	} else {
 		PrecMatrixCooH Acooh;
-		graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, Acooh, typeMap, bandedMatMap);
-		m_ks_host.resize(1, m_k);
-		m_BOffsets_host.resize(1, 0);
+		assemble_timer.Start();
+
+		if (m_numPartitions > 1) {
+			graph.assembleOffDiagMatrices(m_k, m_numPartitions, m_WV_host, m_offDiags_host, m_offDiagWidths_left_host, m_offDiagWidths_right_host, offDiagPerms_left, offDiagPerms_right, typeMap, offDiagMap, WVMap);
+			graph.assembleBandedMatrix(m_k, m_saveMem, m_numPartitions, m_ks_col_host, m_ks_row_host, Acooh,
+					m_ks_host, m_BOffsets_host, 
+					typeMap, bandedMatMap);
+		} else {
+			graph.assembleBandedMatrix(m_k, m_ks_col_host, m_ks_row_host, Acooh, typeMap, bandedMatMap);
+			m_ks_host.resize(1, m_k);
+			m_BOffsets_host.resize(1, 0);
+		}
 		assemble_timer.Stop();
 		m_time_cpu_assemble += assemble_timer.getElapsed();
 
-		transfer_timer.Start();
-		PrecMatrixCoo Acoo = Acooh;
-		if (m_saveMem)
-			m_B.resize((size_t)(m_k + 1) * m_n);
-		else
-			m_B.resize((size_t)(2 * m_k + 1) * m_n);
 
-		transfer_timer.Stop();
-		m_time_transfer += transfer_timer.getElapsed();
+		if (m_ilu_level < 0) {
+			transfer_timer.Start();
+			PrecMatrixCoo Acoo = Acooh;
+			if (m_saveMem)
+				m_B.resize((size_t)(m_k + 1) * m_n);
+			else
+				m_B.resize((size_t)(2 * m_k + 1) * m_n);
 
-		m_timer.Start();
-		int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
-		kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
-		dim3 grids(gridX, gridY);
+			transfer_timer.Stop();
+			m_time_transfer += transfer_timer.getElapsed();
 
-		int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
-		int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
-		PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
-		PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
+			m_timer.Start();
+			int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
+			kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
+			dim3 grids(gridX, gridY);
 
-		device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, m_k, d_rows, d_cols, d_vals, dB, m_saveMem);
-		m_timer.Stop();
-		m_time_toBanded = m_timer.getElapsed();
-	} else
-		graph.get_csr_matrix(m_Acsrh);
+			int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
+			int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
+			PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
+			PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
+
+			device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, m_k, d_rows, d_cols, d_vals, dB, m_saveMem);
+			m_timer.Stop();
+			m_time_toBanded = m_timer.getElapsed();
+		} else  {
+			m_timer.Start();
+			graph.get_csr_matrix(m_Acsrh, m_numPartitions);
+			m_timer.Stop();
+			m_time_toBanded = m_timer.getElapsed();
+		}
+	}
 
 	transfer_timer.Start();
 
@@ -1225,8 +1303,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 		m_mc64RowScale = mc64RowScale;
 		m_mc64ColScale = mc64ColScale;
 	}
-
-	if (m_variableBandwidth) {
+    
+	if (m_variableBandwidth || (m_numPartitions > 1 && m_ilu_level >= 0)) {
 		m_offDiagWidths_left = m_offDiagWidths_left_host;
 		m_offDiagWidths_right = m_offDiagWidths_right_host;
 		m_offDiagPerms_left = offDiagPerms_left;
@@ -1234,12 +1312,15 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 		m_spike_ks.resize(m_numPartitions - 1);
 		m_ROffsets.resize(m_numPartitions - 1);
+		cusp::blas::fill(m_spike_ks, m_k);
+		thrust::sequence(m_ROffsets.begin(), m_ROffsets.end(), 0, 4*m_k*m_k);
+	}
+
+	if (m_variableBandwidth) {
 		m_WVOffsets.resize(m_numPartitions - 1);
 		m_compB2Offsets.resize(m_numPartitions - 1);
 		m_partialBOffsets.resize(m_numPartitions-1);
 
-		cusp::blas::fill(m_spike_ks, m_k);
-		thrust::sequence(m_ROffsets.begin(), m_ROffsets.end(), 0, 4*m_k*m_k);
 		thrust::sequence(m_WVOffsets.begin(), m_WVOffsets.end(), 0, 2*m_k*m_k);
 		thrust::sequence(m_partialBOffsets.begin(), m_partialBOffsets.end(), 0, 2 * (m_k+1) * (2*m_k+ 1));
 		thrust::sequence(m_compB2Offsets.begin(), m_compB2Offsets.end(), 0, 2 * m_k * (2 * m_k + 1));
@@ -1342,7 +1423,7 @@ void
 Precond<PrecVector>::extractOffDiagonal(PrecVector&  mat_WV)
 {
 	// If second-level reordering is enabled, the off-diagonal matrices are already in the host.
-	if (m_variableBandwidth) {
+	if (m_variableBandwidth || m_ilu_level >= 0) {
 		mat_WV = m_WV_host;
 		m_offDiags = m_offDiags_host;
 		return;
@@ -1382,12 +1463,10 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::partFullLU()
 {
-	if (!m_variableBandwidth)
-		partFullLU_const();
-	else {
-		//partFullLU_var();
+	if (m_variableBandwidth || m_ilu_level >= 0)
 		partBlockedFullLU_var();
-	}
+	else
+		partFullLU_const();
 }
 
 
@@ -1582,173 +1661,221 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 {
+	int numPartitions = m_numPartitions;
+	int num_threads = std::min(16, numPartitions);
+
+	omp_set_num_threads(num_threads);
+
 	IntVectorH    lu_row_offsets(m_n + 1, 0);
-	IntVectorH    lu_column_indices;
-	PrecVectorH   lu_values;
+	IntVectorH    lu_column_indices[numPartitions];
+	PrecVectorH   lu_values[numPartitions];
 	PrecVectorH   wvector(m_n, 0);
 	IntVectorH    in_wvector(m_n, 0);
 
 	IntVectorH pivot_positions(m_n, -1);
-	{
-		lu_row_offsets[0] = Acsrh.row_offsets[0];
-		lu_row_offsets[1] = Acsrh.row_offsets[1];
-		int start_idx = Acsrh.row_offsets[0];
-		int end_idx = Acsrh.row_offsets[1];
-
-		lu_column_indices.resize(end_idx - start_idx);
-		lu_values.resize(end_idx - start_idx);
-
-		thrust::copy(Acsrh.column_indices.begin() + start_idx, Acsrh.column_indices.begin() + end_idx, lu_column_indices.begin());
-		thrust::copy(Acsrh.values.begin() + start_idx, Acsrh.values.begin() + end_idx, lu_values.begin());
-
-		int l;
-		for (l = start_idx; l < end_idx; l++)
-			if (Acsrh.column_indices[l] == 0) {
-				pivot_positions[0] = Acsrh.column_indices[l];
-				m_pivots[0] = Acsrh.values[l];
-				break;
-			}
-
-		if (l >= end_idx)
-			throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
-	}
-
-	IntVectorH w_nonzeros(m_n);
-	int wvec_size;
-
 	IntVectorH l_columns(m_n), u_columns(m_n);
 	PrecVectorH l_values(m_n), u_values(m_n);
-	int l_size, u_size;
+	IntVectorH w_nonzeros(m_n);
 
-	for (int i = 1; i < m_n; i++) {
-		int start_idx = Acsrh.row_offsets[i];
-		int end_idx = Acsrh.row_offsets[i+1];
+	int remainder = m_n % numPartitions;
+	int partSize  = m_n / numPartitions;
 
-		if (end_idx <= start_idx)
-			throw system_error(system_error::Matrix_singular, "Singular matrix found");
+//#pragma omp parallel for shared (numPartitions, remainder, partSize, lu_row_offsets, wvector, in_wvector, pivot_positions, l_columns, u_columns, l_values, u_values, w_nonzeros)
+	for (int q = 0; q < numPartitions; q++) {
+		int start_row = 0, end_row = 0;
 
-		int nl = 0, nu = 0;
+		PrecVectorH& loc_lu_values         = lu_values[q];
+		IntVectorH&  loc_lu_column_indices = lu_column_indices[q];
 
-		PrecValueType tau_i = (PrecValueType)0;
-
-		wvec_size = end_idx - start_idx;
-
-		std::priority_queue<int, std::vector<int>, std::greater<int> > pq;
-		for (int l = start_idx; l < end_idx; l++) {
-			PrecValueType tmp_val = Acsrh.values[l];
-			int cur_k = Acsrh.column_indices[l];
-			wvector[cur_k] = tmp_val;
-			in_wvector[cur_k] = l - start_idx + 1;
-			tau_i += tmp_val * tmp_val;
-			w_nonzeros[l - start_idx] = cur_k;
-			if (cur_k < i) {
-				pq.push(cur_k);
-				nl ++;
-			} else  if (cur_k > i)
-				nu ++;
+		if (q < remainder) {
+			start_row = q * (partSize + 1);
+			end_row   = start_row + (partSize + 1);
 		}
-		tau_i = sqrt(tau_i) / (end_idx - start_idx) * tau;
+		else {
+			start_row = q * partSize + remainder;
+			end_row   = start_row + partSize;
+		}
 
-		while (!pq.empty()) {
-			int cur_k = pq.top();
-			pq.pop();
-
-			int start_k_idx = lu_row_offsets[cur_k];
-			int end_k_idx = lu_row_offsets[cur_k+1];
-
-			int l2 = pivot_positions[cur_k];
-			PrecValueType val_i_k = (PrecValueType)0;
-
-			if (fabs(lu_values[l2]) < BURST_VALUE)
-				throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
-
-			val_i_k = (wvector[cur_k] /= lu_values[l2]);
-
-			// Applying drop-off to w[cur_k]
-			if (fabs(val_i_k) < tau_i) {
-				in_wvector[cur_k] = 0;
-				continue;
-			}
-
-			for (l2++; l2 < end_k_idx; l2++) {
-				int tar_j = lu_column_indices[l2];
-
-				wvector[tar_j] -= val_i_k * lu_values[l2];
-
-				if(!in_wvector[tar_j]) {
-					w_nonzeros[wvec_size++] = tar_j;
-					in_wvector[tar_j] = wvec_size;
-					if (tar_j < i)
-						pq.push(tar_j);
-				}
-			}
-		} // end while
-
-		// Apply drop-off to wvector
 		{
-			l_size = u_size = 0;
-			for (int w_it = 0; w_it < wvec_size; w_it++) {
-				int cur_k = w_nonzeros[w_it];
-				if (!in_wvector[cur_k])
-					continue;
-				PrecValueType tmp_val = wvector[cur_k];
+			int start_idx = Acsrh.row_offsets[start_row];
+			int end_idx = Acsrh.row_offsets[start_row + 1];
 
-				if (cur_k == i) {
-					m_pivots[i] = tmp_val;
-					continue;
+			lu_row_offsets[start_row]     = 0;
+			lu_row_offsets[start_row + 1] = (end_idx - start_idx);
+
+			loc_lu_column_indices.insert(loc_lu_column_indices.end(), Acsrh.column_indices.begin() + start_idx, Acsrh.column_indices.begin() + end_idx);
+			loc_lu_values.insert(loc_lu_values.end(), Acsrh.values.begin() + start_idx, Acsrh.values.begin() + end_idx);
+
+			int l;
+			for (l = start_idx; l < end_idx; l++)
+				if (Acsrh.column_indices[l] == start_row) {
+					pivot_positions[start_row] = l - start_idx;
+					m_pivots[start_row] = Acsrh.values[l];
+					break;
 				}
-
-				if (fabs(tmp_val) < tau_i)
-					continue;
-
-				if (cur_k < i) {
-					l_columns[l_size] = cur_k;
-					l_values[l_size] = tmp_val;
-					l_size++;
-				} else {
-					u_columns[u_size] = cur_k;
-					u_values[u_size] = tmp_val;
-					u_size++;
-				}
-			}
-
-			// Clear the content of wvector and in_wvector for usage of next iteration
-			for (int w_it = 0; w_it < wvec_size; w_it++) {
-				int cur_k = w_nonzeros[w_it];
-				wvector[cur_k] = (PrecValueType)0;
-				in_wvector[cur_k] = 0;
-			}
-
-			if (l_size > p + nl) {
-				findPthMax(l_columns.begin(), l_columns.begin() + l_size, 
-						l_values.begin(),  l_values.begin() + l_size,
-						p + nl);
-				l_size = p + nl;
-			}
-
-			if (u_size > p + nu) {
-				findPthMax(u_columns.begin(), u_columns.begin() + u_size, 
-						u_values.begin(),  u_values.begin() + u_size,
-						p + nu);
-				u_size = p + nu;
-			}
-
-			lu_column_indices.insert(lu_column_indices.end(), l_columns.begin(), l_columns.begin() + l_size);
-			lu_values.insert(lu_values.end(), l_values.begin(), l_values.begin() + l_size);
-
-			lu_column_indices.push_back(i);
-			lu_values.push_back(m_pivots[i]);
-			pivot_positions[i] = lu_column_indices.size() - 1;
-
-			lu_column_indices.insert(lu_column_indices.end(), u_columns.begin(), u_columns.begin() + u_size);
-			lu_values.insert(lu_values.end(), u_values.begin(), u_values.begin() + u_size);
-
-			lu_row_offsets[i+1] = lu_column_indices.size();
 		}
 
+		int wvec_size;
+
+		int l_size, u_size;
+
+		for (int i = start_row + 1; i < end_row; i++) {
+			int start_idx = Acsrh.row_offsets[i];
+			int end_idx = Acsrh.row_offsets[i+1];
+
+			int nl = 0, nu = 0;
+
+			PrecValueType tau_i = (PrecValueType)0;
+
+			wvec_size = start_row + end_idx - start_idx;
+
+			std::priority_queue<int, std::vector<int>, std::greater<int> > pq;
+			for (int l = start_idx; l < end_idx; l++) {
+				PrecValueType tmp_val = Acsrh.values[l];
+				int cur_k = Acsrh.column_indices[l];
+				wvector[cur_k] = tmp_val;
+				in_wvector[cur_k] = l - start_idx + 1;
+				tau_i += tmp_val * tmp_val;
+				w_nonzeros[start_row + l - start_idx] = cur_k;
+				if (cur_k < i) {
+					pq.push(cur_k);
+					nl ++;
+				} else  if (cur_k > i)
+					nu ++;
+			}
+			tau_i = sqrt(tau_i) / (end_idx - start_idx) * tau;
+
+			while (!pq.empty()) {
+				int cur_k = pq.top();
+				pq.pop();
+
+				int start_k_idx = lu_row_offsets[cur_k];
+				int end_k_idx = lu_row_offsets[cur_k+1];
+
+				int l2 = pivot_positions[cur_k];
+				PrecValueType val_i_k = (PrecValueType)0;
+
+			 	if (fabs(loc_lu_values[l2]) < BURST_VALUE) {
+					if (loc_lu_values[l2] < 0)
+						loc_lu_values[l2] = -BURST_VALUE;
+					else
+						loc_lu_values[l2] = BURST_VALUE;
+				}
+
+				val_i_k = (wvector[cur_k] /= loc_lu_values[l2]);
+
+				// Applying drop-off to w[cur_k]
+				if (fabs(val_i_k) < tau_i) {
+					in_wvector[cur_k] = 0;
+					continue;
+				}
+
+				for (l2++; l2 < end_k_idx; l2++) {
+					int tar_j = loc_lu_column_indices[l2];
+
+					wvector[tar_j] -= val_i_k * loc_lu_values[l2];
+
+					if(!in_wvector[tar_j]) {
+						w_nonzeros[wvec_size++] = tar_j;
+						in_wvector[tar_j] = wvec_size;
+						if (tar_j < i)
+							pq.push(tar_j);
+					}
+				}
+			} // end while
+
+			// Apply drop-off to wvector
+			{
+				l_size = u_size = start_row;
+				for (int w_it = start_row; w_it < wvec_size; w_it++) {
+					int cur_k = w_nonzeros[w_it];
+					if (!in_wvector[cur_k])
+						continue;
+					PrecValueType tmp_val = wvector[cur_k];
+
+					if (cur_k == i) {
+						m_pivots[i] = ((tmp_val > BURST_VALUE || tmp_val < -BURST_VALUE) ? tmp_val : (tmp_val > 0 ? BURST_VALUE : -BURST_VALUE));
+						continue;
+					}
+
+					if (fabs(tmp_val) < tau_i)
+						continue;
+
+					if (cur_k < i) {
+						l_columns[l_size] = cur_k;
+						l_values[l_size] = tmp_val;
+						l_size++;
+					} else {
+						u_columns[u_size] = cur_k;
+						u_values[u_size] = tmp_val;
+						u_size++;
+					}
+				}
+
+				// Clear the content of wvector and in_wvector for usage of next iteration
+				for (int w_it = start_row; w_it < wvec_size; w_it++) {
+					int cur_k = w_nonzeros[w_it];
+					wvector[cur_k] = (PrecValueType)0;
+					in_wvector[cur_k] = 0;
+				}
+
+				if (l_size - start_row > p + nl) {
+					findPthMax(l_columns.begin() + start_row, l_columns.begin() + l_size, 
+							l_values.begin() + start_row,  l_values.begin() + l_size,
+							p + nl);
+					l_size = p + nl + start_row;
+				}
+
+				if (u_size - start_row > p + nu) {
+					findPthMax(u_columns.begin() + start_row, u_columns.begin() + u_size, 
+							u_values.begin() + start_row,  u_values.begin() + u_size,
+							p + nu);
+					u_size = p + nu + start_row;
+				}
+
+				loc_lu_column_indices.insert(loc_lu_column_indices.end(), l_columns.begin() + start_row, l_columns.begin() + l_size);
+				loc_lu_values.insert(loc_lu_values.end(), l_values.begin() + start_row, l_values.begin() + l_size);
+
+				loc_lu_column_indices.push_back(i);
+				loc_lu_values.push_back(m_pivots[i]);
+				pivot_positions[i] = loc_lu_column_indices.size() - 1;
+
+				loc_lu_column_indices.insert(loc_lu_column_indices.end(), u_columns.begin() + start_row, u_columns.begin() + u_size);
+				loc_lu_values.insert(loc_lu_values.end(), u_values.begin() + start_row, u_values.begin() + u_size);
+
+				if (i != end_row - 1)
+					lu_row_offsets[i+1] = loc_lu_column_indices.size();
+			}
+
+		} // end for
 	} // end for
 
-	int new_nnz = lu_column_indices.size();
+	int new_nnz = lu_column_indices[0].size();
+	for (int q = 1; q < numPartitions; q++) {
+		int start_row = 0, end_row = 0;
+
+		if (q < remainder) {
+			start_row = q * (partSize + 1);
+			end_row   = start_row + (partSize + 1);
+		}
+		else {
+			start_row = q * partSize + remainder;
+			end_row   = start_row + partSize;
+		}
+
+		for (int i = start_row; i < end_row; i++)
+			lu_row_offsets[i] += new_nnz;
+
+		new_nnz += lu_column_indices[q].size();
+
+		lu_column_indices[0].insert(lu_column_indices[0].end(), lu_column_indices[q].begin(), lu_column_indices[q].end());
+		lu_values[0].insert(lu_values[0].end(), lu_values[q].begin(), lu_values[q].end());
+	}
+	lu_row_offsets[m_n] = new_nnz;
+
+	IntVectorH& final_lu_column_indices = lu_column_indices[0];
+	PrecVectorH& final_lu_values        = lu_values[0];
+
 	Acsrh.resize(m_n, m_n, new_nnz);
 	cusp::blas::fill(Acsrh.row_offsets, 0);
 
@@ -1757,7 +1884,7 @@ Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 	PrecVectorH tmp_values(new_nnz);
 
 	for (int i = 0; i < new_nnz; i++)
-		Acsrh.row_offsets[lu_column_indices[i]] ++;
+		Acsrh.row_offsets[final_lu_column_indices[i]] ++;
 
 	thrust::exclusive_scan(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), Acsrh.row_offsets.begin());
 
@@ -1766,12 +1893,12 @@ Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 		int end_idx   = lu_row_offsets[i+1];
 
 		for (int l = start_idx; l < end_idx; l++) {
-			int cur_k = lu_column_indices[l];
+			int cur_k = final_lu_column_indices[l];
 			int idx = Acsrh.row_offsets[cur_k];
 			Acsrh.row_offsets[cur_k] ++;
 			tmp_row_indices[idx] = i;
 			tmp_column_indices[idx] = cur_k; 
-			tmp_values[idx] = lu_values[l]; 
+			tmp_values[idx] = final_lu_values[l]; 
 		}
 	}
 
@@ -1788,6 +1915,528 @@ Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 	}
 
 	cusp::blas::copy(lu_row_offsets, Acsrh.row_offsets);
+}
+
+/*! \brief This function does incomplete LU to all but the
+ * last one partition and incomplete UL to all but the first
+ * one partition of the matrix Acsrh.
+ *
+ * The integer p specifies the filling-in factor and tau
+ * indicates the threshold of drop-off.
+ */
+template <typename PrecVector>
+void
+Precond<PrecVector>::ILUULT(PrecMatrixCsrH &Acsrh, PrecMatrixCsrH &Acsrh2, int p, PrecValueType tau)
+{
+	int numPartitions = m_numPartitions;
+
+	if (numPartitions == 2 || numPartitions == 4)
+		omp_set_num_threads(2);
+	else
+		omp_set_num_threads(1);
+
+	IntVectorH    lu_row_offsets(m_n + 1, 0);
+	IntVectorH    lu_column_indices[numPartitions - 1];
+	PrecVectorH   lu_values[numPartitions - 1];
+	IntVectorH    ul_row_offsets(m_n + 1, 0);
+	IntVectorH    ul_column_indices[numPartitions - 1];
+	PrecVectorH   ul_values[numPartitions - 1];
+	PrecVectorH   wvector_lu(m_n, 0);
+	IntVectorH    in_wvector_lu(m_n, 0);
+	PrecVectorH   wvector_ul(m_n, 0);
+	IntVectorH    in_wvector_ul(m_n, 0);
+
+	IntVectorH pivot_positions_lu(m_n, -1);
+	IntVectorH pivot_positions_ul(m_n, -1);
+	IntVectorH l_columns_lu(m_n), u_columns_lu(m_n);
+	PrecVectorH l_values_lu(m_n), u_values_lu(m_n);
+	IntVectorH w_nonzeros_lu(m_n);
+	IntVectorH l_columns_ul(m_n), u_columns_ul(m_n);
+	PrecVectorH l_values_ul(m_n), u_values_ul(m_n);
+	IntVectorH w_nonzeros_ul(m_n);
+
+	int remainder = m_n % numPartitions;
+	int partSize  = m_n / numPartitions;
+
+	int it_max = 2 * numPartitions - 2;
+
+#pragma omp parallel for shared (it_max, numPartitions, remainder, partSize, lu_row_offsets, ul_row_offsets, wvector_lu, wvector_ul, in_wvector_lu, in_wvector_ul, pivot_positions_lu, pivot_positions_ul, l_columns_lu, l_columns_ul, u_columns_lu, u_columns_ul, l_values_lu, l_values_ul, u_values_lu, u_values_ul, w_nonzeros_lu, w_nonzeros_ul)
+	for (int ori_q = 0; ori_q < it_max; ori_q++) {
+		int start_row = 0, end_row = 0;
+
+		if (ori_q < numPartitions - 1) {
+
+			int q = ori_q;
+
+			PrecVectorH& loc_lu_values         = lu_values[q];
+			IntVectorH&  loc_lu_column_indices = lu_column_indices[q];
+
+			if (q < remainder) {
+				start_row = q * (partSize + 1);
+				end_row   = start_row + (partSize + 1);
+			}
+			else {
+				start_row = q * partSize + remainder;
+				end_row   = start_row + partSize;
+			}
+
+			{
+				int start_idx = Acsrh.row_offsets[start_row];
+				int end_idx = Acsrh.row_offsets[start_row + 1];
+
+				lu_row_offsets[start_row]     = 0;
+				lu_row_offsets[start_row + 1] = (end_idx - start_idx);
+
+				loc_lu_column_indices.insert(loc_lu_column_indices.end(), Acsrh.column_indices.begin() + start_idx, Acsrh.column_indices.begin() + end_idx);
+				loc_lu_values.insert(loc_lu_values.end(), Acsrh.values.begin() + start_idx, Acsrh.values.begin() + end_idx);
+
+				int l;
+				for (l = start_idx; l < end_idx; l++)
+					if (Acsrh.column_indices[l] == start_row) {
+						pivot_positions_lu[start_row] = l - start_idx;
+						m_pivots[start_row] = Acsrh.values[l];
+						break;
+				}
+			}
+
+			int wvec_size;
+
+			int l_size, u_size;
+
+			for (int i = start_row + 1; i < end_row; i++) {
+				int start_idx = Acsrh.row_offsets[i];
+				int end_idx = Acsrh.row_offsets[i+1];
+
+				int nl = 0, nu = 0;
+
+				PrecValueType tau_i = (PrecValueType)0;
+
+				wvec_size = start_row + end_idx - start_idx;
+
+				std::priority_queue<int, std::vector<int>, std::greater<int> > pq;
+				for (int l = start_idx; l < end_idx; l++) {
+					PrecValueType tmp_val = Acsrh.values[l];
+					int cur_k = Acsrh.column_indices[l];
+					wvector_lu[cur_k] = tmp_val;
+					in_wvector_lu[cur_k] = l - start_idx + 1;
+					tau_i += tmp_val * tmp_val;
+					w_nonzeros_lu[start_row + l - start_idx] = cur_k;
+					if (cur_k < i) {
+						pq.push(cur_k);
+						nl ++;
+					} else  if (cur_k > i)
+						nu ++;
+				}
+				tau_i = sqrt(tau_i) / (end_idx - start_idx) * tau;
+
+				while (!pq.empty()) {
+					int cur_k = pq.top();
+					pq.pop();
+
+					int start_k_idx = lu_row_offsets[cur_k];
+					int end_k_idx = lu_row_offsets[cur_k+1];
+
+					int l2 = pivot_positions_lu[cur_k];
+					PrecValueType val_i_k = (PrecValueType)0;
+
+					if (fabs(loc_lu_values[l2]) < BURST_VALUE) {
+						if (loc_lu_values[l2] < 0)
+							loc_lu_values[l2] = -BURST_VALUE;
+						else
+							loc_lu_values[l2] = BURST_VALUE;
+					}
+
+					val_i_k = (wvector_lu[cur_k] /= loc_lu_values[l2]);
+
+					// Applying drop-off to w[cur_k]
+					if (fabs(val_i_k) < tau_i) {
+						in_wvector_lu[cur_k] = 0;
+						continue;
+					}
+
+					for (l2++; l2 < end_k_idx; l2++) {
+						int tar_j = loc_lu_column_indices[l2];
+
+						wvector_lu[tar_j] -= val_i_k * loc_lu_values[l2];
+
+						if(!in_wvector_lu[tar_j]) {
+							w_nonzeros_lu[wvec_size++] = tar_j;
+							in_wvector_lu[tar_j] = wvec_size;
+							if (tar_j < i)
+								pq.push(tar_j);
+						}
+					}
+				} // end while
+
+				// Apply drop-off to wvector
+				{
+					l_size = u_size = start_row;
+					for (int w_it = start_row; w_it < wvec_size; w_it++) {
+						int cur_k = w_nonzeros_lu[w_it];
+						if (!in_wvector_lu[cur_k])
+							continue;
+						PrecValueType tmp_val = wvector_lu[cur_k];
+
+						if (cur_k == i) {
+							m_pivots[i] = ((tmp_val > BURST_VALUE || tmp_val < -BURST_VALUE) ? tmp_val : (tmp_val > 0 ? BURST_VALUE : -BURST_VALUE));
+							continue;
+						}
+
+						if (fabs(tmp_val) < tau_i)
+							continue;
+
+						if (cur_k < i) {
+							l_columns_lu[l_size] = cur_k;
+							l_values_lu[l_size] = tmp_val;
+							l_size++;
+						} else {
+							u_columns_lu[u_size] = cur_k;
+							u_values_lu[u_size] = tmp_val;
+							u_size++;
+						}
+					}
+
+					// Clear the content of wvector and in_wvector for usage of next iteration
+					for (int w_it = start_row; w_it < wvec_size; w_it++) {
+						int cur_k = w_nonzeros_lu[w_it];
+						wvector_lu[cur_k] = (PrecValueType)0;
+						in_wvector_lu[cur_k] = 0;
+					}
+
+					if (l_size - start_row > p + nl) {
+						findPthMax(l_columns_lu.begin() + start_row, l_columns_lu.begin() + l_size, 
+								l_values_lu.begin() + start_row,  l_values_lu.begin() + l_size,
+								p + nl);
+						l_size = p + nl + start_row;
+					}
+
+					if (u_size - start_row > p + nu) {
+						findPthMax(u_columns_lu.begin() + start_row, u_columns_lu.begin() + u_size, 
+								u_values_lu.begin() + start_row,  u_values_lu.begin() + u_size,
+								p + nu);
+						u_size = p + nu + start_row;
+					}
+
+					loc_lu_column_indices.insert(loc_lu_column_indices.end(), l_columns_lu.begin() + start_row, l_columns_lu.begin() + l_size);
+					loc_lu_values.insert(loc_lu_values.end(), l_values_lu.begin() + start_row, l_values_lu.begin() + l_size);
+
+					loc_lu_column_indices.push_back(i);
+					loc_lu_values.push_back(m_pivots[i]);
+					pivot_positions_lu[i] = loc_lu_column_indices.size() - 1;
+
+					loc_lu_column_indices.insert(loc_lu_column_indices.end(), u_columns_lu.begin() + start_row, u_columns_lu.begin() + u_size);
+					loc_lu_values.insert(loc_lu_values.end(), u_values_lu.begin() + start_row, u_values_lu.begin() + u_size);
+
+					if (i != end_row - 1)
+						lu_row_offsets[i+1] = loc_lu_column_indices.size();
+				}
+
+			} // end for
+		}  else {
+
+			int q = ori_q - numPartitions + 2;
+
+			PrecVectorH& loc_ul_values         = ul_values[q - 1];
+			IntVectorH&  loc_ul_column_indices = ul_column_indices[q - 1];
+
+			if (q < remainder) {
+				start_row = q * (partSize + 1);
+				end_row   = start_row + (partSize + 1);
+			}
+			else {
+				start_row = q * partSize + remainder;
+				end_row   = start_row + partSize;
+			}
+
+			{
+				int start_idx = Acsrh.row_offsets[end_row - 1];
+				int end_idx = Acsrh.row_offsets[end_row];
+
+				ul_row_offsets[end_row - 1] = 0;
+				ul_row_offsets[end_row - 2] = (end_idx - start_idx);
+
+				loc_ul_column_indices.insert(loc_ul_column_indices.end(), Acsrh.column_indices.begin() + start_idx, Acsrh.column_indices.begin() + end_idx);
+				loc_ul_values.insert(loc_ul_values.end(), Acsrh.values.begin() + start_idx, Acsrh.values.begin() + end_idx);
+
+				int l;
+				for (l = start_idx; l < end_idx; l++)
+					if (Acsrh.column_indices[l] == end_row - 1) {
+						pivot_positions_ul[end_row - 1] = l - start_idx;
+						m_pivots_ul[end_row - 1] = Acsrh.values[l];
+						break;
+					}
+			}
+
+
+			int wvec_size;
+
+			int l_size, u_size;
+
+			for (int i = end_row - 2; i >= start_row; i--) {
+				int start_idx = Acsrh.row_offsets[i];
+				int end_idx = Acsrh.row_offsets[i+1];
+
+				int nl = 0, nu = 0;
+
+				PrecValueType tau_i = (PrecValueType)0;
+
+				wvec_size = start_row + end_idx - start_idx;
+
+				std::priority_queue<int, std::vector<int> > pq;
+				for (int l = start_idx; l < end_idx; l++) {
+					PrecValueType tmp_val = Acsrh.values[l];
+					int cur_k = Acsrh.column_indices[l];
+					wvector_ul[cur_k] = tmp_val;
+					in_wvector_ul[cur_k] = l - start_idx + 1;
+					tau_i += tmp_val * tmp_val;
+					w_nonzeros_ul[start_row + l - start_idx] = cur_k;
+					if (cur_k < i) 
+						nl ++;
+					else  if (cur_k > i) {
+						pq.push(cur_k);
+						nu ++;
+					}
+				}
+				tau_i = sqrt(tau_i) / (end_idx - start_idx) * tau;
+
+				while (!pq.empty()) {
+					int cur_k = pq.top();
+					pq.pop();
+
+					int start_k_idx = ul_row_offsets[cur_k];
+					int end_k_idx = ul_row_offsets[cur_k-1];
+
+					int l2 = pivot_positions_ul[cur_k];
+					PrecValueType val_i_k = (PrecValueType)0;
+
+					if (fabs(loc_ul_values[l2]) < BURST_VALUE) {
+						if (loc_ul_values[l2] < 0)
+							loc_ul_values[l2] = -BURST_VALUE;
+						else
+							loc_ul_values[l2] = BURST_VALUE;
+					}
+
+					val_i_k = (wvector_ul[cur_k] /= loc_ul_values[l2]);
+
+					// Applying drop-off to w[cur_k]
+					if (fabs(val_i_k) < tau_i) {
+						in_wvector_ul[cur_k] = 0;
+						continue;
+					}
+
+					for (l2--; l2 >= start_k_idx; l2--) {
+						int tar_j = loc_ul_column_indices[l2];
+
+						wvector_ul[tar_j] -= val_i_k * loc_ul_values[l2];
+
+						if(!in_wvector_ul[tar_j]) {
+							w_nonzeros_ul[wvec_size++] = tar_j;
+							in_wvector_ul[tar_j] = wvec_size;
+							if (tar_j > i)
+								pq.push(tar_j);
+						}
+					}
+				} // end while
+
+				// Apply drop-off to wvector
+				{
+					l_size = u_size = start_row;
+					for (int w_it = start_row; w_it < wvec_size; w_it++) {
+						int cur_k = w_nonzeros_ul[w_it];
+						if (!in_wvector_ul[cur_k])
+							continue;
+						PrecValueType tmp_val = wvector_ul[cur_k];
+
+						if (cur_k == i) {
+							m_pivots_ul[i] = ((tmp_val > BURST_VALUE || tmp_val < -BURST_VALUE) ? tmp_val : (tmp_val > 0 ? BURST_VALUE : -BURST_VALUE));
+							continue;
+						}
+
+						if (fabs(tmp_val) < tau_i)
+							continue;
+
+						if (cur_k < i) {
+							l_columns_ul[l_size] = cur_k;
+							l_values_ul[l_size] = tmp_val;
+							l_size++;
+						} else {
+							u_columns_ul[u_size] = cur_k;
+							u_values_ul[u_size] = tmp_val;
+							u_size++;
+						}
+					}
+
+					// Clear the content of wvector and in_wvector for usage of next iteration
+					for (int w_it = start_row; w_it < wvec_size; w_it++) {
+						int cur_k = w_nonzeros_ul[w_it];
+						wvector_ul[cur_k] = (PrecValueType)0;
+						in_wvector_ul[cur_k] = 0;
+					}
+
+					if (l_size - start_row > p + nl) {
+						findPthMax(l_columns_ul.begin() + start_row, l_columns_ul.begin() + l_size, 
+								l_values_ul.begin() + start_row,  l_values_ul.begin() + l_size,
+								p + nl);
+						l_size = p + nl + start_row;
+					}
+
+					if (u_size - start_row > p + nu) {
+						findPthMax(u_columns_ul.begin() + start_row, u_columns_ul.begin() + u_size, 
+								u_values_ul.begin() + start_row,  u_values_ul.begin() + u_size,
+								p + nu);
+						u_size = p + nu + start_row;
+					}
+
+					loc_ul_column_indices.insert(loc_ul_column_indices.end(), l_columns_ul.begin() + start_row, l_columns_ul.begin() + l_size);
+					loc_ul_values.insert(loc_ul_values.end(), l_values_ul.begin() + start_row, l_values_ul.begin() + l_size);
+
+					loc_ul_column_indices.push_back(i);
+					loc_ul_values.push_back(m_pivots_ul[i]);
+					pivot_positions_ul[i] = loc_ul_column_indices.size() - 1;
+
+					loc_ul_column_indices.insert(loc_ul_column_indices.end(), u_columns_ul.begin() + start_row, u_columns_ul.begin() + u_size);
+					loc_ul_values.insert(loc_ul_values.end(), u_values_ul.begin() + start_row, u_values_ul.begin() + u_size);
+
+					if (i != start_row)
+						ul_row_offsets[i-1] = loc_ul_column_indices.size();
+				}
+			} // end for
+		} // end else
+	} // end for
+
+	int new_nnz    = lu_column_indices[0].size();
+	int new_nnz_ul = ul_column_indices[numPartitions - 2].size();
+	for (int q = 1; q < numPartitions - 1; q++) {
+		int start_row = 0, end_row = 0;
+
+		if (q < remainder) {
+			start_row = q * (partSize + 1);
+			end_row   = start_row + (partSize + 1);
+		}
+		else {
+			start_row = q * partSize + remainder;
+			end_row   = start_row + partSize;
+		}
+
+		for (int i = start_row; i < end_row; i++)
+			lu_row_offsets[i] += new_nnz;
+
+		new_nnz += lu_column_indices[q].size();
+
+		lu_column_indices[0].insert(lu_column_indices[0].end(), lu_column_indices[q].begin(), lu_column_indices[q].end());
+		lu_values[0].insert(lu_values[0].end(), lu_values[q].begin(), lu_values[q].end());
+	}
+	lu_row_offsets[m_n - partSize] = new_nnz;
+
+	for (int q = numPartitions - 2; q >= 1; q--) {
+		int start_row = 0, end_row = 0;
+
+		if (q < remainder) {
+			start_row = q * (partSize + 1);
+			end_row   = start_row + (partSize + 1);
+		}
+		else {
+			start_row = q * partSize + remainder;
+			end_row   = start_row + partSize;
+		}
+
+		for (int i = end_row - 1; i >= start_row; i--)
+			ul_row_offsets[i] += new_nnz_ul;
+
+		new_nnz_ul += ul_column_indices[q - 1].size();
+
+		ul_column_indices[numPartitions - 2].insert(ul_column_indices[numPartitions - 2].end(), ul_column_indices[q - 1].begin(), ul_column_indices[q - 1].end());
+		ul_values[numPartitions - 2].insert(ul_values[numPartitions - 2].end(), ul_values[q - 1].begin(), ul_values[q - 1].end());
+	}
+	ul_row_offsets[remainder == 0 ? (partSize-1) : partSize] = new_nnz_ul;
+
+	{
+		IntVectorH& final_lu_column_indices = lu_column_indices[0];
+		PrecVectorH& final_lu_values        = lu_values[0];
+
+		Acsrh.resize(m_n, m_n, new_nnz);
+		cusp::blas::fill(Acsrh.row_offsets, 0);
+
+		IntVectorH  tmp_row_indices(new_nnz);
+		IntVectorH  tmp_column_indices(new_nnz);
+		PrecVectorH tmp_values(new_nnz);
+
+		for (int i = 0; i < new_nnz; i++)
+			Acsrh.row_offsets[final_lu_column_indices[i]] ++;
+
+		thrust::exclusive_scan(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), Acsrh.row_offsets.begin());
+
+		for (int i = 0; i < m_n - partSize; i++) {
+			int start_idx = lu_row_offsets[i];
+			int end_idx   = lu_row_offsets[i+1];
+
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = final_lu_column_indices[l];
+				int idx = Acsrh.row_offsets[cur_k];
+				Acsrh.row_offsets[cur_k] ++;
+				tmp_row_indices[idx] = i;
+				tmp_column_indices[idx] = cur_k; 
+				tmp_values[idx] = final_lu_values[l]; 
+			}
+		}
+
+		cusp::blas::fill(Acsrh.row_offsets, 0);
+		for (int i = 0; i < new_nnz; i++)
+			Acsrh.row_offsets[tmp_row_indices[i]] ++;
+
+		thrust::inclusive_scan(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), Acsrh.row_offsets.begin());
+
+		for (int i = new_nnz - 1; i >= 0; i--) {
+			int idx = --Acsrh.row_offsets[tmp_row_indices[i]];
+			Acsrh.column_indices[idx] = tmp_column_indices[i];
+			Acsrh.values[idx] = tmp_values[i];
+		}
+		// cusp::blas::copy(lu_row_offsets, Acsrh.row_offsets);
+	}
+
+	{
+		IntVectorH& final_ul_column_indices = ul_column_indices[numPartitions - 2];
+		PrecVectorH& final_ul_values        = ul_values[numPartitions - 2];
+
+		Acsrh2.resize(m_n, m_n, new_nnz_ul);
+		cusp::blas::fill(Acsrh2.row_offsets, 0);
+
+		IntVectorH  tmp_row_indices(new_nnz_ul);
+		IntVectorH  tmp_column_indices(new_nnz_ul);
+		PrecVectorH tmp_values(new_nnz_ul);
+
+		for (int i = 0; i < new_nnz_ul; i++)
+			Acsrh2.row_offsets[final_ul_column_indices[i]] ++;
+
+		thrust::exclusive_scan(Acsrh2.row_offsets.begin(), Acsrh2.row_offsets.end(), Acsrh2.row_offsets.begin());
+
+		for (int i = (remainder == 0 ? partSize : (partSize + 1)); i < m_n; i++) {
+			int start_idx = ul_row_offsets[i];
+			int end_idx   = ul_row_offsets[i-1];
+
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = final_ul_column_indices[l];
+				int idx = Acsrh2.row_offsets[cur_k];
+				Acsrh2.row_offsets[cur_k] ++;
+				tmp_row_indices[idx] = i;
+				tmp_column_indices[idx] = cur_k; 
+				tmp_values[idx] = final_ul_values[l]; 
+			}
+		}
+
+		cusp::blas::fill(Acsrh2.row_offsets, 0);
+		for (int i = 0; i < new_nnz_ul; i++)
+			Acsrh2.row_offsets[tmp_row_indices[i]] ++;
+
+		thrust::inclusive_scan(Acsrh2.row_offsets.begin(), Acsrh2.row_offsets.end(), Acsrh2.row_offsets.begin());
+
+		for (int i = new_nnz_ul - 1; i >= 0; i--) {
+			int idx = --Acsrh2.row_offsets[tmp_row_indices[i]];
+			Acsrh2.column_indices[idx] = tmp_column_indices[i];
+			Acsrh2.values[idx] = tmp_values[i];
+		}
+		// cusp::blas::copy(lu_row_offsets, Acsrh.row_offsets);
+	}
 }
 
 /*! \brief This function does ILU0 to the provided CSR matrix.
@@ -1817,7 +2466,7 @@ Precond<PrecVector>::ILU0(PrecMatrixCsrH& Acsrh)
 
 			for (l2 = start_k_idx; l2 < end_k_idx; l2++) {
 				int pivot = column_indices[l2];
-				if (pivot > cur_k)
+				if (pivot > cur_k) 
 					throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (ilu).");
 				else if (pivot == cur_k) {
 					val_i_k = (values[l] /= values[l2]);
@@ -2179,41 +2828,88 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::sparseFactorization()
 {
-	m_timer.Start();
 	m_pivots.resize(m_n);
+	m_pivots_ul.resize(m_n);
 
-	IntVectorH pivotPerm, pivotReordering;
+	if (m_variableBandwidth || m_numPartitions == 1) {
 
-	// Do ILU here, now only ILU0 is implemented
-	if (m_ilu_level == 0)
-		ILU0(m_Acsrh);
-	else {
-		if (m_safeFactorization)
-			ILUTP(m_Acsrh, m_ilu_level, m_tolerance, (PrecValueType)0.1, pivotPerm, pivotReordering);
-		else
-			ILUT(m_Acsrh, m_ilu_level, m_tolerance);
-	}
+		IntVectorH pivotPerm, pivotReordering;
 
-	for (int i = 0; i < m_n; i++) {
-		int start_idx = m_Acsrh.row_offsets[i];
-		int end_idx = m_Acsrh.row_offsets[i+1];
-
-		PrecValueType pivot_val = (PrecValueType)(0);
-		for (int l = start_idx; l < end_idx; l++) {
-			int cur_k = m_Acsrh.column_indices[l];
-			if (cur_k == i)
-				m_pivots[i] = pivot_val = m_Acsrh.values[l];
-			else if (cur_k > i)
-				m_Acsrh.values[l] /= pivot_val;
+		// Do ILU here, now only ILU0 is implemented
+		if (m_ilu_level == 0)
+			ILU0(m_Acsrh);
+		else {
+			if (m_safeFactorization)
+				ILUTP(m_Acsrh, m_ilu_level, m_tolerance, (PrecValueType)0.1, pivotPerm, pivotReordering);
+			else
+				ILUT(m_Acsrh, m_ilu_level, m_tolerance);
 		}
-	}
-	m_timer.Stop();
-	m_time_bandLU = m_timer.getElapsed();
 
-	if (m_ilu_level > 0 && m_safeFactorization) {
-		IntVector buffer = pivotReordering, buffer2(m_n);
-		combinePermutation(buffer, m_optReordering, buffer2);
-		m_optReordering = buffer2;
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = m_Acsrh.row_offsets[i];
+			int end_idx = m_Acsrh.row_offsets[i+1];
+
+			PrecValueType pivot_val = (PrecValueType)(0);
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = m_Acsrh.column_indices[l];
+				if (cur_k == i)
+					m_pivots[i] = pivot_val = m_Acsrh.values[l];
+				else if (cur_k > i)
+					m_Acsrh.values[l] /= pivot_val;
+			}
+		}
+
+		if (m_ilu_level > 0 && m_safeFactorization) {
+			IntVector buffer = pivotReordering, buffer2(m_n);
+			combinePermutation(buffer, m_optReordering, buffer2);
+			m_optReordering = buffer2;
+		}
+	} else {
+		ILUULT(m_Acsrh, m_Acsrh_ul, m_ilu_level, m_tolerance);
+
+		int partSize  = m_n / m_numPartitions;
+		int remainder = m_n % m_numPartitions;
+
+		for (int i = 0; i < m_n - partSize; i++) {
+			int start_idx = m_Acsrh.row_offsets[i];
+			int end_idx = m_Acsrh.row_offsets[i+1];
+
+			PrecValueType pivot_val = (PrecValueType)(0);
+			for (int l = start_idx; l < end_idx; l++) {
+				int cur_k = m_Acsrh.column_indices[l];
+				if (cur_k == i)
+					pivot_val = m_Acsrh.values[l];
+				else if (cur_k > i)
+					m_Acsrh.values[l] /= pivot_val;
+			}
+		}
+
+		for (int i = (remainder == 0 ? partSize : (partSize + 1)); i < m_n; i++) {
+			int start_idx = m_Acsrh_ul.row_offsets[i];
+			int end_idx = m_Acsrh_ul.row_offsets[i+1];
+
+			PrecValueType pivot_val = (PrecValueType)(0);
+			for (int l = end_idx - 1; l >= start_idx; l--) {
+				int cur_k = m_Acsrh_ul.column_indices[l];
+				if (cur_k == i)
+					pivot_val = m_Acsrh_ul.values[l];
+				else if (cur_k < i)
+					m_Acsrh_ul.values[l] /= pivot_val;
+			}
+		}
+
+		thrust::copy(m_pivots_ul.begin() + (m_n - partSize), m_pivots_ul.end(), m_pivots.begin() + (m_n - partSize));
+
+		for (int i = m_n - partSize; i < m_n; i++) {
+			int start_idx = m_Acsrh_ul.row_offsets[i];
+			int end_idx   = m_Acsrh_ul.row_offsets[i + 1];
+			m_Acsrh.column_indices.insert(m_Acsrh.column_indices.end(), m_Acsrh_ul.column_indices.begin() + start_idx, m_Acsrh_ul.column_indices.begin() + end_idx);
+			m_Acsrh.values.insert(m_Acsrh.values.end(), m_Acsrh_ul.values.begin() + start_idx, m_Acsrh_ul.values.begin() + end_idx);
+
+			m_Acsrh.row_offsets[i+1] = m_Acsrh.column_indices.size();
+		}
+		m_Acsrh.num_entries = m_Acsrh.column_indices.size();
+
 	}
 }
 
@@ -3216,30 +3912,91 @@ Precond<PrecVector>::sparseSweep(PrecVector&  v,
 {
 	PrecVectorH sol_h = v;
 
-	for (int i=1; i<m_n; i++) {
-		int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
-		PrecValueType tmp_val = sol_h[i];
-		for (int l = start_idx; l < end_idx; l++) {
-			int cur_k = m_Acsrh.column_indices[l];
-			if (cur_k >= i)
-				break;
-			tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
+	int numPartitions = m_numPartitions;
+	int partSize  = m_n / numPartitions;
+	int remainder = m_n % numPartitions;
+	omp_set_num_threads(std::min(16, numPartitions));
+
+	bool last_partition_reverse = (m_numPartitions > 1 && !m_variableBandwidth);
+
+#pragma omp parallel for shared (numPartitions, remainder, partSize, sol_h)
+	for (int p = 0; p < numPartitions; p++) {
+		int start_row = 0, end_row = 0;
+		if (p < remainder) {
+			start_row = p * (partSize + 1);
+			end_row = start_row + (partSize + 1);
+		} else {
+			start_row = p * (partSize) + remainder;
+			end_row = start_row + (partSize);
 		}
-		sol_h[i] = tmp_val;
+
+		if (p == numPartitions - 1 && last_partition_reverse) {
+			for (int i = end_row - 2; i >= start_row; i--) {
+				int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+				PrecValueType tmp_val = sol_h[i];
+				for (int l = end_idx - 1; l >= start_idx; l--) {
+					int cur_k = m_Acsrh.column_indices[l];
+					if (cur_k <= i)
+						break;
+					tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
+				}
+				sol_h[i] = tmp_val;
+			}
+		} else {
+			for (int i=start_row + 1; i<end_row; i++) {
+				int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+				PrecValueType tmp_val = sol_h[i];
+				for (int l = start_idx; l < end_idx; l++) {
+					int cur_k = m_Acsrh.column_indices[l];
+					if (cur_k >= i)
+						break;
+					tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
+				}
+				sol_h[i] = tmp_val;
+			}
+		}
 	}
+
 	thrust::transform(sol_h.begin(), sol_h.end(), m_pivots.begin(), sol_h.begin(), thrust::divides<PrecValueType>());
 
-	for (int i = m_n - 2; i >= 0; i--) {
-		int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
-		PrecValueType tmp_val = sol_h[i];
-
-		for (int l = end_idx - 1; l >= start_idx; l--) {
-			int cur_k = m_Acsrh.column_indices[l];
-			if (cur_k <= i)
-				break;
-			tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
+#pragma omp parallel for shared (numPartitions, remainder, partSize, sol_h)
+	for (int p = numPartitions - 1; p >= 0; p--) {
+		int start_row = 0, end_row = 0;
+		if (p < remainder) {
+			start_row = p * (partSize + 1);
+			end_row = start_row + (partSize + 1);
+		} else {
+			start_row = p * (partSize) + remainder;
+			end_row = start_row + (partSize);
 		}
-		sol_h[i] = tmp_val;
+
+		if (p == numPartitions - 1 && last_partition_reverse) {
+			for (int i = start_row + 1; i < end_row; i++) {
+				int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+				PrecValueType tmp_val = sol_h[i];
+
+				for (int l = start_idx; l < end_idx; l++) {
+					int cur_k = m_Acsrh.column_indices[l];
+					if (cur_k >= i)
+						break;
+					tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
+				}
+				sol_h[i] = tmp_val;
+			}
+		} else {
+			for (int i = end_row - 2; i >= start_row; i--) {
+				int start_idx = m_Acsrh.row_offsets[i], end_idx = m_Acsrh.row_offsets[i+1];
+				PrecValueType tmp_val = sol_h[i];
+
+				for (int l = end_idx - 1; l >= start_idx; l--) {
+					int cur_k = m_Acsrh.column_indices[l];
+					if (cur_k <= i)
+						break;
+					tmp_val -= sol_h[cur_k] * m_Acsrh.values[l];
+				}
+				sol_h[i] = tmp_val;
+			}
+		}
 	}
 
 	w = sol_h;
@@ -3294,7 +4051,7 @@ Precond<PrecVector>::partFullBckSweep(PrecVector&  v)
 
 	dim3 grids(m_numPartitions-1, 1);
 
-	if (!m_variableBandwidth) {
+	if (!m_variableBandwidth && m_ilu_level < 0) {
 		if (m_k > 512)
 			device::backwardElimUNormal_g512<PrecValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
@@ -3368,6 +4125,11 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  WV)
 {
 	if (!m_variableBandwidth) {
 		calculateSpikes_const(WV);
+		return;
+	}
+
+	if (m_ilu_level >= 0) {
+		calculateSpikes_var(WV);
 		return;
 	}
 
@@ -3611,6 +4373,83 @@ Precond<PrecVector>::calculateSpikes_const(PrecVector&  WV)
 {
 	PrecValueType* p_WV = thrust::raw_pointer_cast(&WV[0]);
 
+	if (m_ilu_level >= 0)
+	{
+		int n_eff             = m_n;
+		int numPart_eff       = m_numPartitions;
+		int rightOffDiagWidth = cusp::blas::nrmmax(m_offDiagWidths_right);
+		int leftOffDiagWidth  = cusp::blas::nrmmax(m_offDiagWidths_left);
+
+		PrecVector extWV((size_t)(leftOffDiagWidth + rightOffDiagWidth) * m_k * numPart_eff, (PrecValueType) 0);
+
+		PrecValueType* p_extWV               = thrust::raw_pointer_cast(&extWV[0]);
+		int*           p_ks                  = thrust::raw_pointer_cast(&m_ks[0]);
+		int*           p_offDiagWidths_right = thrust::raw_pointer_cast(&m_offDiagWidths_right[0]);
+		int*           p_offDiagPerms_right  = thrust::raw_pointer_cast(&m_offDiagPerms_right[0]);
+		int*           p_offDiagWidths_left  = thrust::raw_pointer_cast(&m_offDiagWidths_left[0]);
+		int*           p_offDiagPerms_left   = thrust::raw_pointer_cast(&m_offDiagPerms_left[0]);
+		int*           p_offsets             = thrust::raw_pointer_cast(&m_BOffsets[0]);
+
+		dim3 gridsCopy((leftOffDiagWidth + rightOffDiagWidth), numPart_eff);
+
+		int numThreadsToUse = adjustNumThreads(cusp::blas::nrm1(m_ks) / numPart_eff);
+		device::copyWVFromOrToExtendedWVTranspose_general<PrecValueType><<<gridsCopy, numThreadsToUse>>>(leftOffDiagWidth + rightOffDiagWidth, m_k, rightOffDiagWidth, m_k, 0, m_k-rightOffDiagWidth-leftOffDiagWidth, p_WV, p_extWV, false);
+
+		{
+			const int SWEEP_MAX_NUM_THREADS = 128;
+			int sweepBlockX = leftOffDiagWidth;
+			int sweepGridX = 1;
+			if (sweepBlockX < rightOffDiagWidth)
+				sweepBlockX = rightOffDiagWidth;
+			kernelConfigAdjust(sweepBlockX, sweepGridX, SWEEP_MAX_NUM_THREADS);
+			dim3 sweepGrids(sweepGridX, 2*numPart_eff-2);
+
+			PrecMatrixCsr Acsr_lu      = m_Acsrh;
+			PrecMatrixCsr Acsr_ul      = m_Acsrh_ul;
+			PrecVector    pivots       = m_pivots;
+			PrecVector    pivots_ul    = m_pivots_ul;
+			int *lu_row_offsets        = thrust::raw_pointer_cast(&(Acsr_lu.row_offsets[0]));
+			int *ul_row_offsets        = thrust::raw_pointer_cast(&(Acsr_ul.row_offsets[0]));
+			int *lu_column_indices     = thrust::raw_pointer_cast(&(Acsr_lu.column_indices[0]));
+			int *ul_column_indices     = thrust::raw_pointer_cast(&(Acsr_ul.column_indices[0]));
+			PrecValueType *lu_values   = thrust::raw_pointer_cast(&(Acsr_lu.values[0]));
+			PrecValueType *ul_values   = thrust::raw_pointer_cast(&(Acsr_ul.values[0]));
+			PrecValueType *p_pivots    = thrust::raw_pointer_cast(&pivots[0]);
+			PrecValueType *p_pivots_ul = thrust::raw_pointer_cast(&pivots_ul[0]);
+
+			device::sparse::fwdElim_spike_partial<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, m_k, numPart_eff, leftOffDiagWidth + rightOffDiagWidth, lu_row_offsets, lu_column_indices, lu_values, ul_row_offsets, ul_column_indices, ul_values, p_extWV, p_offDiagWidths_left, p_offDiagWidths_right);
+
+			int preBckBlockX = leftOffDiagWidth + rightOffDiagWidth;
+			int preBckGridX  = 1;
+			int preBckGridY  = m_k * numPart_eff;
+			int preBckGridZ  = 1;
+			kernelConfigAdjust(preBckBlockX, preBckGridX, BLOCK_SIZE);
+			kernelConfigAdjust(preBckGridY, preBckGridZ, MAX_GRID_DIMENSION);
+			dim3 preBckGrids(preBckGridX, preBckGridY, preBckGridZ);
+
+			device::sparse::preBck_offDiag_divide_partial<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, m_k, numPart_eff, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_pivots, p_pivots_ul, p_extWV);
+
+			device::sparse::bckElim_spike_partial<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, m_k, numPart_eff, leftOffDiagWidth + rightOffDiagWidth, lu_row_offsets, lu_column_indices, lu_values, ul_row_offsets, ul_column_indices, ul_values, p_extWV, p_offDiagWidths_left, p_offDiagWidths_right);
+		}
+
+		device::copyWVFromOrToExtendedWVTranspose_general<PrecValueType><<<gridsCopy, numThreadsToUse>>>(leftOffDiagWidth + rightOffDiagWidth, m_k, rightOffDiagWidth, m_k, 0, m_k-rightOffDiagWidth-leftOffDiagWidth, p_WV, p_extWV, true);
+		PrecVector WV_spare(m_k*m_k);
+
+		PrecValueType* p_WV_spare = thrust::raw_pointer_cast(&WV_spare[0]);
+
+		for (int i = 0; i < numPart_eff - 1; i++) {
+			cusp::blas::fill(WV_spare, (PrecValueType) 0);
+			device::matrixVReordering_perPartition<PrecValueType><<<m_offDiagWidths_right_host[i], numThreadsToUse>>>(m_k, p_WV+2*i*m_k*m_k, p_WV_spare, p_offDiagPerms_right+i*m_k);
+			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin()+(2*i*m_k*m_k));
+
+			cusp::blas::fill(WV_spare, (PrecValueType) 0);
+			device::matrixWReordering_perPartition<PrecValueType><<<m_offDiagWidths_left_host[i], numThreadsToUse>>>(m_k, p_WV+(2*i+1)*m_k*m_k, p_WV_spare, p_offDiagPerms_left+i*m_k);
+			thrust::copy(WV_spare.begin(), WV_spare.end(), WV.begin()+((2*i+1)*m_k*m_k));
+		}
+
+		return;
+	}
+
 
 	// Calculate the size of the first and last partitions.
 	int last_partition_size = m_n / m_numPartitions;
@@ -3719,7 +4558,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		int rightOffDiagWidth = cusp::blas::nrmmax(m_offDiagWidths_right);
 		int leftOffDiagWidth  = cusp::blas::nrmmax(m_offDiagWidths_left);
 
-		PrecVector extWV((leftOffDiagWidth + rightOffDiagWidth) * n_eff, (PrecValueType) 0);
+		PrecVector extWV((size_t)(leftOffDiagWidth + rightOffDiagWidth) * n_eff, (PrecValueType) 0);
 		PrecVector buffer;
 
 		PrecValueType* p_extWV               = thrust::raw_pointer_cast(&extWV[0]);
@@ -3742,7 +4581,7 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 		kernelConfigAdjust(permuteGridY, permuteGridZ, MAX_GRID_DIMENSION);
 		dim3 gridsPermute(permuteGridX, permuteGridY, permuteGridZ);
 
-		buffer.resize((leftOffDiagWidth + rightOffDiagWidth) * n_eff);
+		buffer.resize((size_t)(leftOffDiagWidth + rightOffDiagWidth) * n_eff);
 		
 		PrecValueType* p_buffer = thrust::raw_pointer_cast(&buffer[0]);
 
@@ -3759,7 +4598,22 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			kernelConfigAdjust(sweepBlockX, sweepGridX, SWEEP_MAX_NUM_THREADS);
 			dim3 sweepGrids(sweepGridX, 2*numPart_eff-2);
 
-			device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			PrecMatrixCsr Acsr;
+			int *row_offsets;   
+			int *column_indices;
+			PrecValueType *values;
+
+			if (m_ilu_level >= 0) {
+				Acsr           = m_Acsrh;
+				row_offsets    = thrust::raw_pointer_cast(&(Acsr.row_offsets[0]));
+				column_indices = thrust::raw_pointer_cast(&(Acsr.column_indices[0]));
+				values         = thrust::raw_pointer_cast(&(Acsr.values[0]));
+			}
+
+			if (m_ilu_level < 0)
+				device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			else
+				device::sparse::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, m_numPartitions, leftOffDiagWidth + rightOffDiagWidth, row_offsets, column_indices, values, p_buffer, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
 
 			int preBckBlockX = leftOffDiagWidth + rightOffDiagWidth;
 			int preBckGridX  = 1;
@@ -3769,7 +4623,13 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 			kernelConfigAdjust(preBckGridY, preBckGridZ, MAX_GRID_DIMENSION);
 			dim3 preBckGrids(preBckGridX, preBckGridY, preBckGridZ);
 
-			device::var::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, p_ks, p_offsets, p_B, p_buffer, partSize, remainder, m_saveMem);
+			if (m_ilu_level < 0)
+				device::var::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, p_ks, p_offsets, p_B, p_buffer, partSize, remainder, m_saveMem);
+			else {
+				PrecVector pivots = m_pivots;
+				PrecValueType *d_pivots = thrust::raw_pointer_cast(&pivots[0]);
+				device::sparse::preBck_offDiag_divide<PrecValueType><<<preBckGrids, preBckBlockX>>>(n_eff, leftOffDiagWidth + rightOffDiagWidth, d_pivots, p_buffer);
+			}
 
 			{
 				int last_row = 0;
@@ -3785,7 +4645,10 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 				p_first_rows = thrust::raw_pointer_cast(&m_first_rows[0]);
 			}
 
-			device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			if (m_ilu_level < 0)
+				device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+			else
+				device::sparse::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n_eff, m_numPartitions, leftOffDiagWidth + rightOffDiagWidth, row_offsets, column_indices, values, p_buffer, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
 		}
 
 
