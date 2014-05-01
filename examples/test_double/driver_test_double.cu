@@ -479,7 +479,7 @@ int main(int argc, char** argv)
 
 		if (isnan(cusp::blas::nrm1(x)))
 			outputItem("NaN", COLOR_RED);
-		if (rel_err >= 1)
+		else if (rel_err >= 1)
 			outputItem(rel_err, COLOR_RED);
 		else
 			outputItem(rel_err);

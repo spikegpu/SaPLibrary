@@ -234,28 +234,6 @@ int main(int argc, char** argv)
 	try {
 		mySolver.setup(A);
 	} catch (const spike::system_error& se) {
-		// Half-bandwidth after MC64
-		outputItem( "N/A");
-
-		// Reason why cannot solve (for unsuccessful solving only)
-		switch(se.reason()) {
-			case spike::system_error::Zero_pivoting:
-				outputItem ("ZPiv", COLOR_RED);
-				break;
-			case spike::system_error::Matrix_singular:
-				outputItem ("MatSing", COLOR_RED);
-				break;
-			case spike::system_error::Illegal_update:
-				outputItem ("Illegal update", COLOR_RED);
-				break;
-			case spike::system_error::Negative_MC64_weight:
-				outputItem ("Internal system error", COLOR_RED);
-				break;
-			default:
-				outputItem ("Unknown error", COLOR_RED);
-				break;
-		}
-
 		// Make up for the other columns
 		for (int i=0; i < outputItem.m_additional_item_count; i++)
 			outputItem("");
@@ -268,14 +246,7 @@ int main(int argc, char** argv)
 
 	{
 		spike::Stats stats = mySolver.getStats();
-		// Half-bandwidth after MC64
-		outputItem( stats.bandwidthMC64);
 
-		// Reason why cannot solve (for unsuccessful solving only)
-		outputItem ( "OK");
-
-		// Time for MC64 reordering
-		outputItem( stats.time_MC64);
 		// Time for MC64 reordering (pre-processing)
 		outputItem( stats.time_MC64_pre);
 		// Time for MC64 reordering (first stage)
@@ -284,6 +255,8 @@ int main(int argc, char** argv)
 		outputItem( stats.time_MC64_second);
 		// Time for MC64 reordering (post-processing)
 		outputItem( stats.time_MC64_post);
+		// Time for MC64 reordering
+		outputItem( stats.time_MC64);
 
 		cout << "</tr>" << endl;
 	}
