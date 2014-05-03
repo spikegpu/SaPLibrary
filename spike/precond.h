@@ -1130,18 +1130,17 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 	// Reorder the matrix and apply drop-off. For this, we convert the
 	// input matrix to COO format and copy it on the host.
-	PrecMatrixCsrH Acsrh = A;
+	PrecMatrixCsr Acsr = A;
 	transfer_timer.Stop();
 	m_time_transfer = transfer_timer.getElapsed();
 
 	PrecVectorH  B;
 	IntVectorH   optReordering;
 	IntVectorH   optPerm;
-	IntVectorH   mc64RowPerm;
-	PrecVectorH  mc64RowScale;
-	PrecVectorH  mc64ColScale;
 	IntVectorH   secondReorder;
 	IntVectorH   secondPerm;
+
+	IntVector    mc64RowPerm(m_n);
 
 	Graph<PrecValueType>  graph(m_trackReordering);
 
@@ -1157,7 +1156,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	const int    BANDWIDTH_THRESHOLD = 64;
 	bool         doRCM = (m_maxBandwidth > BANDWIDTH_THRESHOLD);
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acsrh, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, mc64RowScale, mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acsr, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, m_mc64RowScale, m_mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_MC64        = graph.getTimeMC64();
@@ -1299,11 +1298,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	m_optReordering = optReordering;
 	m_optPerm = optPerm;
 
-	if (m_scale) {
-		m_mc64RowScale = mc64RowScale;
-		m_mc64ColScale = mc64ColScale;
-	}
-    
 	if (m_variableBandwidth || (m_numPartitions > 1 && m_ilu_level >= 0)) {
 		m_offDiagWidths_left = m_offDiagWidths_left_host;
 		m_offDiagWidths_right = m_offDiagWidths_right_host;
@@ -1340,8 +1334,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	}
 
 	{
-		IntVector buffer = mc64RowPerm, buffer2(m_n);
-		combinePermutation(buffer, m_optPerm, buffer2);
+		IntVector buffer2(m_n);
+		combinePermutation(mc64RowPerm, m_optPerm, buffer2);
 		m_optPerm = buffer2;
 	}
 

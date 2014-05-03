@@ -490,33 +490,6 @@ copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
 	dB[offsets[curPartNum] + l_in_part * col_width + delta + j - l] = vals[idx];
 }
 
-template<typename T>
-__global__ void
-getResidualValues(int       N,
-		          T*        c_vals,
-				  T*        max_vals,
-				  int*      row_ptr)
-{
-	int bid = blockIdx.x + blockIdx.y * gridDim.x;
-
-	if (bid >= N)
-		return;
-
-	__shared__ int start;
-	__shared__ int end;
-	__shared__ T max_val;
-
-	if (threadIdx.x == 0) {
-		start = row_ptr[bid];
-		end = row_ptr[bid + 1];
-		max_val = max_vals[bid];
-	}
-	__syncthreads();
-
-	for (int i = threadIdx.x + start; i < end; i += blockDim.x)
-		c_vals[i] = log(max_val / c_vals[i]);
-}
-
 template <typename T>
 __global__ void
 assembleReducedMat_var_bandwidth(int* ks,

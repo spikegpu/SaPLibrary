@@ -22,6 +22,7 @@
 #include <spike/common.h>
 #include <spike/timer.h>
 #include <spike/device/data_transfer.cuh>
+#include <spike/device/mc64.cuh>
 
 #include <spike/exception.h>
 
@@ -93,12 +94,15 @@ class Graph
 public:
 	typedef typename cusp::coo_matrix<int, T, cusp::host_memory> MatrixCoo;
 	typedef typename cusp::csr_matrix<int, T, cusp::host_memory> MatrixCsr;
+	typedef typename cusp::csr_matrix<int, T, cusp::device_memory>  MatrixCsrD;
 	typedef typename cusp::array1d<T, cusp::host_memory>         Vector;
+	typedef typename cusp::array1d<T, cusp::device_memory>       VectorD;
 	typedef typename cusp::array1d<double, cusp::host_memory>    DoubleVector;
 	typedef typename cusp::array1d<int, cusp::host_memory>       IntVector;
 	typedef typename cusp::array1d<int, cusp::device_memory>     IntVectorD;
 	typedef typename cusp::array1d<double, cusp::device_memory>  DoubleVectorD;
 	typedef typename cusp::array1d<bool, cusp::host_memory>      BoolVector;
+	typedef typename cusp::array1d<bool, cusp::device_memory>    BoolVectorD;
 	typedef Vector                                               MatrixMapF;
 	typedef IntVector                                            MatrixMap;
 
@@ -120,7 +124,7 @@ public:
 	double     getTimeRCM() const      {return m_timeRCM;}
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
-	int        reorder(const MatrixCsr& Acsr,
+	int        reorder(const MatrixCsrD& Acsr,
 	                   bool             testMC64,
 	                   bool             doMC64,
 					   bool             mc64FirstStageOnly,
@@ -128,9 +132,9 @@ public:
 					   bool             doRCM,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
-	                   IntVector&       mc64RowPerm,
-	                   Vector&          mc64RowScale,
-	                   Vector&          mc64ColScale,
+	                   IntVectorD&      d_mc64RowPerm,
+	                   VectorD&         d_mc64RowScale,
+	                   VectorD&         d_mc64ColScale,
 	                   MatrixMapF&      scaleMap,
 	                   int&             k_mc64);
 
@@ -197,12 +201,12 @@ private:
 
 	BoolVector    m_exists;
 
-	bool       MC64(const MatrixCsr& Acsr,
+	bool       MC64(const MatrixCsrD& Acsr,
 			        bool             scale,
 					bool             mc64FirstStageOnly,
-	                IntVector&       mc64RowPerm,
-	                DoubleVector&    mc64RowScale,
-	                DoubleVector&    mc64ColScale,
+	                IntVectorD&      mc64RowPerm,
+	                DoubleVectorD&   mc64RowScale,
+	                DoubleVectorD&   mc64ColScale,
 	                MatrixMapF&      scaleMap);
 
 	int        RCM(EdgeVector&  edges,
@@ -224,11 +228,11 @@ private:
 	static const double LOC_INFINITY;
 
 	// Functions used in MC64
-	void       find_minimum_match(const MatrixCsr& Acsr,
+	void       find_minimum_match(const MatrixCsrD& Acsr,
 			                      bool             mc64FirstStageOnly,
-								  IntVector&       mc64RowPerm,
-	                              DoubleVector&    mc64RowScale,
-	                              DoubleVector&    mc64ColScale);
+								  IntVectorD&      mc64RowPerm,
+	                              DoubleVectorD&   mc64RowScale,
+	                              DoubleVectorD&   mc64ColScale);
 	void       init_reduced_cval(bool           first_stage_only,
 			                     IntVector&     row_ptr,
 	                             IntVector&     rows,
@@ -237,21 +241,19 @@ private:
 	                             DoubleVector&  v_val,
 	                             IntVector&     match_nodes,
 	                             IntVector&     rev_match_nodes,
-	                             IntVector&     matched,
-	                             IntVector&     rev_matched);
+	                             BoolVector&    matched,
+	                             BoolVector&    rev_matched);
 	bool       find_shortest_aug_path(int init_node,
-	                                  IntVector& matched, IntVector& rev_matched, 
+	                                  BoolVector& matched, BoolVector& rev_matched, 
 	                                  IntVector& match_nodes, IntVector& rev_match_nodes,
 	                                  IntVector& row_ptr, IntVector& rows, IntVector& prev,
 	                                  DoubleVector& u_val,
 	                                  DoubleVector& v_val,
 	                                  DoubleVector& c_val,
 	                                  IntVector&    irn);
-	void       get_csc_matrix(const MatrixCsr& Acsr,
-							  IntVector&       row_ptr,
-	                          IntVector&       rows, 
-	                          DoubleVector&    c_val,
-	                          DoubleVector&    max_val_in_col);
+	void       get_csc_matrix(const MatrixCsrD& Acsr,
+	                          DoubleVectorD&    c_val,
+	                          DoubleVectorD&    max_val_in_col);
 
 	// Functor objects.
 	struct CompareEdgeLength
@@ -306,15 +308,6 @@ private:
 		}
 	};
 
-	struct Exponential: public thrust::unary_function<double, double>
-	{
-		__host__
-		double operator() (double a)
-		{
-			return exp(a);
-		}
-	};
-
 public:
 	struct AbsoluteValue: public thrust::unary_function<double, double>
 	{
@@ -324,6 +317,33 @@ public:
 			return (a < 0 ? -a : a);
 		}
 	};
+
+	struct is_not
+	{
+		__host__ __device__
+		bool operator() (bool x) {
+			return !x;
+		}
+	};
+
+	struct ClearValue: public thrust::unary_function<double, double>
+	{
+		__host__ __device__
+		double operator() (double a)
+		{
+			return 0.0;
+		}
+	};
+
+	struct Exponential: public thrust::unary_function<double, double>
+	{
+		__host__ __device__
+		double operator() (double a)
+		{
+			return exp(a);
+		}
+	};
+
 };
 
 
@@ -359,7 +379,7 @@ Graph<T>::Graph(bool trackReordering)
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::reorder(const MatrixCsr&  Acsr,
+Graph<T>::reorder(const MatrixCsrD& Acsr,
                   bool              testMC64,
                   bool              doMC64,
 				  bool              mc64FirstStageOnly,
@@ -367,9 +387,9 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 				  bool              doRCM,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
-                  IntVector&        mc64RowPerm,
-                  Vector&           mc64RowScale,
-                  Vector&           mc64ColScale,
+                  IntVectorD&       d_mc64RowPerm,
+                  VectorD&          d_mc64RowScale,
+                  VectorD&          d_mc64ColScale,
                   MatrixMapF&       scaleMap,
                   int&              k_mc64)
 {
@@ -378,19 +398,6 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 
 	// Create the edges in the graph.
 	m_edges.resize(m_nnz);
-	if (m_trackReordering) {
-		for (int l = 0; l < m_n; l++) {
-			int start_idx = Acsr.row_offsets[l], end_idx = Acsr.row_offsets[l+1];
-			for (int i = start_idx; i < end_idx; i++)
-				m_edges[i] = (EdgeType(i, l, Acsr.column_indices[i], (T)Acsr.values[i]));
-		}
-	} else {
-		for (int l = 0; l < m_n; l++) {
-			int start_idx = Acsr.row_offsets[l], end_idx = Acsr.row_offsets[l+1];
-			for (int i = start_idx; i < end_idx; i++)
-				m_edges[i] = (EdgeType(l, Acsr.column_indices[i], (T)Acsr.values[i]));
-		}
-	}
 
 	// Apply mc64 algorithm. Note that we must ensure we always work with
 	// double precision scale vectors.
@@ -398,24 +405,24 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	// TODO:  how can we check if the precision of Vector is already
 	//        double, so that we can save extra copies.
 	if (doMC64) {
-		CPUTimer loc_timer;
+		GPUTimer loc_timer;
 		loc_timer.Start();
-		DoubleVector  mc64RowScaleD;
-		DoubleVector  mc64ColScaleD;
-		MC64(Acsr, scale, mc64FirstStageOnly, mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
-		mc64RowScale = mc64RowScaleD;
-		mc64ColScale = mc64ColScaleD;
+		DoubleVectorD  mc64RowScaleD;
+		DoubleVectorD  mc64ColScaleD;
+		MC64(Acsr, scale, mc64FirstStageOnly, d_mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
+		d_mc64RowScale = mc64RowScaleD;
+		d_mc64ColScale = mc64ColScaleD;
 		loc_timer.Stop();
 		m_timeMC64 = loc_timer.getElapsed();
 	} else {
-		mc64RowScale.resize(m_n);
-		mc64ColScale.resize(m_n);
-		mc64RowPerm.resize(m_n);
+		d_mc64RowScale.resize(m_n);
+		d_mc64ColScale.resize(m_n);
+		d_mc64RowPerm.resize(m_n);
 		scaleMap.resize(m_nnz);
 
-		thrust::sequence(mc64RowPerm.begin(), mc64RowPerm.end());
-		cusp::blas::fill(mc64RowScale, (T) 1.0);
-		cusp::blas::fill(mc64ColScale, (T) 1.0);
+		thrust::sequence(d_mc64RowPerm.begin(), d_mc64RowPerm.end());
+		cusp::blas::fill(d_mc64RowScale, (T) 1.0);
+		cusp::blas::fill(d_mc64ColScale, (T) 1.0);
 		cusp::blas::fill(scaleMap, (T) 1.0);
 	}
 
@@ -952,15 +959,15 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::MC64(const MatrixCsr& Acsr,
+Graph<T>::MC64(const MatrixCsrD& Acsr,
 			   bool             scale,
 			   bool             mc64FirstStageOnly,
-               IntVector&       mc64RowPerm,
-               DoubleVector&    mc64RowScale,
-               DoubleVector&    mc64ColScale,
+               IntVectorD&      d_mc64RowPerm,
+               DoubleVectorD&   d_mc64RowScale,
+               DoubleVectorD&   d_mc64ColScale,
                MatrixMapF&      scaleMap)
 {
-	find_minimum_match(Acsr, mc64FirstStageOnly, mc64RowPerm, mc64RowScale, mc64ColScale);
+	find_minimum_match(Acsr, mc64FirstStageOnly, d_mc64RowPerm, d_mc64RowScale, d_mc64ColScale);
 
 	CPUTimer loc_timer;
 
@@ -973,19 +980,36 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 	if (mc64FirstStageOnly)
 		scale = false;
 
+	MatrixCsr Acsrh = Acsr;
+	IntVector mc64RowPerm = d_mc64RowPerm;
+	Vector    mc64RowScale = d_mc64RowScale;
+	Vector    mc64ColScale = d_mc64ColScale;
 	if (scale) {
-		for (EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++) {
-			int from = iter->m_from;
-			int to   = iter->m_to;
-			T scaleFact = (T)(mc64RowScale[from] * mc64ColScale[to]);
-			if (m_trackReordering)
-				scaleMap[iter->m_ori_idx] = scaleFact;
-			iter->m_val *= scaleFact;
-			iter->m_from = mc64RowPerm[from];
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = Acsrh.row_offsets[i], end_idx = Acsrh.row_offsets[i+1];
+			for (int l = start_idx; l < end_idx; l++) {
+				m_edges[l].m_from = mc64RowPerm[i];
+				int to   = (m_edges[l].m_to   = Acsrh.column_indices[l]);
+				T scaleFact = mc64RowScale[i] * mc64ColScale[to];
+				if (m_trackReordering) {
+					scaleMap[l] = scaleFact;
+					m_edges[l].m_ori_idx = l;
+				}
+				m_edges[l].m_val = scaleFact * Acsrh.values[l];
+			}
 		}
 	} else {
-		for(EdgeIterator iter = m_edges.begin(); iter != m_edges.end(); iter++)
-			iter->m_from = mc64RowPerm[iter->m_from];
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = Acsrh.row_offsets[i], end_idx = Acsrh.row_offsets[i+1];
+			for (int l = start_idx; l < end_idx; l++) {
+				m_edges[l].m_from = mc64RowPerm[i];
+				m_edges[l].m_to   = Acsrh.column_indices[l];
+				if (m_trackReordering)
+					m_edges[l].m_ori_idx = l;
+
+				m_edges[l].m_val = Acsrh.values[l];
+			}
+		}
 
 		if (m_trackReordering)
 			cusp::blas::fill(scaleMap, (T) 1.0);
@@ -1344,66 +1368,73 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
+Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
 							 bool             mc64FirstStageOnly, 
-							 IntVector&       mc64RowPerm,
-                             DoubleVector&    mc64RowScale,
-                             DoubleVector&    mc64ColScale)
+							 IntVectorD&      d_mc64RowPerm,
+                             DoubleVectorD&   d_mc64RowScale,
+                             DoubleVectorD&   d_mc64ColScale)
 {
 	CPUTimer loc_timer;
 
 	loc_timer.Start();
 	// Allocate space for the output vectors.
-	mc64RowPerm.resize(m_n, 0);
-	mc64RowScale.resize(m_n + 1, 0);
-	mc64ColScale.resize(m_n + 1, 0);
+	d_mc64RowPerm.resize(m_n);
 
 	// Allocate space for temporary vectors.
-	IntVector     row_ptr(m_n + 1, 0);
-	IntVector     rows(m_nnz);
-	IntVector     rev_match_nodes(m_nnz);
-	DoubleVector  c_val(m_nnz);
-	DoubleVector  max_val_in_col(m_n + 1, 0);
-	IntVector     prev(m_n + 1);
-	IntVector     matched(m_n + 1, 0);
-	IntVector     rev_matched(m_n + 1, 0);
-	IntVector     mc64RowReordering(m_n, 0);
+	IntVectorD     d_row_ptr(m_n + 1, 0);
+	IntVectorD     d_rows(m_nnz);
+	DoubleVectorD  d_c_val(m_nnz);
+	DoubleVectorD  d_max_val_in_col(m_n, 0);
 
-	get_csc_matrix(Acsr, row_ptr, rows, c_val, max_val_in_col);
+	BoolVector     matched(m_n, 0);
+	BoolVector     rev_matched(m_n, 0);
+	IntVector      mc64RowReordering(m_n, 0);
+	IntVector      rev_match_nodes(m_nnz);
+
+	get_csc_matrix(Acsr, d_c_val, d_max_val_in_col);
 	loc_timer.Stop();
 	m_timeMC64_pre = loc_timer.getElapsed();
 
 	loc_timer.Start();
+	IntVector  row_ptr           = Acsr.row_offsets;
+	IntVector  rows              = Acsr.column_indices;
+	DoubleVector c_val           = d_c_val;
+	DoubleVector mc64RowScale(m_n);
+	DoubleVector mc64ColScale(m_n);
 	init_reduced_cval(mc64FirstStageOnly, row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
 	loc_timer.Stop();
 	m_timeMC64_first = loc_timer.getElapsed();
 
 	loc_timer.Start();
-	if (!mc64FirstStageOnly) {
-		IntVector  irn(m_n);
-		for(int i=0; i<m_n; i++) {
-			if(rev_matched[i]) continue;
-			bool success = find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
-		}
-	}
 
 	{
-		for (int i=0; i<m_n; i++)
-			if (!matched[i])
-				throw system_error(system_error::Matrix_singular, "Singular matrix found");
+		IntVector  irn(m_n);
+		IntVector  prev(m_n);
+		for(int i=0; i<m_n; i++) {
+			if(rev_matched[i]) continue;
+			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
+		}
+
+		{
+			for (int i=0; i<m_n; i++)
+				if (!matched[i])
+					throw system_error(system_error::Matrix_singular, "Singular matrix found");
+		}
+
+
+		d_mc64RowScale = mc64RowScale;
+		d_mc64ColScale = mc64ColScale;
 	}
+	IntVectorD d_mc64RowReordering   =  mc64RowReordering;
+	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), d_mc64RowReordering.begin(), d_mc64RowPerm.begin());
 
-	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), mc64RowReordering.begin(), mc64RowPerm.begin());
-	mc64RowScale.pop_back();
-	mc64ColScale.pop_back();
-	max_val_in_col.pop_back();
+	thrust::transform(d_mc64RowScale.begin(), d_mc64RowScale.end(), d_mc64RowScale.begin(), Exponential());
+	thrust::transform(thrust::make_transform_iterator(d_mc64ColScale.begin(), Exponential()),
+			thrust::make_transform_iterator(d_mc64ColScale.end(), Exponential()),
+			d_max_val_in_col.begin(),
+			d_mc64ColScale.begin(),
+			thrust::divides<double>());
 
-	thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), Exponential());
-	thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), Exponential()),
-	                  thrust::make_transform_iterator(mc64ColScale.end(), Exponential()),
-	                  max_val_in_col.begin(),
-	                  mc64ColScale.begin(),
-	                  thrust::divides<double>());
 	loc_timer.Stop();
 	m_timeMC64_second = loc_timer.getElapsed();
 }
@@ -1417,60 +1448,29 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-Graph<T>::get_csc_matrix(const MatrixCsr& Acsr,
-						 IntVector&       row_ptr,
-                         IntVector&       rows,
-                         DoubleVector&    c_val,
-                         DoubleVector&    max_val_in_col)
+Graph<T>::get_csc_matrix(const MatrixCsrD& Acsr,
+                         DoubleVectorD&    c_val,
+                         DoubleVectorD&    max_val_in_col)
 {
 	int nnz = Acsr.num_entries;
 
-	cusp::blas::fill(c_val, LOC_INFINITY);
-
-	cusp::copy(Acsr.column_indices, rows);
-
-	const int GPU_ASSEMBLE_THRESHOLD = 100000;
-	if (nnz < GPU_ASSEMBLE_THRESHOLD) {
-		cusp::copy(Acsr.row_offsets, row_ptr);
-		cusp::copy(Acsr.values, c_val);
-		for (int i = 0; i < nnz; i++)
-			if (c_val[i] < 0)
-				c_val[i] = -c_val[i];
-
-		IntVector row_indices(nnz);
-		cusp::detail::offsets_to_indices(Acsr.row_offsets, row_indices);
-		thrust::reduce_by_key(row_indices.begin(), row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), max_val_in_col.begin(), thrust::equal_to<double>(), thrust::maximum<double>());
-
-		for (int i = 0; i < m_n; i++) {
-			int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
-			for (int l = start_idx; l < end_idx; l++)
-				c_val[l] = log(max_val_in_col[i] / c_val[l]);
-		}
-	} else {
-		DoubleVectorD dc_val     = Acsr.values;
-		DoubleVectorD d_max_vals(m_n);
-		IntVectorD    d_row_ptr  = Acsr.row_offsets;
-		{
-			IntVectorD    d_row_indices(nnz);
-			cusp::detail::offsets_to_indices(d_row_ptr, d_row_indices);
-			thrust::transform(dc_val.begin(), dc_val.end(), dc_val.begin(), AbsoluteValue());
-			 thrust::reduce_by_key(d_row_indices.begin(), d_row_indices.end(), dc_val.begin(), thrust::make_discard_iterator(), d_max_vals.begin(), thrust::equal_to<double>(), thrust::maximum<double>());
-		}
-
-		double *dc_val_ptr = thrust::raw_pointer_cast(&dc_val[0]);
-		double *dmax_val_ptr = thrust::raw_pointer_cast(&d_max_vals[0]);
-		int *d_row_ptrs = thrust::raw_pointer_cast(&d_row_ptr[0]);
-
-		int blockX = m_n, blockY = 1;
-		kernelConfigAdjust(blockX, blockY, 32768);
-		dim3 grids(blockX, blockY);
-
-		device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs);
-
-		c_val = dc_val;
-		max_val_in_col = d_max_vals;
-		row_ptr = Acsr.row_offsets;
+	c_val   = Acsr.values;
+	{
+		IntVectorD    d_row_indices(nnz);
+		cusp::detail::offsets_to_indices(Acsr.row_offsets, d_row_indices);
+		thrust::transform(c_val.begin(), c_val.end(), c_val.begin(), AbsoluteValue());
+		thrust::reduce_by_key(d_row_indices.begin(), d_row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), max_val_in_col.begin(), thrust::equal_to<double>(), thrust::maximum<double>());
 	}
+
+	double *dc_val_ptr    = thrust::raw_pointer_cast(&c_val[0]);
+	double *dmax_val_ptr  = thrust::raw_pointer_cast(&max_val_in_col[0]);
+	const int *d_row_ptrs = thrust::raw_pointer_cast(&Acsr.row_offsets[0]);
+
+	int blockX = m_n, blockY = 1;
+	kernelConfigAdjust(blockX, blockY, 32768);
+	dim3 grids(blockX, blockY);
+
+	device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs);
 }
 
 template<typename T>
@@ -1534,23 +1534,42 @@ Graph<T>::init_reduced_cval(bool           first_stage_only,
                             DoubleVector&  v_val,
                             IntVector&     match_nodes,
                             IntVector&     rev_match_nodes,
-                            IntVector&     matched,
-                            IntVector&     rev_matched) 
+                            BoolVector&    matched,
+                            BoolVector&    rev_matched) 
 {
-	cusp::blas::fill(u_val, LOC_INFINITY);
-	cusp::blas::fill(v_val, LOC_INFINITY);
-
-	for(int i = 0; i < m_n; i++) {
-		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
-		for(int j = start_idx; j < end_idx; j++) {
-			if (c_val[j] > LOC_INFINITY / 2.0) continue;
-			int row = rows[j];
-			if(u_val[row] > c_val[j]) {
-				u_val[row] = c_val[j];
-			}
-		}
+	{
+		IntVector row_indices(c_val.size());
+		cusp::detail::offsets_to_indices(row_ptr, row_indices);
+		thrust::reduce_by_key(row_indices.begin(), row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), u_val.begin(), thrust::equal_to<double>(), thrust::minimum<double>());
 	}
 
+#if 0
+	int *p_row_offsets    =   thrust::raw_pointer_cast(&row_ptr[0]);
+	int *p_column_indices =   thrust::raw_pointer_cast(&rows[0]);
+	double *p_values      =   thrust::raw_pointer_cast(&c_val[0]);
+	double *p_u_values    =   thrust::raw_pointer_cast(&u_val[0]);
+	double *p_v_values    =   thrust::raw_pointer_cast(&v_val[0]);
+	int *p_matches        =   thrust::raw_pointer_cast(&match_nodes[0]);
+	int *p_rev_matches    =   thrust::raw_pointer_cast(&rev_match_nodes[0]);
+	bool *p_matched       =   thrust::raw_pointer_cast(&matched[0]);
+	bool *p_rev_matched   =   thrust::raw_pointer_cast(&rev_matched[0]);
+
+	int blockX = m_n, blockY = 1;
+	kernelConfigAdjust(blockX, blockY, 32768);
+	dim3 grids(blockX, blockY);
+
+
+	device::findInitialMatch<<<grids, 64>>>(m_n, p_row_offsets, p_column_indices, p_values, p_u_values, p_v_values,
+			                                p_matches, p_rev_matches, p_matched, p_rev_matched);
+
+	blockX = 1;
+	int threadX = m_n;
+	kernelConfigAdjust(threadX, blockX, 512);
+	device::clearMatchesWithContention<<<blockX, threadX>>> (m_n, p_column_indices, p_matches, p_rev_matches, p_rev_matched);
+#endif
+
+#if 1
+	cusp::blas::fill(v_val, LOC_INFINITY);
 	for(int i = 0; i < m_n; i++) {
 		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
 		int min_idx = -1;
@@ -1682,13 +1701,10 @@ Graph<T>::init_reduced_cval(bool           first_stage_only,
 		cusp::blas::fill(u_val, 1.0);
 		cusp::blas::fill(v_val, 1.0);
 	} else {
-		for(int i = 0; i < m_n; i++) {
-			if (!matched[i])
-				u_val[i] = 0.0;
-			if (!rev_matched[i])
-				v_val[i] = 0.0;
-		}
+		thrust::transform_if(u_val.begin(), u_val.end(), matched.begin(), u_val.begin(), ClearValue(), is_not());
+		thrust::transform_if(v_val.begin(), v_val.end(), rev_matched.begin(), v_val.begin(), ClearValue(), is_not());
 	}
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -1700,8 +1716,8 @@ Graph<T>::init_reduced_cval(bool           first_stage_only,
 template<typename T>
 bool
 Graph<T>::find_shortest_aug_path(int            init_node,
-                                 IntVector&     matched,
-                                 IntVector&     rev_matched,
+                                 BoolVector&    matched,
+                                 BoolVector&    rev_matched,
                                  IntVector&     match_nodes,
                                  IntVector&     rev_match_nodes,
                                  IntVector&     row_ptr,
@@ -1714,9 +1730,9 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 {
 	bool success = false;
 
-	static IntVector B(m_n+1, 0);
+	static IntVector B(m_n, 0);
 	int b_cnt = 0;
-	static BoolVector inB(m_n+1, false);
+	static BoolVector inB(m_n, false);
 
 	std::priority_queue<Dijkstra> Q;
 	double lsp = 0.0;
@@ -1729,8 +1745,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 	int ksap = -1;
 	prev[init_node] = -1;
 
-	static DoubleVector d_vals(m_n+1, LOC_INFINITY);
-	static BoolVector visited(m_n+1, false);
+	static DoubleVector d_vals(m_n, LOC_INFINITY);
+	static BoolVector visited(m_n, false);
 
 	while(1) {
 		int start_cur = row_ptr[cur_node];
