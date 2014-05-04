@@ -1130,7 +1130,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 	// Reorder the matrix and apply drop-off. For this, we convert the
 	// input matrix to COO format and copy it on the host.
-	PrecMatrixCsr Acsr = A;
+	PrecMatrixCsrH Acsrh = A;
 	transfer_timer.Stop();
 	m_time_transfer = transfer_timer.getElapsed();
 
@@ -1156,7 +1156,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	const int    BANDWIDTH_THRESHOLD = 64;
 	bool         doRCM = (m_maxBandwidth > BANDWIDTH_THRESHOLD);
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acsr, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, m_mc64RowScale, m_mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acsrh, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, optReordering, optPerm, mc64RowPerm, m_mc64RowScale, m_mc64ColScale, scaleMap, m_k_mc64);
 	reorder_timer.Stop();
 
 	m_time_MC64        = graph.getTimeMC64();

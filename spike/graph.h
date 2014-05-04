@@ -124,7 +124,7 @@ public:
 	double     getTimeRCM() const      {return m_timeRCM;}
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
-	int        reorder(const MatrixCsrD& Acsr,
+	int        reorder(const MatrixCsr& Acsr,
 	                   bool             testMC64,
 	                   bool             doMC64,
 					   bool             mc64FirstStageOnly,
@@ -201,7 +201,7 @@ private:
 
 	BoolVector    m_exists;
 
-	bool       MC64(const MatrixCsrD& Acsr,
+	bool       MC64(const MatrixCsr& Acsr,
 			        bool             scale,
 					bool             mc64FirstStageOnly,
 	                IntVectorD&      mc64RowPerm,
@@ -228,14 +228,16 @@ private:
 	static const double LOC_INFINITY;
 
 	// Functions used in MC64
-	void       find_minimum_match(const MatrixCsrD& Acsr,
+	void       find_minimum_match(const MatrixCsr& Acsr,
+								  bool             scale,
 			                      bool             mc64FirstStageOnly,
 								  IntVectorD&      mc64RowPerm,
 	                              DoubleVectorD&   mc64RowScale,
-	                              DoubleVectorD&   mc64ColScale);
+	                              DoubleVectorD&   mc64ColScale,
+								  MatrixMapF&      scaleMap);
 	void       init_reduced_cval(bool           first_stage_only,
-			                     IntVector&     row_ptr,
-	                             IntVector&     rows,
+			                     const IntVector&     row_ptr,
+	                             const IntVector&     rows,
 	                             DoubleVector&  c_val, 
 	                             DoubleVector&  u_val,
 	                             DoubleVector&  v_val,
@@ -246,12 +248,12 @@ private:
 	bool       find_shortest_aug_path(int init_node,
 	                                  BoolVector& matched, BoolVector& rev_matched, 
 	                                  IntVector& match_nodes, IntVector& rev_match_nodes,
-	                                  IntVector& row_ptr, IntVector& rows, IntVector& prev,
+	                                  const IntVector& row_ptr, const IntVector& rows, IntVector& prev,
 	                                  DoubleVector& u_val,
 	                                  DoubleVector& v_val,
 	                                  DoubleVector& c_val,
 	                                  IntVector&    irn);
-	void       get_csc_matrix(const MatrixCsrD& Acsr,
+	void       get_csc_matrix(const MatrixCsr&  Acsr,
 	                          DoubleVectorD&    c_val,
 	                          DoubleVectorD&    max_val_in_col);
 
@@ -379,7 +381,7 @@ Graph<T>::Graph(bool trackReordering)
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::reorder(const MatrixCsrD& Acsr,
+Graph<T>::reorder(const MatrixCsr&  Acsr,
                   bool              testMC64,
                   bool              doMC64,
 				  bool              mc64FirstStageOnly,
@@ -959,7 +961,7 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::MC64(const MatrixCsrD& Acsr,
+Graph<T>::MC64(const MatrixCsr& Acsr,
 			   bool             scale,
 			   bool             mc64FirstStageOnly,
                IntVectorD&      d_mc64RowPerm,
@@ -967,56 +969,7 @@ Graph<T>::MC64(const MatrixCsrD& Acsr,
                DoubleVectorD&   d_mc64ColScale,
                MatrixMapF&      scaleMap)
 {
-	find_minimum_match(Acsr, mc64FirstStageOnly, d_mc64RowPerm, d_mc64RowScale, d_mc64ColScale);
-
-	CPUTimer loc_timer;
-
-	loc_timer.Start();
-
-	if (m_trackReordering)
-		scaleMap.resize(m_nnz);
-
-	// TODO: how to do scale when we apply only the first stage
-	if (mc64FirstStageOnly)
-		scale = false;
-
-	MatrixCsr Acsrh = Acsr;
-	IntVector mc64RowPerm = d_mc64RowPerm;
-	Vector    mc64RowScale = d_mc64RowScale;
-	Vector    mc64ColScale = d_mc64ColScale;
-	if (scale) {
-		for (int i = 0; i < m_n; i++) {
-			int start_idx = Acsrh.row_offsets[i], end_idx = Acsrh.row_offsets[i+1];
-			for (int l = start_idx; l < end_idx; l++) {
-				m_edges[l].m_from = mc64RowPerm[i];
-				int to   = (m_edges[l].m_to   = Acsrh.column_indices[l]);
-				T scaleFact = mc64RowScale[i] * mc64ColScale[to];
-				if (m_trackReordering) {
-					scaleMap[l] = scaleFact;
-					m_edges[l].m_ori_idx = l;
-				}
-				m_edges[l].m_val = scaleFact * Acsrh.values[l];
-			}
-		}
-	} else {
-		for (int i = 0; i < m_n; i++) {
-			int start_idx = Acsrh.row_offsets[i], end_idx = Acsrh.row_offsets[i+1];
-			for (int l = start_idx; l < end_idx; l++) {
-				m_edges[l].m_from = mc64RowPerm[i];
-				m_edges[l].m_to   = Acsrh.column_indices[l];
-				if (m_trackReordering)
-					m_edges[l].m_ori_idx = l;
-
-				m_edges[l].m_val = Acsrh.values[l];
-			}
-		}
-
-		if (m_trackReordering)
-			cusp::blas::fill(scaleMap, (T) 1.0);
-	}
-	loc_timer.Stop();
-	m_timeMC64_post = loc_timer.getElapsed();
-
+	find_minimum_match(Acsr, scale, mc64FirstStageOnly, d_mc64RowPerm, d_mc64RowScale, d_mc64ColScale, scaleMap);
 	return true;
 }
 
@@ -1368,11 +1321,13 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // ----------------------------------------------------------------------------
 template <typename T>
 void
-Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
+Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
+							 bool             scale,
 							 bool             mc64FirstStageOnly, 
 							 IntVectorD&      d_mc64RowPerm,
                              DoubleVectorD&   d_mc64RowScale,
-                             DoubleVectorD&   d_mc64ColScale)
+                             DoubleVectorD&   d_mc64ColScale,
+							 MatrixMapF&      scaleMap)
 {
 	CPUTimer loc_timer;
 
@@ -1381,8 +1336,6 @@ Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
 	d_mc64RowPerm.resize(m_n);
 
 	// Allocate space for temporary vectors.
-	IntVectorD     d_row_ptr(m_n + 1, 0);
-	IntVectorD     d_rows(m_nnz);
 	DoubleVectorD  d_c_val(m_nnz);
 	DoubleVectorD  d_max_val_in_col(m_n, 0);
 
@@ -1396,12 +1349,10 @@ Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
 	m_timeMC64_pre = loc_timer.getElapsed();
 
 	loc_timer.Start();
-	IntVector  row_ptr           = Acsr.row_offsets;
-	IntVector  rows              = Acsr.column_indices;
 	DoubleVector c_val           = d_c_val;
 	DoubleVector mc64RowScale(m_n);
 	DoubleVector mc64ColScale(m_n);
-	init_reduced_cval(mc64FirstStageOnly, row_ptr, rows, c_val, mc64RowScale, mc64ColScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
+	init_reduced_cval(mc64FirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, mc64RowScale, mc64ColScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
 	loc_timer.Stop();
 	m_timeMC64_first = loc_timer.getElapsed();
 
@@ -1412,7 +1363,7 @@ Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
 		IntVector  prev(m_n);
 		for(int i=0; i<m_n; i++) {
 			if(rev_matched[i]) continue;
-			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, row_ptr, rows, prev, mc64RowScale, mc64ColScale, c_val, irn);
+			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, mc64RowScale, mc64ColScale, c_val, irn);
 		}
 
 		{
@@ -1421,22 +1372,68 @@ Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
 					throw system_error(system_error::Matrix_singular, "Singular matrix found");
 		}
 
+		DoubleVector max_val_in_col = d_max_val_in_col;
+		thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), Exponential());
+		thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), Exponential()),
+				thrust::make_transform_iterator(mc64ColScale.end(), Exponential()),
+				max_val_in_col.begin(),
+				mc64ColScale.begin(),
+				thrust::divides<double>());
+
 
 		d_mc64RowScale = mc64RowScale;
 		d_mc64ColScale = mc64ColScale;
 	}
+	loc_timer.Stop();
+	m_timeMC64_second = loc_timer.getElapsed();
+
 	IntVectorD d_mc64RowReordering   =  mc64RowReordering;
 	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), d_mc64RowReordering.begin(), d_mc64RowPerm.begin());
 
-	thrust::transform(d_mc64RowScale.begin(), d_mc64RowScale.end(), d_mc64RowScale.begin(), Exponential());
-	thrust::transform(thrust::make_transform_iterator(d_mc64ColScale.begin(), Exponential()),
-			thrust::make_transform_iterator(d_mc64ColScale.end(), Exponential()),
-			d_max_val_in_col.begin(),
-			d_mc64ColScale.begin(),
-			thrust::divides<double>());
 
+	loc_timer.Start();
+
+	if (m_trackReordering)
+		scaleMap.resize(m_nnz);
+
+	// TODO: how to do scale when we apply only the first stage
+	if (mc64FirstStageOnly)
+		scale = false;
+
+	IntVector mc64RowPerm = d_mc64RowPerm;
+	if (scale) {
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
+			for (int l = start_idx; l < end_idx; l++) {
+				m_edges[l].m_from = mc64RowPerm[i];
+				int to   = (m_edges[l].m_to   = Acsr.column_indices[l]);
+				T scaleFact = (T)(mc64RowScale[i] * mc64ColScale[to]);
+				if (m_trackReordering) {
+					scaleMap[l] = scaleFact;
+					m_edges[l].m_ori_idx = l;
+				}
+				m_edges[l].m_val = scaleFact * Acsr.values[l];
+			}
+		}
+	} else {
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
+			for (int l = start_idx; l < end_idx; l++) {
+				m_edges[l].m_from = mc64RowPerm[i];
+				m_edges[l].m_to   = Acsr.column_indices[l];
+				if (m_trackReordering)
+					m_edges[l].m_ori_idx = l;
+
+				m_edges[l].m_val = Acsr.values[l];
+			}
+		}
+
+		if (m_trackReordering)
+			cusp::blas::fill(scaleMap, (T) 1.0);
+	}
 	loc_timer.Stop();
-	m_timeMC64_second = loc_timer.getElapsed();
+	m_timeMC64_post = loc_timer.getElapsed();
+
 }
 
 // ----------------------------------------------------------------------------
@@ -1448,23 +1445,24 @@ Graph<T>::find_minimum_match(const MatrixCsrD& Acsr,
 // ----------------------------------------------------------------------------
 template<typename T>
 void
-Graph<T>::get_csc_matrix(const MatrixCsrD& Acsr,
+Graph<T>::get_csc_matrix(const MatrixCsr&  Acsr,
                          DoubleVectorD&    c_val,
                          DoubleVectorD&    max_val_in_col)
 {
 	int nnz = Acsr.num_entries;
+	IntVectorD    d_row_offsets = Acsr.row_offsets;
 
 	c_val   = Acsr.values;
 	{
 		IntVectorD    d_row_indices(nnz);
-		cusp::detail::offsets_to_indices(Acsr.row_offsets, d_row_indices);
+		cusp::detail::offsets_to_indices(d_row_offsets, d_row_indices);
 		thrust::transform(c_val.begin(), c_val.end(), c_val.begin(), AbsoluteValue());
 		thrust::reduce_by_key(d_row_indices.begin(), d_row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), max_val_in_col.begin(), thrust::equal_to<double>(), thrust::maximum<double>());
 	}
 
 	double *dc_val_ptr    = thrust::raw_pointer_cast(&c_val[0]);
 	double *dmax_val_ptr  = thrust::raw_pointer_cast(&max_val_in_col[0]);
-	const int *d_row_ptrs = thrust::raw_pointer_cast(&Acsr.row_offsets[0]);
+	const int *d_row_ptrs = thrust::raw_pointer_cast(&d_row_offsets[0]);
 
 	int blockX = m_n, blockY = 1;
 	kernelConfigAdjust(blockX, blockY, 32768);
@@ -1527,8 +1525,8 @@ Graph<T>::get_csr_matrix(MatrixCsr&       Acsr, int numPartitions)
 template <typename T>
 void 
 Graph<T>::init_reduced_cval(bool           first_stage_only,
-							IntVector&     row_ptr,
-                            IntVector&     rows,
+							const IntVector&     row_ptr,
+                            const IntVector&     rows,
                             DoubleVector&  c_val,
                             DoubleVector&  u_val,
                             DoubleVector&  v_val,
@@ -1720,8 +1718,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
                                  BoolVector&    rev_matched,
                                  IntVector&     match_nodes,
                                  IntVector&     rev_match_nodes,
-                                 IntVector&     row_ptr,
-                                 IntVector&     rows,
+                                 const IntVector&     row_ptr,
+                                 const IntVector&     rows,
                                  IntVector&     prev,
                                  DoubleVector&  u_val,
                                  DoubleVector&  v_val,
