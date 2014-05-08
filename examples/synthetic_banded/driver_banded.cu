@@ -114,6 +114,7 @@ void PrintStats(bool               success,
 // -----------------------------------------------------------------------------
 int main(int argc, char** argv) 
 {
+	srand(1);
 	// Set up the problem to be solved.
 	int            pN;
 	int            pk;
@@ -522,6 +523,8 @@ GetBandedMatrix(int N, int k, REAL d, Matrix& A)
 		Ah.values[diag_iiz] = d * row_sum;
 	}
 
+	cusp::io::write_matrix_market_file(Ah, "A.mtx");
+	exit(-1);
 	// Copy the matrix from host to device, while also converting it 
 	// from COO to CSR format.
 	A = Ah;
