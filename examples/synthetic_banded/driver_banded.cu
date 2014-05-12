@@ -23,8 +23,8 @@
 typedef double REAL;
 typedef float  PREC_REAL;
 
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
-typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename cusp::csr_matrix<int, REAL, cusp::host_memory> Matrix;
+typedef typename cusp::array1d<REAL, cusp::host_memory>         Vector;
 
 typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
 typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
@@ -134,7 +134,7 @@ int main(int argc, char** argv)
 		return 1;
 
 	// Get the device with most available memory.
-	spikeSetDevice();
+	// spikeSetDevice();
 
 	// Get matrix and rhs.
 	Matrix A;
@@ -143,6 +143,8 @@ int main(int argc, char** argv)
 	Vector delta_x_target;
 
 	GetBandedMatrix(pN, pk, pd, A);
+
+#if 0
 	GetRhsVector(A, b, x_target);
 
 	// Create the SPIKE Solver object and the SPMV functor. Perform the solver
@@ -177,6 +179,7 @@ int main(int argc, char** argv)
 		spike::Stats stats = mySolver.getStats();
 		printf("%d,%d,%d,%g,%g\n", success, pN, pk, pd, stats.timeSetup + stats.timeSolve);
 	}
+#endif
 
 	return 0;
 }
