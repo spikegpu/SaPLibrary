@@ -86,6 +86,10 @@ CSimpleOptA::SOption g_options[] = {
 	SO_END_OF_OPTIONS
 };
 
+// Color to print
+enum TestColor {COLOR_NO = 0,
+                COLOR_RED,
+                COLOR_GREEN} ;
 
 // -----------------------------------------------------------------------------
 // Forward declarations.
@@ -107,6 +111,36 @@ void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
 void PrintStats(bool               success,
                 const SpikeSolver& mySolver,
                 const SpmvFunctor& mySpmv);
+
+class OutputItem
+{
+public:
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(4) {}
+
+	int           m_additional_item_count;
+
+	template <typename T>
+	void operator() (T item, TestColor c = COLOR_NO) {
+		m_o << "<td style=\"border-style: inset;\">\n";
+		switch (c)
+		{
+			case COLOR_RED:
+				m_o << "<p> <FONT COLOR=\"Red\">" << item << " </FONT> </p>\n";
+				break;
+
+			case COLOR_GREEN:
+				m_o << "<p> <FONT COLOR=\"Green\">" << item << " </FONT> </p>\n";
+				break;
+
+			default:
+				m_o << "<p> " << item << " </p>\n";
+				break;
+		}
+		m_o << "</td>\n";
+	}
+private:
+	std::ostream &m_o;
+};
 
 
 // -----------------------------------------------------------------------------
@@ -151,15 +185,55 @@ int main(int argc, char** argv)
 	SpmvFunctor  mySpmv(A);
 	Vector x(A.num_rows, 0);
 
-	mySolver.setup(A);
+	bool success = false;
 
-	bool success = mySolver.solve(mySpmv, b, x);
+	OutputItem outputItem(cout);
+	cout << "<tr valign=top>" << endl;
+
+	outputItem(pN);
+	outputItem(pk);
+	outputItem(pd);
+	outputItem(numPart);
+
+	try {
+		mySolver.setup(A);
+		success = mySolver.solve(mySpmv, b, x);
+	} catch (const std::bad_alloc&) {
+		outputItem ("OoM (in setup stage)", COLOR_RED);
+
+		for (int i = 0; i < outputItem.m_additional_item_count; i++)
+			outputItem("");
+
+		cout << "</tr>" << endl;
+
+		return 1;
+	}
+
+	spike::Stats stats = mySolver.getStats();
+
+	// Reason why cannot solve (for unsuccessful solving only)
+	if (success)
+		outputItem ( "OK");
+	else
+		outputItem ( "NConv", COLOR_RED);
+
+	// Total time for setup
+	outputItem( stats.timeSetup);
+	// Number of iterations to converge
+	outputItem( stats.numIterations);
+	// Total time for Krylov solve
+	outputItem( stats.timeSolve);
+	// Total amount of time
+	outputItem( stats.timeSetup + stats.timeSolve);
+
+	cout << "</tr>" << endl;
 
 	// Write solution file and print solver statistics.
 	if (fileSol.length() > 0)
 		cusp::io::write_matrix_market_file(x, fileSol);
 
 	// Calculate the actual residual and its norm.
+	/*
 	if (verbose) {
 		PrintStats(success, mySolver, mySpmv);
 
@@ -175,7 +249,7 @@ int main(int argc, char** argv)
 	} else {
 		spike::Stats stats = mySolver.getStats();
 		printf("%d,%d,%d,%g,%g\n", success, pN, pk, pd, stats.timeSetup + stats.timeSolve);
-	}
+	}*/
 
 	return 0;
 }
@@ -223,8 +297,11 @@ void spikeSetDevice() {
 void
 GetRhsVector(const Matrix& A, Vector& b, Vector& x_target)
 {
+	int     N = A.num_rows;
+	b.resize(N, (REAL)1.0);
 	// Create a desired solution vector (on the host), then copy it
 	// to the device.
+	/*
 	int     N = A.num_rows;
 	REAL    dt = 1.0/(N-1);
 	REAL    max_val = 100.0;
@@ -240,7 +317,7 @@ GetRhsVector(const Matrix& A, Vector& b, Vector& x_target)
 	
 	// Calculate the RHS vector.
 	b.resize(N);
-	cusp::multiply(A, x_target, b);
+	cusp::multiply(A, x_target, b);  */
 	////cusp::io::write_matrix_market_file(b, "b.mtx");
 }
 

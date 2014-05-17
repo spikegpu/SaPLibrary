@@ -28,25 +28,6 @@
 
 namespace spike {
 
-
-class Dijkstra
-{
-public:
-	Dijkstra() {}
-	Dijkstra(int idx, double val) : m_idx(idx), m_val(val) {}
-
-	friend bool operator<(const Dijkstra& a, const Dijkstra& b) {
-		return a.m_val > b.m_val;
-	}
-
-	friend bool operator>(const Dijkstra& a, const Dijkstra& b) {
-		return a.m_val < b.m_val;
-	}
-
-	int       m_idx;
-	double    m_val;
-};
-
 template <typename T>
 class Graph
 {
@@ -78,6 +59,7 @@ public:
 
 	typedef typename thrust::tuple<int, int>                     NodeType;
 	typedef typename thrust::tuple<int, int, T>                  WeightedEdgeType;
+	typedef typename thrust::tuple<int, double>                  Dijkstra;
 
 	Graph(bool trackReordering = false);
 
@@ -332,15 +314,11 @@ public:
 		}
 	};
 
-	friend bool operator<(const NodeType &a, const NodeType &b)
+	template <typename VType>
+	struct CompareValue
 	{
-		return thrust::get<1>(a) > thrust::get<1>(b);
-	}
-
-	friend bool operator>(const NodeType &a, const NodeType &b)
-	{
-		return thrust::get<1>(a) < thrust::get<1>(b);
-	}
+		bool operator () (const thrust::tuple<int, VType> &a, const thrust::tuple<int, VType> &b) const {return thrust::get<1>(a) > thrust::get<1>(b);}
+	};
 };
 
 
@@ -1106,7 +1084,7 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL ; trial_num++)
 	{
 		std::queue<int> q;
-		std::priority_queue<NodeType> pq;
+		std::priority_queue<NodeType, std::vector<NodeType>, CompareValue<int> > pq;
 
 		int tmp_node;
 		BoolVector pushed(m_n, false);
@@ -1285,7 +1263,7 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 
 	for (int num_trial = 0; num_trial < MAX_NUM_TRIAL; num_trial++) {
 		std::queue<int> q;
-		std::priority_queue<NodeType> pq;
+		std::priority_queue<NodeType, std::vector<NodeType>, CompareValue<int> > pq;
 
 		int tmp_node;
 		BoolVector pushed(node_end, false);
@@ -1851,7 +1829,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 	int b_cnt = 0;
 	static BoolVector inB(m_n, false);
 
-	std::priority_queue<Dijkstra> Q;
+	std::priority_queue<Dijkstra, std::vector<Dijkstra>, CompareValue<double> > Q;
+
 	double lsp = 0.0;
 	double lsap = LOC_INFINITY;
 	int cur_node = init_node;
@@ -1886,7 +1865,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 				} else if (d_new < d_vals[cur_row]){
 					d_vals[cur_row] = d_new;
 					prev[match_nodes[cur_row]] = cur_node;
-					Q.push(Dijkstra(cur_row, d_new));
+					Q.push(thrust::make_tuple(cur_row, d_new));
 					irn[cur_row] = i;
 				}
 			}
@@ -1898,7 +1877,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		while(!Q.empty()) {
 			min_d = Q.top();
 			Q.pop();
-			if(visited[min_d.m_idx]) 
+			if(visited[thrust::get<0>(min_d)]) 
 				continue;
 			found = true;
 			break;
@@ -1906,10 +1885,10 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		if(!found)
 			break;
 
-		int tmp_idx = min_d.m_idx;
+		int tmp_idx = thrust::get<0>(min_d);
 		visited[tmp_idx] = true;
 
-		lsp = min_d.m_val;
+		lsp = thrust::get<1>(min_d);
 		if(lsap <= lsp) {
 			visited[tmp_idx] = false;
 			d_vals[tmp_idx] = LOC_INFINITY;
@@ -1959,7 +1938,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		while(!Q.empty()) {
 			Dijkstra tmpD = Q.top();
 			Q.pop();
-			d_vals[tmpD.m_idx] = LOC_INFINITY;
+			d_vals[thrust::get<0>(tmpD)] = LOC_INFINITY;
 		}
 	}
 
