@@ -131,23 +131,24 @@ struct Stats
  * \tparam PrecValueType is the floating point type used in the preconditioner
  *         (to support mixed-precision calculations).
  */
-template <typename Array, typename PrecValueType>
+template <typename SolverValueType, typename PrecValueType>
 class Solver
 {
 public:
+	typedef typename Vector<SolverValueType>  SolverVector;
+	typedef typename Vector<PrecValueType>    PrecVector;
+
 	Solver(int             numPartitions,
 	       const Options&  opts);
 
-	template <typename Matrix>
-	bool setup(const Matrix& A);
+	bool setup(const CSRMatrix<SolverValueType>& A);
 
-	template <typename Array1>
-	bool update(const Array1& entries);
+	bool update(const SolverVector& entries);
 
 	template <typename SpmvOperator>
-	bool solve(SpmvOperator&  spmv,
-	           const Array&   b,
-	           Array&         x);
+	bool solve(SpmvOperator&         spmv,
+	           const SolverVector&   b,
+	           SolverVector&         x);
 
 	/// Extract solver statistics.
 	const Stats&       getStats() const          {return m_stats;}
@@ -155,21 +156,9 @@ public:
 	const std::string& getMonitorMessage() const {return m_monitor.getMessage();}
 
 private:
-	typedef typename Array::value_type    SolverValueType;
-	typedef typename Array::memory_space  MemorySpace;
-
-	typedef typename cusp::array1d<SolverValueType, MemorySpace>        SolverVector;
-	typedef typename cusp::array1d<PrecValueType,   MemorySpace>        PrecVector;
-
-	typedef typename cusp::array1d<PrecValueType,   cusp::host_memory>  PrecVectorH;
-	typedef typename cusp::array1d<int,             cusp::host_memory>  IntVectorH;
-
-	typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
-
-
 	KrylovSolverType                    m_solver;
-	Monitor<SolverVector>               m_monitor;
-	Precond<PrecVector>                 m_precond;
+	Monitor<SolverValueType>            m_monitor;
+	Precond<PrecValueType>              m_precond;
 
 	int                                 m_n;
 	bool                                m_trackReordering;
@@ -179,8 +168,7 @@ private:
 
 public:
 	// FIXME: this should only be used in nightly test, remove this
-	const Precond<PrecVector>&          getPreconditioner() const
-										{return m_precond;}
+	const Precond<PrecValueType>&       getPreconditioner() const {return m_precond;}
 };
 
 
@@ -430,21 +418,6 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 
 	switch(m_solver)
 	{
-		// CUSP Krylov solvers
-		case BiCGStab_C:
-			cusp::krylov::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		case GMRES_C:
-			cusp::krylov::gmres(spmv, x_vector, b_vector, 50, m_monitor, m_precond);
-			break;
-		case CG_C:
-			cusp::krylov::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
-			break;
-		case CR_C:
-			cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
-			break;
-
-		// SPIKE Krylov solvers
 		case BiCGStab1:
 			spike::bicgstab1(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
@@ -456,6 +429,10 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 			break;
 		case MINRES:
 			spike::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
+			break;
+		case CG:
+			//// TODO
+			////spike::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 	}
 

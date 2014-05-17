@@ -6,7 +6,7 @@
 #define SPIKE_SPMV_H
 
 
-#include <cusp/multiply.h>
+#include <cusparse.h>
 
 #include <spike/timer.h>
 
@@ -17,21 +17,18 @@ namespace spike {
 /// Default SPMV functor class.
 /**
  * This class implements the default SPMV functor for sparse matrix-vector
- * product, using the cusp::multiply algorithm.
+ * product, using the cusparse multiplication algorithm csrmv.
  *
- * \tparam Matrix is the type of the sparse matrix.
+ * \tparam T is the type of the sparse matrix values.
  */
-template <typename Matrix>
-class SpmvCusp : public cusp::linear_operator<typename Matrix::value_type, typename Matrix::memory_space, typename Matrix::index_type> 
+template <typename T>
+class Spmv
 {
 public:
-	typedef typename cusp::linear_operator<typename Matrix::value_type, typename Matrix::memory_space, typename Matrix::index_type> Parent;
-
-	SpmvCusp(Matrix& A) 
-	:	Parent(A.num_rows, A.num_cols),
-		m_A(A),
-		m_time(0), 
-		m_count(0) 
+	Spmv(CSRMatrix<T>& A) 
+	:	m_A(A),
+		m_time(0),
+		m_count(0)
 	{}
 
 	/// Cummulative time for all SPMV calls (ms).
@@ -48,13 +45,15 @@ public:
 		return 0;
 	}
 
-	/// Implementation of the SPMV functor using cusp::multiply().
-	template <typename Array>
-	void operator()(const Array& v,
-	                Array&       Av)
+	/// Implementation of the SPMV functor
+	void operator()(const Vector<T>& v,
+	                Vector<T>&       Av)
 	{
 		// m_timer.Start();
-		cusp::multiply(m_A, v, Av);
+		
+		//// TODO:  this needs to be fixed !!!!
+		////cusparseDcsrmv(...);
+
 		// m_timer.Stop();
 
 		// m_count++;
@@ -62,11 +61,11 @@ public:
 	}
 
 private:
-	Matrix&      m_A;
+	CSRMatrix<T>&   m_A;
 
-	GPUTimer     m_timer;
-	double       m_time;
-	int          m_count;
+	GPUTimer        m_timer;
+	double          m_time;
+	int             m_count;
 };
 
 } // namespace spike

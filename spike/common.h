@@ -53,16 +53,11 @@ const unsigned int MAX_GRID_DIMENSION = 32768;
 const unsigned int CRITICAL_THRESHOLD = 70;
 
 enum KrylovSolverType {
-	// CUSP solvers
-	BiCGStab_C,
-	GMRES_C,
-	CG_C,
-	CR_C,
-	// SPIKE solvers
 	BiCGStab1,
 	BiCGStab2,
 	BiCGStab,
-	MINRES
+	MINRES,
+	CG
 };
 
 enum FactorizationMethod {
@@ -74,6 +69,23 @@ enum PreconditionerType {
 	Spike,
 	Block,
 	None
+};
+
+template <typename T>
+struct CSRMatrix {
+	int* row_offsets;
+	int* column_indices;
+	T*   values;
+
+	size_t num_rows;
+	size_t num_columns;
+	size_t num_values;
+};
+
+template <typename T>
+struct Vector {
+	T*     values;
+	size_T size;
 };
 
 inline

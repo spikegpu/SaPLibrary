@@ -63,7 +63,8 @@ void bicgstabl(LinearOperator&  A,
 	ValueType sigma[L+2];
 
 	// r0 <- b - A * x
-	cusp::multiply(A, x, r0);
+	A(x,r0);
+	////cusp::multiply(A, x, r0);
 	cusp::blas::axpby(b, r0, r0, ValueType(1), ValueType(-1));
 
 	// r <- r0
