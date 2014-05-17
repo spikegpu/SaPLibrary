@@ -1420,6 +1420,292 @@ bandUL_critical_sub_general(T *dA, int start_row, int k, int partition_size, int
 		dA[-c*(k<<1)- r+k+offset] -= dA[-r+k+offset] * dA[-c*(k<<1)+k+offset];
 }
 
+template <typename T>
+__global__ void
+blockedBandLU_critical_const_phase1_safe(T *dA, int start_row, int K, int B, int partSize, int remainder)
+{
+	int column_width = (K << 1) + 1;
+	int delta = K;
+	int partitionStart, partitionEnd;
+	int last_row = start_row + B;
+
+	if (blockIdx.x < remainder) {
+		partitionStart = blockIdx.x * (partSize + 1);
+		partitionEnd   = partSize + 1;
+	} else {
+		partitionStart = blockIdx.x * partSize + remainder;
+		partitionEnd   = partSize;
+	}
+
+	int pivotIdx = (partitionStart + start_row) * column_width + delta;
+
+	__shared__ T sharedA;
+
+	if (last_row > partitionEnd)
+		last_row = partitionEnd;
+
+	for (int row = start_row; row < last_row; row ++) {
+		int cur_last;
+		if (K >= partitionEnd - row)
+			cur_last = partitionEnd - row - 1;
+		else
+			cur_last = K;
+
+		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx + tid] /= sharedA;
+		__syncthreads();
+
+		if (row == last_row - 1) break;
+		if (cur_last == 0) {
+			pivotIdx += column_width;
+			continue;
+		}
+
+		int num_elements = (last_row - row - 1) * cur_last;
+
+		for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+			int r = tid / cur_last + 1;
+			int c = tid % cur_last + 1;
+
+			dA[pivotIdx + c + r * (column_width - 1)] -= dA[pivotIdx + c] * dA[pivotIdx + r * (column_width - 1)];
+		}
+
+		__syncthreads();
+
+		pivotIdx += column_width;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_const_phase2(T *dA, int start_row, int K, int B, int partSize, int remainder)
+{
+	int bid = blockIdx.x + B;
+
+	int partitionStart, partitionEnd;
+
+	if (blockIdx.y < remainder) {
+		partitionStart = blockIdx.y * (partSize + 1);
+		partitionEnd   = partSize + 1;
+	} else {
+		partitionStart = blockIdx.y * partSize + remainder;
+		partitionEnd   = partSize;
+	}
+
+	int pivotIdx = (start_row + partitionStart) * ((K << 1) + 1)+ K;
+
+	if (start_row + bid >= partitionEnd || K < blockIdx.x)
+		return;
+
+	extern __shared__ T sharedElem[];
+
+	if (threadIdx.x + K < bid) {
+		sharedElem[threadIdx.x] = (T)0;
+		return;
+	} else
+		sharedElem[threadIdx.x] = dA[pivotIdx + bid * (K << 1) + threadIdx.x];
+
+	__syncthreads();
+
+	for (int i = 1; i < B; i++) {
+		if (threadIdx.x >= i)
+			sharedElem[threadIdx.x] -= sharedElem[i-1] * dA[pivotIdx + (i-1) * (K<<1) + threadIdx.x];
+
+		__syncthreads();
+	}
+
+	dA[pivotIdx + bid * (K << 1) + threadIdx.x] = sharedElem[threadIdx.x];
+}
+
+template <typename T>
+__global__ void
+blockedBandLU_critical_const_phase3(T *dA, int start_row, int K, int B, int partSize, int remainder)
+{
+	int column_width = (K << 1) + 1;
+	int delta = K;
+
+	int bid = blockIdx.x;
+
+	if (bid >= K)
+		return;
+
+	int partitionStart, partitionEnd;
+
+	if (blockIdx.y < remainder) {
+		partitionStart = blockIdx.y * (partSize + 1);
+		partitionEnd   = partSize + 1;
+	} else {
+		partitionStart = blockIdx.y * partSize + remainder;
+		partitionEnd   = partSize;
+	}
+
+	int pivotIdx = (partitionStart + start_row) * column_width + delta;
+
+	if (start_row + bid + B >= partitionEnd)
+		return;
+
+	extern __shared__ T sharedA[];
+
+	if (threadIdx.x < B)
+		sharedA[threadIdx.x] = dA[pivotIdx + (B + bid) * (column_width - 1) + threadIdx.x];
+
+	__syncthreads();
+
+	for (int tid = threadIdx.x; tid < K; tid += blockDim.x) {
+		T tmp = dA[pivotIdx + B * column_width + tid + (column_width - 1) * bid];
+		for (int i = 0; i < B; i++)
+			if (tid - i + B <= K && i + K >= B + bid)
+				tmp -= dA[pivotIdx + tid + i * (column_width - 1) + B] * sharedA[i];
+
+		dA[pivotIdx + B * column_width + tid + (column_width - 1) * bid] = tmp;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandUL_critical_const_phase1_safe(T *dA, int start_row, int K, int B, int partSize, int remainder)
+{
+	int column_width = (K << 1) + 1;
+	int delta = K;
+	int partitionStart;
+	int last_row;
+
+	if (blockIdx.x < remainder) {
+		partitionStart = blockIdx.x * (partSize + 1);
+	} else {
+		partitionStart = blockIdx.x * partSize + remainder;
+		start_row --;
+	}
+
+	last_row = start_row - B;
+	if (last_row < 0)
+		last_row = -1;
+
+	int pivotIdx = (partitionStart + start_row) * column_width + delta;
+
+	__shared__ T sharedA;
+
+	for (int row = start_row; row > last_row; row --) {
+		int cur_last;
+		if (row < K)
+			cur_last = row;
+		else
+			cur_last = K;
+
+		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		__syncthreads();
+
+		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
+			dA[pivotIdx - tid] /= sharedA;
+		__syncthreads();
+
+		if (row == last_row + 1) break;
+		if (cur_last == 0) {
+			pivotIdx -= column_width;
+			continue;
+		}
+
+		int num_elements = (row - last_row - 1) * cur_last;
+
+		for (int tid = threadIdx.x; tid < num_elements; tid += blockDim.x) {
+			int r = tid / cur_last + 1;
+			int c = tid % cur_last + 1;
+
+			dA[pivotIdx - c - r * (column_width - 1)] -= dA[pivotIdx - c] * dA[pivotIdx - r * (column_width - 1)];
+		}
+
+		__syncthreads();
+
+		pivotIdx -= column_width;
+	}
+}
+
+template <typename T>
+__global__ void
+blockedBandUL_critical_const_phase2(T *dA, int start_row, int K, int B, int partSize, int remainder)
+{
+	int bid = blockIdx.x + B;
+
+	int partitionStart;
+
+	if (blockIdx.y < remainder) {
+		partitionStart = blockIdx.y * (partSize + 1);
+	} else {
+		partitionStart = blockIdx.y * partSize + remainder;
+		start_row --;
+	}
+
+	int pivotIdx = (start_row + partitionStart) * ((K << 1) + 1)+ K;
+
+	if (start_row - bid < 0 || K < blockIdx.x)
+		return;
+
+	extern __shared__ T sharedElem[];
+
+	if (bid > K + threadIdx.x) {
+		sharedElem[threadIdx.x] = (T)0;
+		return;
+	} else
+		sharedElem[threadIdx.x] = dA[pivotIdx - bid * (K << 1) - threadIdx.x];
+
+	__syncthreads();
+
+	for (int i = 1; i < B; i++) {
+		if (threadIdx.x >= i)
+			sharedElem[threadIdx.x] -= sharedElem[i-1] * dA[pivotIdx - (i-1) * (K<<1) - threadIdx.x];
+
+		__syncthreads();
+	}
+
+	dA[pivotIdx - bid * (K << 1) - threadIdx.x] = sharedElem[threadIdx.x];
+}
+
+template <typename T>
+__global__ void
+blockedBandUL_critical_const_phase3(T *dA, int start_row, int K, int B, int partSize, int remainder)
+{
+	int column_width = (K << 1) + 1;
+	int delta = K;
+
+	int bid = blockIdx.x;
+
+	if (bid >= K)
+		return;
+
+	int partitionStart;
+
+	if (blockIdx.y < remainder) {
+		partitionStart = blockIdx.y * (partSize + 1);
+	} else {
+		partitionStart = blockIdx.y * partSize + remainder;
+		start_row --;
+	}
+
+	int pivotIdx = (partitionStart + start_row) * column_width + delta;
+
+	if (start_row - bid - B < 0)
+		return;
+
+	extern __shared__ T sharedA[];
+
+	if (threadIdx.x < B)
+		sharedA[threadIdx.x] = dA[pivotIdx - (B + bid) * (column_width - 1) - threadIdx.x];
+
+	__syncthreads();
+
+	for (int tid = threadIdx.x; tid < K; tid += blockDim.x) {
+		T tmp = dA[pivotIdx - B * column_width - tid - (column_width - 1) * bid];
+		for (int i = 0; i < B; i++)
+			if (tid - i + B <= K && i + K >= B + bid)
+				tmp -= dA[pivotIdx - tid - i * (column_width - 1) - B] * sharedA[i];
+
+		dA[pivotIdx - B * column_width - tid - (column_width - 1) * bid] = tmp;
+	}
+}
+
 // ============================================================
 // This function follows bandLU to do division to matrix U,
 // Currently works for k <= 1024 only
@@ -1446,6 +1732,50 @@ bandLU_post_divide_general(T *dA, int k, int N)
 	for (int c = threadIdx.x+k-blockDim.x; c>=0 && c>=k-r; c-= blockDim.x)
 		dA[((k<<1)+1)*r + c] /= dA[((k<<1)+1)*(r+c-k) + k];
 }
+
+template <typename T>
+__global__ void
+bandLUUL_post_divide(T *dA, int N, int K, int numPartitions)
+{
+	int r = blockIdx.x + blockIdx.y * gridDim.x;
+	int c = threadIdx.x;
+	if (r >= N) return;
+	int partSize  = N / numPartitions;
+	int remainder = N % numPartitions; 
+	int blockId = r / (partSize + 1);
+	if (blockId >= remainder)
+		blockId = remainder + (r - remainder * (partSize + 1)) / partSize;
+
+	if (blockId < numPartitions - 1) {
+		if (r + c - K < 0) return;
+		dA[((K<<1)+1)*r + c] /= dA[((K<<1)+1)*(r+c-K) + K];
+	} else {
+		if (r + c + 1 >= N) return;
+		dA[((K<<1)+1)*r + c + K + 1] /= dA[((K<<1)+1)*(r+c+1) + K];
+	}
+}
+
+template <typename T>
+__global__ void
+bandLUUL_post_divide_general(T *dA, int N, int K, int numPartitions)
+{
+	int r = blockIdx.x + blockIdx.y * gridDim.x;
+	if (r >= N) return;
+	int partSize  = N / numPartitions;
+	int remainder = N % numPartitions; 
+	int blockId = r / (partSize + 1);
+	if (blockId >= remainder)
+		blockId = remainder + (r - remainder * (partSize + 1)) / partSize;
+
+	if (blockId < numPartitions - 1) {
+		for (int c = threadIdx.x+K-blockDim.x; c>=0 && c>=K-r; c-= blockDim.x)
+			dA[((K<<1)+1)*r + c] /= dA[((K<<1)+1)*(r+c-K) + K];
+	} else {
+		for (int c = threadIdx.x; c < K && c + r + 1 < N; c += blockDim.x)
+			dA[((K<<1)+1)*r + c + K + 1] /= dA[((K<<1)+1)*(r+c+1) + K];
+	}
+}
+
 
 // ----------------------------------------------------------------------------
 // CUDA kernels for LU factorization of a block-diagonal matrix with full

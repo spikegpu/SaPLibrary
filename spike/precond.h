@@ -250,11 +250,13 @@ private:
 	void partBandedLU_const();
 	void partBandedLU_one();
 	void partBlockedBandedLU_one();
+	void partBlockedBandedLU_const();
 	void partBlockedBandedCholesky_one();
 	void partBlockedBandedCholesky_var();
 	void partBandedLU_var();
 	void partBlockedBandedLU_var();
 	void partBandedUL(PrecVector& B);
+	void partBlockedBandedUL(PrecVector& B);
 	void sparseFactorization();
 
 	void partBandedFwdSweep(PrecVector& v);
@@ -650,7 +652,8 @@ Precond<PrecVector>::update(const PrecVector& entries)
 			////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
 
 			m_timer.Start();
-			partBandedUL(B2);
+			// partBandedUL(B2);
+			partBlockedBandedUL(B2);
 			m_timer.Stop();
 			m_time_bandUL = m_timer.getElapsed();
 
@@ -762,7 +765,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 
 		m_timer.Start();
 		partBandedLU();
-		m_Bh = m_B;
+		// m_Bh = m_B;
 		m_timer.Stop();
 		m_time_bandLU = m_timer.getElapsed();
 		////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
@@ -827,7 +830,8 @@ Precond<PrecVector>::setup(const Matrix&  A)
 			////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
 
 			m_timer.Start();
-			partBandedUL(B2);
+			// partBandedUL(B2);
+			partBlockedBandedUL(B2);
 			m_timer.Stop();
 			m_time_bandUL = m_timer.getElapsed();
 
@@ -839,13 +843,23 @@ Precond<PrecVector>::setup(const Matrix&  A)
 			calculateSpikes(B2, mat_WV);
 			assembleReducedMat(mat_WV);
 			copyLastPartition(B2);
+			{
+				PrecValueType *dB = thrust::raw_pointer_cast(&m_B[0]);
+				int gridX = m_n, gridY = 1;
+				kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
+				dim3 grids(gridX, gridY);
+				if (m_k > 512)
+					device::bandLUUL_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_n, m_k, m_numPartitions);
+				else
+					device::bandLUUL_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_n, m_k, m_numPartitions);
+			}
 			m_timer.Stop();
 			m_time_assembly = m_timer.getElapsed();
 		}
 
 		break;
 	}
-	m_Bh = m_B;
+	// m_Bh = m_B;
 
 	////cusp::io::write_matrix_market_file(m_B, "B_factorized.mtx");
 	////cusp::io::write_matrix_market_file(mat_WV, "WV.mtx");
@@ -1457,10 +1471,19 @@ template <typename PrecVector>
 void
 Precond<PrecVector>::partFullLU()
 {
+#if 0
 	if (m_variableBandwidth || m_ilu_level >= 0)
 		partBlockedFullLU_var();
 	else
 		partFullLU_const();
+#endif
+	if (!m_variableBandwidth && m_ilu_level < 0) {
+		m_spike_ks.resize(m_numPartitions - 1);
+		m_ROffsets.resize(m_numPartitions - 1);
+		cusp::blas::fill(m_spike_ks, m_k);
+		thrust::sequence(m_ROffsets.begin(), m_ROffsets.end(), 0, 4*m_k*m_k);
+	}
+	partBlockedFullLU_var();
 }
 
 
@@ -2928,8 +2951,10 @@ Precond<PrecVector>::partBandedLU()
 			partBlockedBandedLU_var();
 	} else {
 		// Constant bandwidth method.
-		if (m_numPartitions > 1)
-			partBandedLU_const();
+		if (m_numPartitions > 1) {
+			// partBandedLU_const();
+			partBlockedBandedLU_const();
+		}
 		else {
 			if (m_saveMem)
 				partBlockedBandedCholesky_one();
@@ -3292,6 +3317,85 @@ Precond<PrecVector>::partBandedLU_const()
 	}
 }
 
+template <typename PrecVector>
+void
+Precond<PrecVector>::partBlockedBandedLU_const()
+{
+	// Note that this function is called only if there are two or more partitions.
+	// Moreover, if the factorization method is LU_only, all diagonal blocks in
+	// each partition are LU factorized. If the method is LU_UL, then the diagonal
+	// block in the last partition is *not* factorized.
+
+	PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
+
+	int n_eff = m_n;
+	int numPart_eff = m_numPartitions;
+
+	if (m_factMethod == LU_UL && m_numPartitions > 1 && m_precondType != Block) {
+		n_eff -= m_n / m_numPartitions;
+		numPart_eff--;
+	}
+
+	int partSize  = n_eff / numPart_eff;
+	int remainder = n_eff % numPart_eff;
+
+	if(m_k >= CRITICAL_THRESHOLD) {
+		int final_partition_size = (remainder == 0 ? partSize : (partSize + 1));
+		int threadsNum = m_k;
+		if (threadsNum > 512)
+			threadsNum = 512;
+
+		const int BLOCK_FACTOR = 8;
+		for (int st_row = 0; st_row < final_partition_size; st_row += BLOCK_FACTOR) {
+			int last_row = st_row + BLOCK_FACTOR;
+			if (last_row > final_partition_size)
+				last_row = final_partition_size;
+			int block_num = last_row - st_row;
+
+			device::blockedBandLU_critical_const_phase1_safe<PrecValueType> <<< numPart_eff, threadsNum>>>(dB, st_row, m_k, block_num, partSize, remainder);
+
+			if (last_row == final_partition_size)
+				break;
+
+			dim3 grids(m_k, numPart_eff);
+
+			device::blockedBandLU_critical_const_phase2<PrecValueType> <<<grids, BLOCK_FACTOR, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, m_k, BLOCK_FACTOR, partSize, remainder);
+
+			device::blockedBandLU_critical_const_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, m_k, BLOCK_FACTOR, partSize, remainder);
+		}
+	} else if (m_k > 27) {
+		if (m_safeFactorization)
+			device::bandLU_g32_safe<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder, false);
+		else
+			device::bandLU_g32<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder);
+	} else {
+		if (m_safeFactorization)
+			device::bandLU_safe<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder, false);
+		else
+			device::bandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
+			////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
+	}
+
+
+	// If not using safe factorization, check the factorized banded matrix for any
+	// zeros on its diagonal (this means a zero pivot). Note that we must only check
+	// the diagonal blocks corresponding to the partitions for which LU was applied.
+	if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
+		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_const).");
+
+
+	if (m_numPartitions == 1) {
+		int  gridX = m_n;
+		int  gridY = 1;
+		kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
+		dim3 grids(gridX, gridY);
+		if (m_k > 1024)
+			device::bandLU_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_k, m_n);
+		else
+			device::bandLU_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_k, m_n);
+	}
+}
+
 
 template <typename PrecVector>
 void
@@ -3436,7 +3540,7 @@ Precond<PrecVector>::partBlockedBandedLU_var()
 
 	if(tmp_k >= CRITICAL_THRESHOLD) 
 	{
-		int final_partition_size = partSize + 1;
+		int final_partition_size = (remainder == 0 ? partSize : (partSize + 1));
 		int threadsNum = adjustNumThreads(cusp::blas::nrm1(m_ks) / m_numPartitions);
 
 		IntVector ks_col = m_ks_col_host;
@@ -3629,6 +3733,74 @@ Precond<PrecVector>::partBandedUL(PrecVector& B)
 		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedUL).");
 }
 
+template <typename PrecVector>
+void 
+Precond<PrecVector>::partBlockedBandedUL(PrecVector& B)
+{
+	// Note that this function can only be called if using the constant band
+	// method and there are two or more partitions.
+	// In any other situation, we use LU only factorization.
+	// This means that the diagonal block for the first partition is never
+	// UL factorized.
+
+
+	int partSize  = m_n / m_numPartitions;
+	int remainder = m_n % m_numPartitions;
+	int n_first = (remainder == 0 ? partSize : (partSize + 1));
+
+	PrecValueType* dB = thrust::raw_pointer_cast(&B[(2 * m_k + 1) * n_first]);
+
+	int n_eff = m_n - n_first;
+	int numPart_eff = m_numPartitions - 1;
+
+	partSize = n_eff / numPart_eff;
+	remainder = n_eff % numPart_eff;
+
+	if(m_k >= CRITICAL_THRESHOLD)
+	{
+		int threadsNum = m_k;
+		int n_final = partSize + 1;
+		if (threadsNum > 512)
+			threadsNum = 512;
+
+		const int BLOCK_FACTOR = 2;
+		for (int st_row = n_final - 1; st_row >= 0; st_row -= BLOCK_FACTOR) {
+			int last_row = st_row - BLOCK_FACTOR;
+			if (last_row < 0)
+				last_row = -1;
+			int block_num = st_row - last_row;
+
+			device::blockedBandUL_critical_const_phase1_safe<PrecValueType> <<< numPart_eff, threadsNum>>>(dB, st_row, m_k, block_num, partSize, remainder);
+
+			if (last_row < 0)
+				break;
+
+			dim3 grids(m_k, numPart_eff);
+
+			device::blockedBandUL_critical_const_phase2<PrecValueType> <<<grids, BLOCK_FACTOR, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, m_k, BLOCK_FACTOR, partSize, remainder);
+
+			device::blockedBandUL_critical_const_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, m_k, BLOCK_FACTOR, partSize, remainder);
+		}
+	} else if (m_k > 27) {
+		if (m_safeFactorization)
+			device::bandUL_g32_safe<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder);
+		else
+			device::bandUL_g32<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder);
+	} else {
+		if (m_safeFactorization)
+			device::bandUL_safe<PrecValueType><<<numPart_eff, m_k * m_k>>>(dB, m_k, partSize, remainder);
+		else
+			device::bandUL<PrecValueType><<<numPart_eff, m_k * m_k>>>(dB, m_k, partSize, remainder);
+		////device::swBandUL<PrecValueType><<<numPart_eff, m_k * m_k>>>(dB, m_k, partSize, remainder);
+	}
+
+
+	// If not using safe factorization, check for zero pivots in the factorized
+	// banded matrix.
+	if (!m_safeFactorization && hasZeroPivots(B.begin() + (2 * m_k + 1) * n_first, B.end(), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
+		throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedUL).");
+}
+
 
 /*! \brief This function will call either Precond::partBandedFwdElim_const()
  * or Precond::partBandedFwdElim_var()
@@ -3770,6 +3942,8 @@ Precond<PrecVector>::partBandedBckSweep_const(PrecVector&  v)
 			}
 		}
 	} else {
+		strided_range<typename PrecVector::iterator> diag(m_B.begin() + m_k, m_B.end(), 2 * m_k + 1);
+		thrust::transform(v.begin(), v.end(), diag.begin(), v.begin(), thrust::divides<PrecValueType>());
 		if (m_k > 1024)
 			device::backwardElimU_LU_UL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
 		else if (m_k > 32)
@@ -4012,12 +4186,15 @@ Precond<PrecVector>::partFullFwdSweep(PrecVector&  v)
 
 	dim3 grids(m_numPartitions-1, 1);
 
+#if 0
 	if (!m_variableBandwidth) {
 		if (m_k > 512)
 			device::forwardElimLNormal_g512<PrecValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
 			device::forwardElimLNormal<PrecValueType><<<grids, 2*m_k-1>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
-	} else {
+	} else
+#endif
+	{
 		int* p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
 		int* p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
 
@@ -4045,12 +4222,15 @@ Precond<PrecVector>::partFullBckSweep(PrecVector&  v)
 
 	dim3 grids(m_numPartitions-1, 1);
 
+#if 0
 	if (!m_variableBandwidth && m_ilu_level < 0) {
 		if (m_k > 512)
 			device::backwardElimUNormal_g512<PrecValueType><<<grids, 512>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
 		else
 			device::backwardElimUNormal<PrecValueType><<<grids, 2*m_k-1>>>(m_n, m_k, 2*m_k, p_R, p_v, partSize, remainder);
-	} else {
+	} else
+#endif
+	{
 		int* p_ROffsets = thrust::raw_pointer_cast(&m_ROffsets[0]);
 		int* p_spike_ks = thrust::raw_pointer_cast(&m_spike_ks[0]);
 

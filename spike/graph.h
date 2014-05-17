@@ -28,66 +28,6 @@
 
 namespace spike {
 
-
-class Dijkstra
-{
-public:
-	Dijkstra() {}
-	Dijkstra(int idx, double val) : m_idx(idx), m_val(val) {}
-
-	friend bool operator<(const Dijkstra& a, const Dijkstra& b) {
-		return a.m_val > b.m_val;
-	}
-
-	friend bool operator>(const Dijkstra& a, const Dijkstra& b) {
-		return a.m_val < b.m_val;
-	}
-
-	int       m_idx;
-	double    m_val;
-};
-
-
-class Node
-{
-public:
-	Node(int idx, int degree) : m_idx(idx), m_degree(degree) {}
-
-	friend bool operator>(const Node& a, const Node& b) {
-		return a.m_degree < b.m_degree;
-	}
-
-	friend bool operator<(const Node& a, const Node& b) {
-		return a.m_degree > b.m_degree;
-	}
-
-	int  m_idx;
-	int  m_degree;
-};
-
-
-template <typename T>
-class EdgeT
-{
-public:
-	EdgeT() {}
-	EdgeT(int from, int to, T val) : m_from(from), m_to(to), m_val(val) {}
-
-	EdgeT(int ori_idx, int from, int to, T val)
-		: m_ori_idx(ori_idx), m_from(from), m_to(to), m_val(val) {}
-
-	friend bool operator< (const EdgeT& a, const EdgeT& b) {
-		return a.m_to < b.m_to;
-	}
-
-	int  m_from;
-	int  m_to;
-	T    m_val;
-
-	int m_ori_idx;
-};
-
-
 template <typename T>
 class Graph
 {
@@ -106,13 +46,20 @@ public:
 	typedef Vector                                               MatrixMapF;
 	typedef IntVector                                            MatrixMap;
 
-	typedef Node                  NodeType;
-	typedef EdgeT<T>              EdgeType;
-	typedef std::vector<NodeType> NodeVector;
-	typedef std::vector<EdgeType> EdgeVector;
+	typedef typename IntVector::iterator                         IntIterator;
+	typedef typename Vector::iterator                            TIterator;
+	typedef typename IntVector::reverse_iterator                 IntRevIterator;
+	typedef typename Vector::reverse_iterator                    TRevIterator;
+	typedef typename thrust::tuple<IntIterator, IntIterator>     IntIteratorTuple;
+	typedef typename thrust::tuple<IntIterator, IntIterator, TIterator>     IteratorTuple;
+	typedef typename thrust::tuple<IntRevIterator, IntRevIterator, TRevIterator>   RevIteratorTuple;
+	typedef typename thrust::zip_iterator<IntIteratorTuple>      EdgeIterator;
+	typedef typename thrust::zip_iterator<IteratorTuple>         WeightedEdgeIterator;
+	typedef typename thrust::zip_iterator<RevIteratorTuple>      WeightedEdgeRevIterator;
 
-	typedef typename EdgeVector::iterator         EdgeIterator;
-	typedef typename EdgeVector::reverse_iterator EdgeRevIterator;
+	typedef typename thrust::tuple<int, int>                     NodeType;
+	typedef typename thrust::tuple<int, int, T>                  WeightedEdgeType;
+	typedef typename thrust::tuple<int, double>                  Dijkstra;
 
 	Graph(bool trackReordering = false);
 
@@ -184,10 +131,8 @@ public:
 private:
 	int           m_n;
 	int           m_nnz;
-	EdgeVector    m_edges;
-	EdgeVector    m_major_edges;
-
-	EdgeIterator  m_first;
+	MatrixCsr     m_matrix;
+	MatrixCsr     m_matrix_diagonal;
 
 	bool          m_trackReordering;
 
@@ -209,21 +154,26 @@ private:
 	                DoubleVectorD&   mc64ColScale,
 	                MatrixMapF&      scaleMap);
 
-	int        RCM(EdgeVector&  edges,
+	int        RCM(MatrixCsr&   matcsr,
 	               IntVector&   optReordering,
 	               IntVector&   optPerm);
 
-	bool       partitionedRCM(EdgeIterator&  begin,
-	                          EdgeIterator&  end,
+	bool       partitionedRCM(MatrixCsr&     mat_csr,
+							  int            index_begin,
+							  int            index_end,
 	                          int            node_begin,
 	                          int            node_end,
 	                          IntVector&     optReordering,
-	                          IntVector&     optPerm);
+	                          IntVector&     optPerm,
+							  IntVector&     row_offsets,
+							  IntVector&     row_indices);
 
 	void       buildTopology(EdgeIterator&      begin,
-	                         EdgeIterator&      end,
-	                         IntVector&         degrees,
-	                         std::vector<int>*  in_out_graph);
+							 EdgeIterator&      end,
+							 int                node_begin,
+							 int                node_end,
+	                         IntVector&         row_offsets,
+							 IntVector&         column_indices);
 
 	static const double LOC_INFINITY;
 
@@ -257,59 +207,6 @@ private:
 	                          DoubleVectorD&    c_val,
 	                          DoubleVectorD&    max_val_in_col);
 
-	// Functor objects.
-	struct CompareEdgeLength
-	{
-		bool operator()(const EdgeT<T>& a, const EdgeT<T>& b)
-		{
-			return abs(a.m_from - a.m_to) > abs(b.m_from - b.m_to);
-		}
-	};
-
-	struct AccumulateEdgeValue
-	{
-		T operator()(T res, const EdgeT<T>& edge)
-		{
-			return res + std::abs(edge.m_val);
-		}
-	};
-
-	struct EdgeLength : public thrust::unary_function<EdgeT<T>, int>
-	{
-		__host__ __device__
-		int operator() (const EdgeT<T>& a)
-		{
-			return std::abs(a.m_from - a.m_to);
-		}
-	};
-
-	struct PermutedEdgeLength : public thrust::unary_function<EdgeT<T>, int>
-	{
-		int* m_perm;
-
-		PermutedEdgeLength(int* perm): m_perm(perm) {}
-
-		__host__ __device__
-		int operator() (const EdgeT<T>& a)
-		{
-			return std::abs(m_perm[a.m_from] - m_perm[a.m_to]);
-		}
-	};
-
-	struct PermuteEdge
-	{
-		int* m_perm;
-
-		PermuteEdge(int* perm): m_perm(perm) {}
-
-		__host__ __device__
-		void operator() (EdgeT<T>& a)
-		{
-			a.m_from = m_perm[a.m_from];
-			a.m_to = m_perm[a.m_to];
-		}
-	};
-
 public:
 	struct AbsoluteValue: public thrust::unary_function<double, double>
 	{
@@ -317,6 +214,24 @@ public:
 		double operator() (double a)
 		{
 			return (a < 0 ? -a : a);
+		}
+	};
+
+	struct Square: public thrust::unary_function<T, T>
+	{
+		__host__ __device__
+		T operator() (T a)
+		{
+			return a*a;
+		}
+	};
+
+	struct AccumulateEdgeWeights: public thrust::unary_function<WeightedEdgeType, T>
+	{
+		inline __host__ __device__
+		T operator() (WeightedEdgeType a)
+		{
+			return thrust::get<2>(a) * thrust::get<2>(a);
 		}
 	};
 
@@ -346,6 +261,64 @@ public:
 		}
 	};
 
+	struct EdgeLength: public thrust::unary_function<NodeType, int>
+	{
+		__host__ __device__
+		int operator() (NodeType a)
+		{
+			int row = thrust::get<0>(a), col = thrust::get<1>(a);
+			int diff = row - col;
+			return (diff < 0 ? -diff : diff);
+		}
+	};
+
+	struct PermutedEdgeLength: public thrust::unary_function<NodeType, int>
+	{
+		int *m_perm_array;
+		PermutedEdgeLength(int *perm_array):m_perm_array(perm_array) {}
+		__host__ __device__
+		int operator() (NodeType a)
+		{
+			int row = m_perm_array[thrust::get<0>(a)], col = m_perm_array[thrust::get<1>(a)];
+			int diff = row - col;
+			return (diff < 0 ? -diff : diff);
+		}
+	};
+
+	struct PermuteEdge: public thrust::unary_function<NodeType, NodeType>
+	{
+		int *m_perm_array;
+		PermuteEdge(int *perm_array):m_perm_array(perm_array) {}
+		__host__ __device__
+		NodeType operator() (NodeType a)
+		{
+			return thrust::make_tuple(m_perm_array[thrust::get<0>(a)], m_perm_array[thrust::get<1>(a)]);
+		}
+	};
+
+	template <typename Type>
+	struct Map: public thrust::unary_function<int, Type>
+	{
+		Type *m_map;
+		Map(Type *arg_map): m_map(arg_map) {}
+		__host__ __device__
+		Type operator() (int a) { return m_map[a];}
+	};
+
+	struct GetCount: public thrust::unary_function<int, int>
+	{
+		__host__ __device__
+		int operator() (int a)
+		{
+			return 1;
+		}
+	};
+
+	template <typename VType>
+	struct CompareValue
+	{
+		bool operator () (const thrust::tuple<int, VType> &a, const thrust::tuple<int, VType> &b) const {return thrust::get<1>(a) > thrust::get<1>(b);}
+	};
 };
 
 
@@ -398,9 +371,6 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	m_n = Acsr.num_rows;
 	m_nnz = Acsr.num_entries;
 
-	// Create the edges in the graph.
-	m_edges.resize(m_nnz);
-
 	// Apply mc64 algorithm. Note that we must ensure we always work with
 	// double precision scale vectors.
 	//
@@ -422,6 +392,8 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 		d_mc64RowPerm.resize(m_n);
 		scaleMap.resize(m_nnz);
 
+		m_matrix = Acsr;
+
 		thrust::sequence(d_mc64RowPerm.begin(), d_mc64RowPerm.end());
 		cusp::blas::fill(d_mc64RowScale, (T) 1.0);
 		cusp::blas::fill(d_mc64ColScale, (T) 1.0);
@@ -429,9 +401,16 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	}
 
 	k_mc64 = 0;
-	for (EdgeIterator edgeIt = m_edges.begin(); edgeIt != m_edges.end(); edgeIt++)
-		if (k_mc64 < abs(edgeIt->m_from - edgeIt->m_to))
-			k_mc64 = abs(edgeIt->m_from - edgeIt->m_to);
+	{
+		IntVector row_indices(m_nnz);
+		IntVector index_diffs(m_nnz);
+		cusp::detail::offsets_to_indices(m_matrix.row_offsets, row_indices);
+		thrust::transform(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), index_diffs.begin(), thrust::minus<int>());
+		k_mc64 = abs(thrust::reduce(index_diffs.begin(), index_diffs.end(), -m_n, thrust::maximum<int>()));
+		int tmp_k = abs(thrust::reduce(index_diffs.begin(), index_diffs.end(), m_n, thrust::minimum<int>()));
+		if (k_mc64 < tmp_k)
+			k_mc64 = tmp_k;
+	}
 
 	if (testMC64)
 		return k_mc64;
@@ -439,7 +418,7 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	// Apply reverse Cuthill-McKee algorithm.
 	int bandwidth;
 	if (doRCM)
-		bandwidth = RCM(m_edges, optReordering, optPerm);
+		bandwidth = RCM(m_matrix, optReordering, optPerm);
 	else {
 		bandwidth = k_mc64;
 		optReordering.resize(m_n);
@@ -447,9 +426,6 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 		thrust::sequence(optReordering.begin(), optReordering.end());
 		thrust::sequence(optPerm.begin(), optPerm.end());
 	}
-
-	// Initialize the iterator m_first (in case dropOff() is not called).
-	m_first = m_edges.begin();
 
 	// Return the bandwidth obtained after reordering.
 	return bandwidth;
@@ -484,25 +460,35 @@ Graph<T>::dropOff(T   frac,
 	// Sort the edges in *decreasing* order of their length (the difference
 	// between the indices of their adjacent nodes).
 	// std::sort(m_edges.begin(), m_edges.end(), CompareEdgeLength());
-	{
-		EdgeVector tmp_edges(m_edges.end() - m_edges.begin());
-		IntVector  bucket(m_n, 0);
+	MatrixCoo  Acoo(m_n, m_n, m_nnz);
+	IntVector  bucket(m_n, 0);
 
-		for (m_first = m_edges.begin(); m_first != m_edges.end(); m_first++)
-			bucket[m_n - 1 - abs(m_first->m_from - m_first->m_to)] ++;
+	for (int i = 0; i < m_n; i++) {
+		int start_idx = m_matrix.row_offsets[i];
+		int end_idx = m_matrix.row_offsets[i+1];
 
-		thrust::exclusive_scan(bucket.begin(), bucket.end(), bucket.begin());
+		for (int l = start_idx; l < end_idx; l++)
+			bucket[abs(i - m_matrix.column_indices[l])] ++;
+	}
 
-		for (m_first = m_edges.begin(); m_first != m_edges.end(); m_first++)
-			tmp_edges[bucket[m_n - 1 - abs(m_first->m_from - m_first->m_to)]++] = *m_first;
+	thrust::exclusive_scan(bucket.begin(), bucket.end(), bucket.begin());
 
-		m_edges = tmp_edges;
+	for (int i = 0; i < m_n; i++) {
+		int start_idx = m_matrix.row_offsets[i];
+		int end_idx = m_matrix.row_offsets[i+1];
+
+		for (int l = start_idx; l < end_idx; l++) {
+			int idx = (bucket[abs(i - m_matrix.column_indices[l])] ++);
+			Acoo.row_indices[idx]    = i;
+			Acoo.column_indices[idx] = m_matrix.column_indices[l];
+			Acoo.values[idx]         = m_matrix.values[l];
+		}
 	}
 
 	// Calculate the 1-norm of the current matrix and the minimum norm that
 	// must be retained after drop-off. Initialize the 1-norm of the resulting
 	// truncated matrix.
-	T norm_in = std::accumulate(m_edges.begin(), m_edges.end(), (T) 0, AccumulateEdgeValue());
+	T norm_in = thrust::transform_reduce(m_matrix.values.begin(), m_matrix.values.end(), Square(), (T)0, thrust::plus<T>());
 	T min_norm_out = (1 - frac) * norm_in;
 	T norm_out = norm_in;
 
@@ -510,55 +496,47 @@ Graph<T>::dropOff(T   frac,
 	// Continue until we are left with the main diagonal only or until the weight
 	// of all proccessed bands exceeds the allowable drop off (provided we do not
 	// exceed the specified maximum bandwidth.
-	m_first = m_edges.begin();
-	EdgeIterator  last = m_first;
-	int           final_half_bandwidth = abs(m_first->m_from - m_first->m_to);
+	WeightedEdgeRevIterator first(thrust::make_tuple(Acoo.row_indices.rbegin(), Acoo.column_indices.rbegin(), Acoo.values.rbegin()));
+	WeightedEdgeRevIterator last = first;
+	int   final_half_bandwidth = abs(thrust::get<0>(*first) - thrust::get<1>(*first));
 
 	// Remove all elements which are outside the specified max bandwidth
 	{
 		int bandwidth;
-		while ((bandwidth = abs(last->m_from - last -> m_to)) > maxBandwidth)
-			last ++;
+		while ((bandwidth = abs(thrust::get<0>(*last) - thrust::get<1>(*last))) > maxBandwidth)
+			last++;
 
-		norm_out -= std::accumulate(m_first, last, (T) 0, AccumulateEdgeValue());
-		m_first = last;
+		norm_out -= thrust::transform_reduce(first, last, AccumulateEdgeWeights(), (T)0, thrust::plus<T>());
+		first = last;
 		final_half_bandwidth = bandwidth;
 	}
 
-	// After the first stage, we have reached the budget, stop.
-	if (norm_out <= 0) {
-		timer.Stop();
-		m_timeDropoff = timer.getElapsed();
+	// After the first stage, we haven't reached the budget, drop off more.
+	if (norm_out >= min_norm_out){
+		while (true) {
+			// Current band
+			int bandwidth = abs(thrust::get<0>(*first) - thrust::get<1>(*first));
 
-		// Calculate the actual norm reduction fraction.
-		frac_actual = 1 - norm_out/norm_in;
+			// Stop now if we reached the main diagonal.
+			if (bandwidth == 0) {
+				final_half_bandwidth = bandwidth;
+				break;
+			}
 
-		return final_half_bandwidth;
-	}
+			// Find all edges in the current band and calculate the norm of the band.
+			do {last++;}  while (abs(thrust::get<0>(*last) - thrust::get<1>(*last)) == bandwidth);
 
-	while (true) {
-		// Current band
-		int bandwidth = abs(m_first->m_from - m_first->m_to);
+			T band_norm = thrust::transform_reduce(first, last, AccumulateEdgeWeights(), T(0), thrust::plus<T>());
 
-		// Stop now if we reached the main diagonal.
-		if (bandwidth == 0) {
+			// Stop now if removing this band would reduce the norm by more than allowed.
+			if (norm_out - band_norm < min_norm_out)
+				break;
+
+			// Remove the norm of this band and move to the next one.
+			norm_out -= band_norm;
+			first = last;
 			final_half_bandwidth = bandwidth;
-			break;
 		}
-
-		// Find all edges in the current band and calculate the norm of the band.
-		do {last++;} while(abs(last->m_from - last->m_to) == bandwidth);
-
-		T band_norm = std::accumulate(m_first, last, (T) 0, AccumulateEdgeValue());
-
-		// Stop now if removing this band would reduce the norm by more than allowed.
-		if (norm_out - band_norm < min_norm_out)
-			break;
-
-		// Remove the norm of this band and move to the next one.
-		norm_out -= band_norm;
-		m_first = last;
-		final_half_bandwidth = bandwidth;
 	}
 
 	timer.Stop();
@@ -566,6 +544,23 @@ Graph<T>::dropOff(T   frac,
 
 	// Calculate the actual norm reduction fraction.
 	frac_actual = 1 - norm_out/norm_in;
+
+	// Restore the matrix after drop-off
+	{
+		m_nnz -= first - thrust::make_zip_iterator(thrust::make_tuple(Acoo.row_indices.rbegin(), Acoo.column_indices.rbegin(), Acoo.values.rbegin()));
+		Acoo.values.resize(m_nnz);
+		Acoo.column_indices.resize(m_nnz);
+		Acoo.row_indices.resize(m_nnz);
+		Acoo.num_entries = m_nnz;
+
+		// m_matrix = Acoo;
+		Acoo.sort_by_row_and_column();
+
+		cusp::detail::indices_to_offsets(Acoo.row_indices, m_matrix.row_offsets);
+		m_matrix.column_indices = Acoo.column_indices;
+		m_matrix.values         = Acoo.values;
+		m_matrix.num_entries    = m_nnz;
+	}
 
 	return final_half_bandwidth;
 }
@@ -610,12 +605,11 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 	IntVector offDiagReorderings_left((numPartitions-1) * bandwidth, -1);
 	IntVector offDiagReorderings_right((numPartitions-1) * bandwidth, -1);
 
-	EdgeIterator first = m_first;
-
 	int partSize = m_n / numPartitions;
 	int remainder = m_n % numPartitions;
 
-	m_major_edges.clear();
+	MatrixCoo Acoo(m_n, m_n, m_nnz);
+	int num_entries = 0;
 
 	if (m_trackReordering) {
 		typeMap.resize(m_nnz);
@@ -626,77 +620,98 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 	m_exists.resize(m_n);
 	cusp::blas::fill(m_exists, false);
 
-	for (EdgeIterator it = first; it != m_edges.end(); ++it) {
-		int j = it->m_from;
-		int l = it->m_to;
-		int curPartNum = l / (partSize + 1);
-		if (curPartNum >= remainder)
-			curPartNum = remainder + (l-remainder * (partSize + 1)) / partSize;
+	for (int it2 = 0; it2 < m_n; it2++) {
+		int start_idx = m_matrix.row_offsets[it2];
+		int end_idx = m_matrix.row_offsets[it2+1];
+		for (int it = start_idx; it < end_idx; it++)
+		{
+			int j = it2;
+			int l = m_matrix.column_indices[it];
+			int curPartNum = l / (partSize + 1);
+			if (curPartNum >= remainder)
+				curPartNum = remainder + (l-remainder * (partSize + 1)) / partSize;
 
-		int curPartNum2 = j / (partSize + 1);
-		if (curPartNum2 >= remainder)
-			curPartNum2 = remainder + (j-remainder * (partSize + 1)) / partSize;
+			int curPartNum2 = j / (partSize + 1);
+			if (curPartNum2 >= remainder)
+				curPartNum2 = remainder + (j-remainder * (partSize + 1)) / partSize;
 
-		if (curPartNum == curPartNum2)
-			m_major_edges.push_back(*it);
-		else {
-			if (curPartNum > curPartNum2) { // V/B Matrix
-				m_exists[j] = true;
-				int partEndRow = partSize * curPartNum2;
-				if (curPartNum2 < remainder)
-					partEndRow += curPartNum2 + partSize + 1;
-				else
-					partEndRow += remainder + partSize;
-
-				int partStartCol = partSize * curPartNum;
-				if (curPartNum < remainder)
-					partStartCol += curPartNum;
-				else
-					partStartCol += remainder;
-
-				if (offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] < 0) {
-					offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] = offDiagWidths_right[curPartNum2];
-					offDiagPerms_right[curPartNum2*bandwidth+offDiagWidths_right[curPartNum2]] = l-partStartCol;
-					offDiagWidths_right[curPartNum2]++;
-				}
-
-				if (m_trackReordering) {
-					typeMap[it->m_ori_idx] = 0;
-					offDiagMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol);
-					WVMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth;
-				}
-
-				offDiags_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol)] = WV_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth] = it->m_val;
-
-			} else {                          // W/C Matrix
-				int partStartRow = partSize * curPartNum2;
-				if (curPartNum2 < remainder)
-					partStartRow += curPartNum2;
-				else
-					partStartRow += remainder;
-
-				int partEndCol = partSize * curPartNum;
-				if (curPartNum < remainder)
-					partEndCol += curPartNum + partSize + 1;
-				else
-					partEndCol += remainder + partSize;
-
-				if (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth] < 0) {
-					offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth] = bandwidth - 1 - offDiagWidths_left[curPartNum2-1];
-					offDiagPerms_left[(curPartNum2-1)*bandwidth+bandwidth-1-offDiagWidths_left[curPartNum2-1]] = l-partEndCol+bandwidth;
-					offDiagWidths_left[curPartNum2-1]++;
-				}
-
-				if (m_trackReordering) {
-					typeMap[it->m_ori_idx] = 0;
-					offDiagMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth);
-					WVMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth;
-				}
-
-				offDiags_host[(curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth)] = WV_host[(curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth] = it->m_val;
+			if (curPartNum == curPartNum2) {
+				Acoo.row_indices[num_entries]    = j;
+				Acoo.column_indices[num_entries] = l;
+				Acoo.values[num_entries]         = m_matrix.values[it];
+				num_entries++;
 			}
-		}
-	}
+			else {
+				if (curPartNum > curPartNum2) { // V/B Matrix
+					m_exists[j] = true;
+					int partEndRow = partSize * curPartNum2;
+					if (curPartNum2 < remainder)
+						partEndRow += curPartNum2 + partSize + 1;
+					else
+						partEndRow += remainder + partSize;
+
+					int partStartCol = partSize * curPartNum;
+					if (curPartNum < remainder)
+						partStartCol += curPartNum;
+					else
+						partStartCol += remainder;
+
+					if (offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] < 0) {
+						offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] = offDiagWidths_right[curPartNum2];
+						offDiagPerms_right[curPartNum2*bandwidth+offDiagWidths_right[curPartNum2]] = l-partStartCol;
+						offDiagWidths_right[curPartNum2]++;
+					}
+
+					// FIXME: add support for update
+#if 0
+					if (m_trackReordering) {
+						typeMap[it->m_ori_idx] = 0;
+						offDiagMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol);
+						WVMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth;
+					}
+#endif
+
+					offDiags_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol)] = WV_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth] = m_matrix.values[it];
+
+				} else {                          // W/C Matrix
+					int partStartRow = partSize * curPartNum2;
+					if (curPartNum2 < remainder)
+						partStartRow += curPartNum2;
+					else
+						partStartRow += remainder;
+
+					int partEndCol = partSize * curPartNum;
+					if (curPartNum < remainder)
+						partEndCol += curPartNum + partSize + 1;
+					else
+						partEndCol += remainder + partSize;
+
+					if (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth] < 0) {
+						offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth] = bandwidth - 1 - offDiagWidths_left[curPartNum2-1];
+						offDiagPerms_left[(curPartNum2-1)*bandwidth+bandwidth-1-offDiagWidths_left[curPartNum2-1]] = l-partEndCol+bandwidth;
+						offDiagWidths_left[curPartNum2-1]++;
+					}
+
+					// FIXME: add support for update
+#if 0
+					if (m_trackReordering) {
+						typeMap[it->m_ori_idx] = 0;
+						offDiagMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth);
+						WVMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth;
+					}
+#endif
+
+					offDiags_host[(curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth)] = WV_host[(curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth] = m_matrix.values[it];
+				} // end else
+			} // end else
+		} // end for
+	} // end for
+
+	Acoo.row_indices.resize(num_entries);
+	Acoo.column_indices.resize(num_entries);
+	Acoo.values.resize(num_entries);
+	Acoo.num_entries = num_entries;
+	m_matrix_diagonal = Acoo;
 }
 
 
@@ -715,23 +730,18 @@ Graph<T>::secondLevelReordering(int       bandwidth,
                                 IntVector&  secondPerm,
                                 IntVector&  first_rows)
 {
-	{
-		secondPerm.resize(m_n);
-		cusp::blas::fill(secondPerm, 0);
-		for (EdgeIterator edgeIt = m_major_edges.begin(); edgeIt != m_major_edges.end(); edgeIt++)
-			secondPerm[edgeIt -> m_to]++;
-		thrust::inclusive_scan(secondPerm.begin(), secondPerm.end(), secondPerm.begin());
-		EdgeVector tmp_edges(m_major_edges.size());
-		for (EdgeRevIterator edgeIt = m_major_edges.rbegin(); edgeIt != m_major_edges.rend(); edgeIt++)
-			tmp_edges[--secondPerm[edgeIt->m_to]] = *edgeIt;
-		m_major_edges = tmp_edges;
-	}
-
 	int node_begin = 0, node_end;
 	int partSize = m_n / numPartitions;
 	int remainder = m_n % numPartitions;
-	EdgeIterator edgeBegin = m_major_edges.begin(), edgeEnd;
+	int edgeBegin = 0, edgeEnd;
 	secondReorder.resize(m_n);
+	secondPerm.resize(m_n);
+
+	int diagonal_nnz = m_matrix_diagonal.num_entries;
+
+	IntVector row_indices(diagonal_nnz);
+	IntVector row_offsets(m_n + 1);
+	cusp::detail::offsets_to_indices(m_matrix_diagonal.row_offsets, row_indices);
 
 	for (int i = 0; i < numPartitions; i++) {
 		if (i < remainder)
@@ -739,20 +749,50 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 		else
 			node_end = node_begin + partSize;
 
-		for (edgeEnd = edgeBegin; edgeEnd != m_major_edges.end(); edgeEnd++) {
-			if (edgeEnd->m_from >= node_end)
-				break;
-		}
+		edgeEnd = m_matrix_diagonal.row_offsets[node_end];
 
-		partitionedRCM(edgeBegin,
+		partitionedRCM(m_matrix_diagonal,
+					   edgeBegin,
 		               edgeEnd,
 		               node_begin,
 		               node_end,
 		               secondReorder,
-		               secondPerm);
+		               secondPerm,
+					   row_offsets,
+					   row_indices);
 
 		node_begin = node_end;
 		edgeBegin = edgeEnd;
+	}
+
+	{
+		int *perm_array = thrust::raw_pointer_cast(&secondPerm[0]);
+		thrust::transform(thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), m_matrix_diagonal.column_indices.begin())),
+						  thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   m_matrix_diagonal.column_indices.end())),
+						  thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), m_matrix_diagonal.column_indices.begin())),
+						  PermuteEdge(perm_array));
+
+		//thrust::sort_by_key(row_indices.begin(), row_indices.end(), 
+		//				    thrust::make_zip_iterator(thrust::make_tuple(m_matrix_diagonal.column_indices.begin(), m_matrix_diagonal.values.begin())));
+		{
+			thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
+			IntVector column_indices(diagonal_nnz);
+			Vector    values(diagonal_nnz);
+			for (int i = 0; i < diagonal_nnz; i++)
+				row_offsets[row_indices[i]] ++;
+
+			thrust::inclusive_scan(row_offsets.begin(), row_offsets.end(), row_offsets.begin());
+
+			for (int i = diagonal_nnz - 1; i >= 0; i--) {
+				int idx = (--row_offsets[row_indices[i]]);
+				column_indices[idx] = m_matrix_diagonal.column_indices[i];
+				values[idx] = m_matrix_diagonal.values[i];
+			}
+			m_matrix_diagonal.column_indices = column_indices;
+			m_matrix_diagonal.values         = values;
+			m_matrix_diagonal.row_offsets    = row_offsets;
+		}
+		// cusp::detail::indices_to_offsets(row_indices, m_matrix_diagonal.row_offsets);
 	}
 
 	first_rows.resize(numPartitions - 1);
@@ -792,20 +832,23 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	ks_col.resize(m_n, 0);
 	ks_row.resize(m_n, 0);
 
+	// FIXME:add support for update
+#if 0
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
 			typeMap.resize(m_nnz);
 		bandedMatMap.resize(m_nnz);
 	}
+#endif
 
-	size_t idx = 0;
-	Acoo.resize(m_n, m_n, m_edges.end() - m_first);
-	Acoo.num_rows = Acoo.num_cols = m_n;
-	Acoo.num_entries = m_edges.end() - m_first;
+	int idx = 0;
+	Acoo.resize(m_n, m_n, m_nnz);
 
+	// FIXME: add support for update
+#if 0
 	if (m_trackReordering) {
-		for (EdgeIterator it = m_first; it != m_edges.end(); ++it, idx++) {
-			int j = it->m_from;
+		for (size_t it = 0; it < m_nnz; ++it, idx++) {
+			int j = m
 			int l = it->m_to;
 
 			size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
@@ -821,20 +864,28 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			if (ks_row[j] < l-j)
 				ks_row[j] = l-j;
 		}
-	} else {
-		for (EdgeIterator it = m_first; it != m_edges.end(); ++it, ++idx) {
-			int j = it->m_from;
-			int l = it->m_to;
+	} else 
+#endif
+	
+	{
+		for (int it2 = 0; it2 < m_n; it2++) {
+			int start_idx = m_matrix.row_offsets[it2];
+			int end_idx = m_matrix.row_offsets[it2+1];
 
-			Acoo.row_indices[idx] = it->m_from;
-			Acoo.column_indices[idx] = it->m_to;
-			Acoo.values[idx] = it->m_val;
+			for (int it = start_idx; it < end_idx; ++it, ++idx) {
+				int j = it2;
+				int l = m_matrix.column_indices[it];
 
-			if (ks_col[l] < j - l)
-				ks_col[l] = j - l;
-			if (ks_row[j] < l-j)
-				ks_row[j] = l-j;
-		}
+				Acoo.row_indices[idx] = j;
+				Acoo.column_indices[idx] = l;
+				Acoo.values[idx] = m_matrix.values[it];
+
+				if (ks_col[l] < j - l)
+					ks_col[l] = j - l;
+				if (ks_row[j] < l-j)
+					ks_row[j] = l-j;
+			}
+		} // end for
 	}
 
 	for (int i=1; i<m_n; i++) {
@@ -867,20 +918,22 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	int remainder = m_n % numPartitions;
 	int factor = (saveMem ? 1 : 2);
 
-	EdgeIterator toStart = m_major_edges.begin(), toEnd = m_major_edges.end();
+	int diagonal_nnz = m_matrix_diagonal.num_entries;
 
-	Acoo.resize(m_n, m_n, toEnd - toStart);
-	Acoo.num_rows = Acoo.num_cols = m_n;
-	Acoo.num_entries = toEnd - toStart;
+	Acoo.resize(m_n, m_n, diagonal_nnz);
 
-	for (EdgeIterator it = toStart; it != toEnd; ++it) {
-		int j = it->m_from;
-		int l = it->m_to;
-		int curPartNum = l / (partSize + 1);
-		if (curPartNum >= remainder)
-			curPartNum = remainder + (l-remainder * (partSize + 1)) / partSize;
-		if (ks[curPartNum] < abs(l-j))
-			ks[curPartNum] = abs(l-j);
+	for (int it2 = 0; it2 < m_n; it2++) {
+		int start_idx = m_matrix_diagonal.row_offsets[it2];
+		int end_idx = m_matrix_diagonal.row_offsets[it2+1];
+		for (int it = start_idx; it < end_idx; ++it) {
+			int j = it2;
+			int l = m_matrix_diagonal.column_indices[it];
+			int curPartNum = l / (partSize + 1);
+			if (curPartNum >= remainder)
+				curPartNum = remainder + (l-remainder * (partSize + 1)) / partSize;
+			if (ks[curPartNum] < abs(l-j))
+				ks[curPartNum] = abs(l-j);
+		}
 	}
 
 	for (int i=0; i < numPartitions; i++) {
@@ -890,46 +943,56 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			BOffsets[i+1] = BOffsets[i] + (partSize) * (factor * ks[i] + 1);
 	}
 
+	// FIXME: add support for update
+#if 0
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
 			typeMap.resize(m_nnz);
 		bandedMatMap.resize(m_nnz);
 	}
+#endif
 
 	ks_col.resize(m_n, 0);
 	ks_row.resize(m_n, 0);
 
-	size_t idx = 0;
-	for (EdgeIterator it = toStart; it != toEnd; ++it, ++idx) {
-		int j = it->m_from;
-		int l = it->m_to;
+	int idx = 0;
+	for (int it2 = 0; it2 < m_n; it2++) {
+		int start_idx = m_matrix_diagonal.row_offsets[it2];
+		int end_idx = m_matrix_diagonal.row_offsets[it2+1];
+		for (int it = start_idx; it < end_idx; ++it, ++idx) {
+			int j = it2;
+			int l = m_matrix_diagonal.column_indices[it];
 
-		int curPartNum = l / (partSize + 1);
-		int l_in_part;
-		if (curPartNum >= remainder) {
-			l_in_part = l - remainder * (partSize + 1);
-			curPartNum = remainder + l_in_part / partSize;
-			l_in_part %= partSize;
-		} else {
-			l_in_part = l % (partSize + 1);
-		}
+			int curPartNum = l / (partSize + 1);
+			int l_in_part;
+			if (curPartNum >= remainder) {
+				l_in_part = l - remainder * (partSize + 1);
+				curPartNum = remainder + l_in_part / partSize;
+				l_in_part %= partSize;
+			} else {
+				l_in_part = l % (partSize + 1);
+			}
 
-		int K = ks[curPartNum];
-		int delta = (saveMem ? 0 : K);
-		int i = BOffsets[curPartNum] + l_in_part * (factor * K + 1) + delta + j - l;
+			int K = ks[curPartNum];
+			int delta = (saveMem ? 0 : K);
+			int i = BOffsets[curPartNum] + l_in_part * (factor * K + 1) + delta + j - l;
 
-		Acoo.row_indices[idx] = it->m_from;
-		Acoo.column_indices[idx] = it->m_to;
-		Acoo.values[idx] = it->m_val;
+			Acoo.row_indices[idx] = j;
+			Acoo.column_indices[idx] = l;
+			Acoo.values[idx] = m_matrix_diagonal.values[it];
 
-		if (ks_col[l] < j - l)
-			ks_col[l] = j - l;
-		if (ks_row[j] < l-j)
-			ks_row[j] = l-j;
+			if (ks_col[l] < j - l)
+				ks_col[l] = j - l;
+			if (ks_row[j] < l-j)
+				ks_row[j] = l-j;
 
-		if (m_trackReordering) {
-			typeMap[it->m_ori_idx] = 1;
-			bandedMatMap[it->m_ori_idx] = i;
+			// FIXME: add support for update
+#if 0
+			if (m_trackReordering) {
+				typeMap[it->m_ori_idx] = 1;
+				bandedMatMap[it->m_ori_idx] = i;
+			}
+#endif
 		}
 	}
 
@@ -983,29 +1046,29 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 // ----------------------------------------------------------------------------
 template <typename T>
 int
-Graph<T>::RCM(EdgeVector&  edges,
+Graph<T>::RCM(MatrixCsr&   mat_csr,
               IntVector&   optReordering,
               IntVector&   optPerm)
 {
 	optReordering.resize(m_n);
 	optPerm.resize(m_n);
 
-	int nnz = edges.size();
+	int nnz = mat_csr.num_entries;
 
 	IntVector tmp_reordering(m_n);
-	IntVector degrees(m_n, 0);
 
 	thrust::sequence(optReordering.begin(), optReordering.end());
 
-	std::vector<int> *in_out_graph;
+	IntVector row_indices(nnz);
+	IntVector column_indices(nnz);
+	IntVector row_offsets(m_n + 1);
+	cusp::detail::offsets_to_indices(mat_csr.row_offsets, row_indices);
 
-	in_out_graph = new std::vector<int> [m_n];
-
-	EdgeIterator begin = edges.begin();
-	EdgeIterator end = edges.end();
+	EdgeIterator begin = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), mat_csr.column_indices.begin()));
+	EdgeIterator end   = thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   mat_csr.column_indices.end()));
 	int tmp_bdwidth = thrust::transform_reduce(begin, end, EdgeLength(), 0, thrust::maximum<int>());
 	int bandwidth = tmp_bdwidth;
-	buildTopology(begin, end, degrees, in_out_graph);
+	buildTopology(begin, end, 0, m_n, row_offsets, column_indices);
 
 	const int MAX_NUM_TRIAL = 5;
 	const int BANDWIDTH_THRESHOLD = 256;
@@ -1021,7 +1084,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL ; trial_num++)
 	{
 		std::queue<int> q;
-		std::priority_queue<NodeType> pq;
+		std::priority_queue<NodeType, std::vector<NodeType>, CompareValue<int> > pq;
 
 		int tmp_node;
 		BoolVector pushed(m_n, false);
@@ -1077,20 +1140,18 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 			q.pop();
 
-			std::vector<int> &tmp_vec = in_out_graph[tmp_node];
-			int out_size = tmp_vec.size();
-			if(out_size != 0) {
-				for (int i = 0; i < out_size; i++)  {
-					int target_node = tmp_vec[i];
-					if(!pushed[target_node]) {
-						pushed[target_node] = true;
-						pq.push(NodeType(target_node, degrees[target_node]));
-					}
+			int start_idx = row_offsets[tmp_node], end_idx = row_offsets[tmp_node + 1];
+
+			for (int i = start_idx; i < end_idx; i++)  {
+				int target_node = column_indices[i];
+				if(!pushed[target_node]) {
+					pushed[target_node] = true;
+					pq.push(thrust::make_tuple(target_node, row_offsets[target_node + 1] - row_offsets[target_node]));
 				}
 			}
 
 			while(!pq.empty()) {
-				q.push(pq.top().m_idx);
+				q.push(thrust::get<0>(pq.top()));
 				pq.pop();
 			}
 		}
@@ -1102,7 +1163,7 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 		{
 			int *perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-			tmp_bdwidth = thrust::transform_reduce(edges.begin(), edges.end(), PermutedEdgeLength(perm_array), 0, thrust::maximum<int>());
+			tmp_bdwidth = thrust::transform_reduce(begin, end, PermutedEdgeLength(perm_array), 0, thrust::maximum<int>());
 		}
 
 		if(bandwidth > tmp_bdwidth) {
@@ -1125,10 +1186,32 @@ Graph<T>::RCM(EdgeVector&  edges,
 
 	{
 		int* perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-		thrust::for_each(edges.begin(), edges.end(), PermuteEdge(perm_array));
-	}
+		thrust::transform(thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), mat_csr.column_indices.begin())),
+						  thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   mat_csr.column_indices.end())),
+						  thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), mat_csr.column_indices.begin())),
+						  PermuteEdge(perm_array));
 
-	delete [] in_out_graph;
+		// thrust::sort_by_key(row_indices.begin(), row_indices.end(), thrust::make_zip_iterator(thrust::make_tuple(mat_csr.column_indices.begin(), mat_csr.values.begin())));
+		{
+			thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
+			IntVector column_indices(nnz);
+			Vector    values(nnz);
+			for (int i = 0; i < nnz; i++)
+				row_offsets[row_indices[i]] ++;
+
+			thrust::inclusive_scan(row_offsets.begin(), row_offsets.end(), row_offsets.begin());
+
+			for (int i = nnz - 1; i >= 0; i--) {
+				int idx = (--row_offsets[row_indices[i]]);
+				column_indices[idx] = mat_csr.column_indices[i];
+				values[idx] = mat_csr.values[i];
+			}
+			mat_csr.column_indices = column_indices;
+			mat_csr.values         = values;
+			mat_csr.row_offsets    = row_offsets;
+		}
+		// cusp::detail::indices_to_offsets(row_indices, mat_csr.row_offsets);
+	}
 
 	return bandwidth;
 }
@@ -1142,42 +1225,36 @@ Graph<T>::RCM(EdgeVector&  edges,
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::partitionedRCM(EdgeIterator&  begin,
-                         EdgeIterator&  end,
+Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
+						 int            index_begin,
+						 int            index_end,
                          int            node_begin,
                          int            node_end,
                          IntVector&     optReordering,
-                         IntVector&     optPerm)
+                         IntVector&     optPerm,
+						 IntVector&     row_offsets,
+						 IntVector&     row_indices)
 {
-	static std::vector<int> tmp_reordering;
-	tmp_reordering.resize(m_n);
-
-	static IntVector degrees;
-	if (degrees.size() != m_n)
-		degrees.resize(m_n, 0);
-	else
-		cusp::blas::fill(degrees, 0);
+	static IntVector tmp_reordering(m_n);
 
 	// for(int i = node_begin; i < node_end; i++)
 		// optReordering[i] = i;
 	thrust::sequence(optReordering.begin()+node_begin, optReordering.begin()+node_end, node_begin);
 
-	std::vector<int>* in_out_graph;
+	int tmp_bdwidth = thrust::transform_reduce(thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin() + index_begin, mat_csr.column_indices.begin() + index_begin)), 
+											   thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin() + index_end, mat_csr.column_indices.begin() + index_end)), 
+											   EdgeLength(), 0, thrust::maximum<int>());
 
-	in_out_graph = new std::vector<int> [node_end];
-
-	int tmp_bdwidth = thrust::transform_reduce(begin, end, EdgeLength(), 0, thrust::maximum<int>());
 	int opt_bdwidth = tmp_bdwidth;
-	buildTopology(begin, end, degrees, in_out_graph);
+	EdgeIterator begin = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin() + index_begin, mat_csr.column_indices.begin() + index_begin));
+	EdgeIterator end   = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin() + index_end,   mat_csr.column_indices.begin() + index_end));
+	IntVector column_indices;
+	buildTopology(begin, end, node_begin, node_end, row_offsets, column_indices);
 
 	const int MAX_NUM_TRIAL = 5;
 	const int BANDWIDTH_THRESHOLD = 128;
 
-	static BoolVector tried(m_n, false);
-	if (tried.size() != m_n)
-		tried.resize(m_n, false);
-	else
-		cusp::blas::fill(tried, false);
+	BoolVector tried(m_n, false);
 
 	tried[node_begin] = true;
 
@@ -1186,7 +1263,7 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 
 	for (int num_trial = 0; num_trial < MAX_NUM_TRIAL; num_trial++) {
 		std::queue<int> q;
-		std::priority_queue<NodeType> pq;
+		std::priority_queue<NodeType, std::vector<NodeType>, CompareValue<int> > pq;
 
 		int tmp_node;
 		BoolVector pushed(node_end, false);
@@ -1225,20 +1302,18 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 
 			q.pop();
 
-			std::vector<int>& tmp_vec = in_out_graph[tmp_node];
-			int in_out_size = tmp_vec.size();
-			if(in_out_size != 0) {
-				for (int i = 0; i < in_out_size; i++)  {
-					int target_node = tmp_vec[i];
-					if(!pushed[target_node]) {
-						pushed[target_node] = true;
-						pq.push(NodeType(target_node, degrees[target_node]));
-					}
+			int start_idx = row_offsets[tmp_node], end_idx = row_offsets[tmp_node + 1];
+
+			for (int i = start_idx; i < end_idx; i++)  {
+				int target_node = column_indices[i];
+				if(!pushed[target_node]) {
+					pushed[target_node] = true;
+					pq.push(thrust::make_tuple(target_node, row_offsets[target_node + 1] - row_offsets[target_node]));
 				}
 			}
 
 			while(!pq.empty()) {
-				q.push(pq.top().m_idx);
+				q.push(thrust::get<0>(pq.top()));
 				pq.pop();
 			}
 		}
@@ -1271,13 +1346,6 @@ Graph<T>::partitionedRCM(EdgeIterator&  begin,
 	                optReordering.begin() + node_begin,
 	                optPerm.begin());
 
-	{
-		int* perm_array = thrust::raw_pointer_cast(&optPerm[0]);
-		thrust::for_each(begin, end, PermuteEdge(perm_array));
-	}
-
-	delete [] in_out_graph;
-
 	return true;
 }
 
@@ -1290,17 +1358,46 @@ template <typename T>
 void
 Graph<T>::buildTopology(EdgeIterator&      begin,
                         EdgeIterator&      end,
-                        IntVector&         degrees,
-                        std::vector<int>*  in_out_graph)
+						int                node_begin,
+						int                node_end,
+                        IntVector&         row_offsets,
+                        IntVector&         column_indices)
 {
+	if (row_offsets.size() != m_n + 1)
+		row_offsets.resize(m_n + 1, 0);
+	else
+		thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
+
+	IntVector row_indices((end - begin) << 1);
+	column_indices.resize((end - begin) << 1);
+	int actual_cnt = 0;
+
 	for(EdgeIterator edgeIt = begin; edgeIt != end; edgeIt++) {
-		int from = edgeIt -> m_from, to = edgeIt -> m_to;
+		int from = thrust::get<0>(*edgeIt), to = thrust::get<1>(*edgeIt);
 		if (from != to) {
-			in_out_graph[from].push_back(to);
-			in_out_graph[to].push_back(from);
-			degrees[from]++;
-			degrees[to]++;
+			row_indices[actual_cnt]        = from;
+			column_indices[actual_cnt]     = to;
+			row_indices[actual_cnt + 1]    = to;
+			column_indices[actual_cnt + 1] = from;
+			actual_cnt += 2;
 		}
+	}
+	row_indices.resize(actual_cnt);
+	column_indices.resize(actual_cnt);
+	// thrust::sort_by_key(row_indices.begin(), row_indices.end(), column_indices.begin());
+	{
+		int&      nnz = actual_cnt;
+		IntVector tmp_column_indices(nnz);
+		for (int i = 0; i < nnz; i++)
+			row_offsets[row_indices[i]] ++;
+
+		thrust::inclusive_scan(row_offsets.begin() + node_begin, row_offsets.begin() + (node_end + 1), row_offsets.begin() + node_begin);
+
+		for (int i = nnz - 1; i >= 0; i--) {
+			int idx = (--row_offsets[row_indices[i]]);
+			tmp_column_indices[idx] = column_indices[i];
+		}
+		column_indices = tmp_column_indices;
 	}
 }
 
@@ -1401,35 +1498,70 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 		scale = false;
 
 	IntVector mc64RowPerm = d_mc64RowPerm;
+	IntVector row_indices(m_nnz);
+	// m_matrix  = Acsr;
+	m_matrix.resize(m_n, m_n, m_nnz);
+	thrust::copy(Acsr.column_indices.begin(), Acsr.column_indices.end(), m_matrix.column_indices.begin());
 	if (scale) {
 		for (int i = 0; i < m_n; i++) {
 			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
+			int new_row = mc64RowPerm[i];
 			for (int l = start_idx; l < end_idx; l++) {
-				m_edges[l].m_from = mc64RowPerm[i];
-				int to   = (m_edges[l].m_to   = Acsr.column_indices[l]);
+				row_indices[l] = new_row;
+				int to   = (Acsr.column_indices[l]);
 				T scaleFact = (T)(mc64RowScale[i] * mc64ColScale[to]);
+				m_matrix.values[l] = scaleFact * Acsr.values[l];
+				// FIXME: add support for update
+#if 0
 				if (m_trackReordering) {
 					scaleMap[l] = scaleFact;
 					m_edges[l].m_ori_idx = l;
 				}
-				m_edges[l].m_val = scaleFact * Acsr.values[l];
+#endif
 			}
 		}
 	} else {
 		for (int i = 0; i < m_n; i++) {
 			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
+			int new_row = mc64RowPerm[i];
 			for (int l = start_idx; l < end_idx; l++) {
-				m_edges[l].m_from = mc64RowPerm[i];
-				m_edges[l].m_to   = Acsr.column_indices[l];
+				row_indices[l] = new_row;
+				m_matrix.values[l] = Acsr.values[l];
+				// FIXME: add support for update
+#if 0
 				if (m_trackReordering)
 					m_edges[l].m_ori_idx = l;
-
-				m_edges[l].m_val = Acsr.values[l];
+#endif
 			}
 		}
 
 		if (m_trackReordering)
 			cusp::blas::fill(scaleMap, (T) 1.0);
+	}
+
+	/*
+	{
+		thrust::sort_by_key(row_indices.begin(), row_indices.end(), thrust::make_zip_iterator(thrust::make_tuple(m_matrix.column_indices.begin(), m_matrix.values.begin())));
+		cusp::detail::indices_to_offsets(row_indices, m_matrix.row_offsets);
+	} */
+	{
+		IntVector& row_offsets = m_matrix.row_offsets;
+		int&       nnz         = m_nnz;
+		thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
+		IntVector column_indices(nnz);
+		Vector    values(nnz);
+		for (int i = 0; i < nnz; i++)
+			row_offsets[row_indices[i]] ++;
+
+		thrust::inclusive_scan(row_offsets.begin(), row_offsets.end(), row_offsets.begin());
+
+		for (int i = nnz - 1; i >= 0; i--) {
+			int idx = (--row_offsets[row_indices[i]]);
+			column_indices[idx] = m_matrix.column_indices[i];
+			values[idx] = m_matrix.values[i];
+		}
+		m_matrix.column_indices = column_indices;
+		m_matrix.values         = values;
 	}
 	loc_timer.Stop();
 	m_timeMC64_post = loc_timer.getElapsed();
@@ -1461,59 +1593,24 @@ Graph<T>::get_csc_matrix(const MatrixCsr&  Acsr,
 	}
 
 	double *dc_val_ptr    = thrust::raw_pointer_cast(&c_val[0]);
-	double *dmax_val_ptr  = thrust::raw_pointer_cast(&max_val_in_col[0]);
 	const int *d_row_ptrs = thrust::raw_pointer_cast(&d_row_offsets[0]);
+	double *dmax_val_ptr  = thrust::raw_pointer_cast(&max_val_in_col[0]);
 
 	int blockX = m_n, blockY = 1;
 	kernelConfigAdjust(blockX, blockY, 32768);
 	dim3 grids(blockX, blockY);
 
-	device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs);
+	device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs); 
 }
 
 template<typename T>
 void
 Graph<T>::get_csr_matrix(MatrixCsr&       Acsr, int numPartitions)
 {
-	EdgeIterator toStart, toEnd;
-	if (numPartitions == 1) {
-		toEnd   = m_edges.end();
-		toStart = m_first;
-	}
-	else {
-		toEnd   = m_major_edges.end();
-		toStart = m_major_edges.begin();
-	}
-
-	Acsr.resize(m_n, m_n, toEnd - toStart);
-
-	cusp::blas::fill(Acsr.row_offsets, 0);
-
-	EdgeVector edges_tmp(toEnd - toStart);
-
-	for (EdgeIterator edgeIt = toStart; edgeIt != toEnd; edgeIt++)
-		Acsr.row_offsets[edgeIt -> m_to]++;
-
-	thrust::exclusive_scan(Acsr.row_offsets.begin(), Acsr.row_offsets.end(), Acsr.row_offsets.begin());
-
-	for (EdgeIterator edgeIt = toStart; edgeIt != toEnd; edgeIt++) {
-		int idx = Acsr.row_offsets[edgeIt -> m_to];
-		Acsr.row_offsets[edgeIt -> m_to] ++;
-		edges_tmp[idx] = *edgeIt;
-	}
-
-	cusp::blas::fill(Acsr.row_offsets, 0);
-
-	for (EdgeIterator edgeIt = edges_tmp.begin(); edgeIt != edges_tmp.end(); edgeIt++)
-		Acsr.row_offsets[edgeIt -> m_from]++;
-
-	thrust::inclusive_scan(Acsr.row_offsets.begin(), Acsr.row_offsets.end(), Acsr.row_offsets.begin());
-
-	for (EdgeRevIterator edgeIt = edges_tmp.rbegin(); edgeIt != edges_tmp.rend(); edgeIt++) {
-		int idx = --Acsr.row_offsets[edgeIt -> m_from];
-		Acsr.column_indices[idx] = edgeIt -> m_to;
-		Acsr.values[idx] = edgeIt -> m_val;
-	}
+	if (numPartitions == 1)
+		Acsr = m_matrix;
+	else
+		Acsr = m_matrix_diagonal;
 }
 
 // ----------------------------------------------------------------------------
@@ -1732,7 +1829,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 	int b_cnt = 0;
 	static BoolVector inB(m_n, false);
 
-	std::priority_queue<Dijkstra> Q;
+	std::priority_queue<Dijkstra, std::vector<Dijkstra>, CompareValue<double> > Q;
+
 	double lsp = 0.0;
 	double lsap = LOC_INFINITY;
 	int cur_node = init_node;
@@ -1767,7 +1865,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 				} else if (d_new < d_vals[cur_row]){
 					d_vals[cur_row] = d_new;
 					prev[match_nodes[cur_row]] = cur_node;
-					Q.push(Dijkstra(cur_row, d_new));
+					Q.push(thrust::make_tuple(cur_row, d_new));
 					irn[cur_row] = i;
 				}
 			}
@@ -1779,7 +1877,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		while(!Q.empty()) {
 			min_d = Q.top();
 			Q.pop();
-			if(visited[min_d.m_idx]) 
+			if(visited[thrust::get<0>(min_d)]) 
 				continue;
 			found = true;
 			break;
@@ -1787,10 +1885,10 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		if(!found)
 			break;
 
-		int tmp_idx = min_d.m_idx;
+		int tmp_idx = thrust::get<0>(min_d);
 		visited[tmp_idx] = true;
 
-		lsp = min_d.m_val;
+		lsp = thrust::get<1>(min_d);
 		if(lsap <= lsp) {
 			visited[tmp_idx] = false;
 			d_vals[tmp_idx] = LOC_INFINITY;
@@ -1840,13 +1938,12 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		while(!Q.empty()) {
 			Dijkstra tmpD = Q.top();
 			Q.pop();
-			d_vals[tmpD.m_idx] = LOC_INFINITY;
+			d_vals[thrust::get<0>(tmpD)] = LOC_INFINITY;
 		}
 	}
 
 	return success;
 }
-
 
 } // namespace spike
 
