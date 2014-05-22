@@ -553,8 +553,38 @@ Graph<T>::dropOff(T   frac,
 		Acoo.row_indices.resize(m_nnz);
 		Acoo.num_entries = m_nnz;
 
-		// m_matrix = Acoo;
-		Acoo.sort_by_row_and_column();
+		//// m_matrix = Acoo;
+		//// Acoo.sort_by_row_and_column();
+
+		{
+			thrust::fill(bucket.begin(), bucket.end(), T(0));
+			for (int i = 0; i < m_nnz; i++)
+				bucket[Acoo.column_indices[i]] ++;
+
+			thrust::exclusive_scan(bucket.begin(), bucket.end(), bucket.begin());
+
+			IntVector  tmp_row_indices(m_nnz);
+
+			for (int i = 0; i < m_nnz; i++) {
+				int idx = (bucket[Acoo.column_indices[i]]++);
+				tmp_row_indices[idx] = Acoo.row_indices[i];
+				m_matrix.column_indices[idx] = Acoo.column_indices[i];
+				m_matrix.values[idx] = Acoo.values[i];
+			}
+
+			thrust::fill(bucket.begin(), bucket.end(), T(0));
+			for (int i = 0; i < m_nnz; i++)
+				bucket[tmp_row_indices[i]] ++;
+
+			thrust::inclusive_scan(bucket.begin(), bucket.end(), bucket.begin());
+
+			for (int i = 0; i < m_nnz; i++) {
+				int idx = (--bucket[tmp_row_indices[i]]);
+				Acoo.row_indices[idx]    = tmp_row_indices[i];
+				Acoo.column_indices[idx] = m_matrix.column_indices[i];
+				Acoo.values[idx]         = m_matrix.values[i];
+			}
+		}
 
 		cusp::detail::indices_to_offsets(Acoo.row_indices, m_matrix.row_offsets);
 		m_matrix.column_indices = Acoo.column_indices;

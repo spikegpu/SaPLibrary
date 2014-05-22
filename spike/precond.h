@@ -4308,12 +4308,12 @@ Precond<PrecVector>::calculateSpikes(PrecVector&  WV)
 	}
 
 	int totalRHSCount = cusp::blas::nrm1(m_offDiagWidths_right_host) + cusp::blas::nrm1(m_offDiagWidths_left_host);
-	if (totalRHSCount >= 2800) {
-		calculateSpikes_var(WV);
-		return;
-	}
+	//// if (totalRHSCount >= 2800) {
+	calculateSpikes_var(WV);
+		//// return;
+	////}
 
-	calculateSpikes_var_old(WV);
+	////calculateSpikes_var_old(WV);
 }
 
 template <typename PrecVector>
