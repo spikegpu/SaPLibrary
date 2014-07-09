@@ -208,10 +208,11 @@ private:
 	                          DoubleVectorD&    max_val_in_col);
 
 public:
-	struct AbsoluteValue: public thrust::unary_function<double, double>
+	template <typename VType>
+	struct AbsoluteValue: public thrust::unary_function<VType, VType>
 	{
 		__host__ __device__
-		double operator() (double a)
+		VType operator() (VType a)
 		{
 			return (a < 0 ? -a : a);
 		}
@@ -319,6 +320,15 @@ public:
 	{
 		bool operator () (const thrust::tuple<int, VType> &a, const thrust::tuple<int, VType> &b) const {return thrust::get<1>(a) > thrust::get<1>(b);}
 	};
+
+	struct Difference: public thrust::binary_function<int, int, int>
+	{
+		inline
+		__host__ __device__
+		int operator() (const int &a, const int &b) const {
+			return abs(a-b);
+		}
+	};
 };
 
 
@@ -400,16 +410,10 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 		cusp::blas::fill(scaleMap, (T) 1.0);
 	}
 
-	k_mc64 = 0;
 	{
 		IntVector row_indices(m_nnz);
-		IntVector index_diffs(m_nnz);
 		cusp::detail::offsets_to_indices(m_matrix.row_offsets, row_indices);
-		thrust::transform(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), index_diffs.begin(), thrust::minus<int>());
-		k_mc64 = abs(thrust::reduce(index_diffs.begin(), index_diffs.end(), -m_n, thrust::maximum<int>()));
-		int tmp_k = abs(thrust::reduce(index_diffs.begin(), index_diffs.end(), m_n, thrust::minimum<int>()));
-		if (k_mc64 < tmp_k)
-			k_mc64 = tmp_k;
+		k_mc64 = thrust::inner_product(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), 0, thrust::maximum<int>(), Difference());
 	}
 
 	if (testMC64)
@@ -1595,7 +1599,6 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 	}
 	loc_timer.Stop();
 	m_timeMC64_post = loc_timer.getElapsed();
-
 }
 
 // ----------------------------------------------------------------------------
@@ -1618,7 +1621,7 @@ Graph<T>::get_csc_matrix(const MatrixCsr&  Acsr,
 	{
 		IntVectorD    d_row_indices(nnz);
 		cusp::detail::offsets_to_indices(d_row_offsets, d_row_indices);
-		thrust::transform(c_val.begin(), c_val.end(), c_val.begin(), AbsoluteValue());
+		thrust::transform(c_val.begin(), c_val.end(), c_val.begin(), AbsoluteValue<double>());
 		thrust::reduce_by_key(d_row_indices.begin(), d_row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), max_val_in_col.begin(), thrust::equal_to<double>(), thrust::maximum<double>());
 	}
 
