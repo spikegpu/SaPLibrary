@@ -1483,7 +1483,7 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 	DoubleVector c_val           = d_c_val;
 	DoubleVector mc64RowScale(m_n);
 	DoubleVector mc64ColScale(m_n);
-	init_reduced_cval(mc64FirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, mc64RowScale, mc64ColScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
+	init_reduced_cval(mc64FirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, mc64ColScale, mc64RowScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
 	loc_timer.Stop();
 	m_timeMC64_first = loc_timer.getElapsed();
 
@@ -1494,7 +1494,7 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 		IntVector  prev(m_n);
 		for(int i=0; i<m_n; i++) {
 			if(rev_matched[i]) continue;
-			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, mc64RowScale, mc64ColScale, c_val, irn);
+			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, mc64ColScale, mc64RowScale, c_val, irn);
 		}
 
 		{
@@ -1504,11 +1504,11 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 		}
 
 		DoubleVector max_val_in_col = d_max_val_in_col;
-		thrust::transform(mc64RowScale.begin(), mc64RowScale.end(), mc64RowScale.begin(), Exponential());
-		thrust::transform(thrust::make_transform_iterator(mc64ColScale.begin(), Exponential()),
-				thrust::make_transform_iterator(mc64ColScale.end(), Exponential()),
+		thrust::transform(mc64ColScale.begin(), mc64ColScale.end(), mc64ColScale.begin(), Exponential());
+		thrust::transform(thrust::make_transform_iterator(mc64RowScale.begin(), Exponential()),
+				thrust::make_transform_iterator(mc64RowScale.end(), Exponential()),
 				max_val_in_col.begin(),
-				mc64ColScale.begin(),
+				mc64RowScale.begin(),
 				thrust::divides<double>());
 
 
@@ -1630,7 +1630,7 @@ Graph<T>::get_csc_matrix(const MatrixCsr&  Acsr,
 	double *dmax_val_ptr  = thrust::raw_pointer_cast(&max_val_in_col[0]);
 
 	int blockX = m_n, blockY = 1;
-	kernelConfigAdjust(blockX, blockY, 32768);
+	kernelConfigAdjust(blockX, blockY, MAX_GRID_DIMENSION);
 	dim3 grids(blockX, blockY);
 
 	device::getResidualValues<<<grids, 64>>>(m_n, dc_val_ptr, dmax_val_ptr, d_row_ptrs); 
