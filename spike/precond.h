@@ -1684,8 +1684,8 @@ Precond<PrecVector>::ILUT(PrecMatrixCsrH &Acsrh, int p, PrecValueType tau)
 	omp_set_num_threads(num_threads);
 
 	IntVectorH    lu_row_offsets(m_n + 1, 0);
-	IntVectorH    lu_column_indices[numPartitions];
-	PrecVectorH   lu_values[numPartitions];
+	std::vector<IntVectorH>    lu_column_indices(numPartitions);
+	std::vector<PrecVectorH>   lu_values(numPartitions);
 	PrecVectorH   wvector(m_n, 0);
 	IntVectorH    in_wvector(m_n, 0);
 
@@ -1953,11 +1953,11 @@ Precond<PrecVector>::ILUULT(PrecMatrixCsrH &Acsrh, PrecMatrixCsrH &Acsrh2, int p
 		omp_set_num_threads(1);
 
 	IntVectorH    lu_row_offsets(m_n + 1, 0);
-	IntVectorH    lu_column_indices[numPartitions - 1];
-	PrecVectorH   lu_values[numPartitions - 1];
+	std::vector<IntVectorH>    lu_column_indices(numPartitions - 1);
+	std::vector<PrecVectorH>   lu_values(numPartitions - 1);
 	IntVectorH    ul_row_offsets(m_n + 1, 0);
-	IntVectorH    ul_column_indices[numPartitions - 1];
-	PrecVectorH   ul_values[numPartitions - 1];
+	std::vector<IntVectorH>    ul_column_indices(numPartitions - 1);
+	std::vector<PrecVectorH>   ul_values(numPartitions - 1);
 	PrecVectorH   wvector_lu(m_n, 0);
 	IntVectorH    in_wvector_lu(m_n, 0);
 	PrecVectorH   wvector_ul(m_n, 0);
