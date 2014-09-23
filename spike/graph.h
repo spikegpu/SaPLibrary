@@ -329,6 +329,18 @@ public:
 			return abs(a-b);
 		}
 	};
+
+	template <typename Type>
+	struct EqualTo: public thrust::unary_function<Type, bool>
+	{
+		Type m_local;
+		EqualTo(Type l): m_local(l) {}
+		inline
+		__host__ __device__
+		bool operator() (const Type& a) {
+			return a == m_local;
+		}
+	};
 };
 
 
@@ -1096,7 +1108,9 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 	IntVector row_indices(nnz);
 	IntVector column_indices(nnz);
 	IntVector row_offsets(m_n + 1);
+	IntVector ori_degrees(m_n);
 	cusp::detail::offsets_to_indices(mat_csr.row_offsets, row_indices);
+	thrust::transform(mat_csr.row_offsets.begin() + 1, mat_csr.row_offsets.end(), mat_csr.row_offsets.begin(), ori_degrees.begin(), thrust::minus<int>());
 
 	EdgeIterator begin = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), mat_csr.column_indices.begin()));
 	EdgeIterator end   = thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   mat_csr.column_indices.end()));
@@ -1111,9 +1125,11 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 	timer.Start();
 
 	BoolVector tried(m_n, false);
-	tried[0] = true;
+	IntVector pushed(m_n, -1);
+	IntVector levels(m_n);
 
-	int last_tried = 0;
+	int max_level = 0;
+	int p_max_level = 0;
 
 	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL ; trial_num++)
 	{
@@ -1121,34 +1137,43 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 		std::priority_queue<NodeType, std::vector<NodeType>, CompareValue<int> > pq;
 
 		int tmp_node;
-		BoolVector pushed(m_n, false);
 
 		int left_cnt = m_n;
 		int j = 0, last = 0;
 
 		if (trial_num > 0) {
+			IntIterator max_level_iter = thrust::max_element(levels.begin(), levels.end());
+			int max_count = thrust::count(levels.begin(), levels.end(), max_level);
 
-			if (trial_num < MAX_NUM_TRIAL) {
-				tmp_node = rand() % m_n;
+			if (max_count > 1) {
+				IntVector max_level_vertices(max_count);
+				IntVector max_level_valence(max_count);
 
-				while(tried[tmp_node])
-					tmp_node = rand() % m_n;
-			} else {
-				if (last_tried >= m_n - 1) {
-					fprintf(stderr, "All possible starting points have been tried in RCM\n");
-					break;
-				}
-				for (tmp_node = last_tried+1; tmp_node < m_n; tmp_node++)
-					if (!tried[tmp_node]) {
-						last_tried = tmp_node;
-						break;
-					}
-			}
+				thrust::copy_if(thrust::counting_iterator<int>(0),
+						thrust::counting_iterator<int>(int(m_n)),
+						levels.begin(),
+						max_level_vertices.begin(),
+						EqualTo<int>(max_level));
 
-			pushed[tmp_node] = true;
-			tried[tmp_node] = true;
-			q.push(tmp_node);
-		}
+				thrust::gather(thrust::counting_iterator<int>(0),
+						thrust::counting_iterator<int>(max_count),
+						ori_degrees.begin(),
+						max_level_valence.begin());
+
+				int min_valence_pos = thrust::min_element(max_level_valence.begin(), max_level_valence.end()) - max_level_valence.begin();
+				tmp_node = max_level_vertices[min_valence_pos];
+			} else
+				tmp_node = max_level_iter - levels.begin();
+
+			while(tried[tmp_node])
+				tmp_node = (tmp_node + 1) % m_n;
+		} else
+			tmp_node = thrust::min_element(ori_degrees.begin(), ori_degrees.end()) - ori_degrees.begin();
+
+		tried[tmp_node]  = true;
+		levels[tmp_node] = 0;
+		pushed[tmp_node] = trial_num;
+		q.push(tmp_node);
 
 		while(left_cnt--) {
 			if(q.empty()) {
@@ -1156,9 +1181,9 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 				int i;
 
 				for(i = last; i < m_n; i++) {
-					if(!pushed[i]) {
+					if(pushed[i] != trial_num) {
 						q.push(i);
-						pushed[i] = true;
+						pushed[i] = trial_num;
 						last = i;
 						break;
 					}
@@ -1175,12 +1200,14 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 			q.pop();
 
 			int start_idx = row_offsets[tmp_node], end_idx = row_offsets[tmp_node + 1];
+			int local_level = levels[tmp_node];
 
 			for (int i = start_idx; i < end_idx; i++)  {
 				int target_node = column_indices[i];
-				if(!pushed[target_node]) {
-					pushed[target_node] = true;
-					pq.push(thrust::make_tuple(target_node, row_offsets[target_node + 1] - row_offsets[target_node]));
+				if(pushed[target_node] != trial_num) {
+					pushed[target_node] = trial_num;
+					pq.push(thrust::make_tuple(target_node, ori_degrees[target_node]));
+					levels[target_node] = local_level + 1;
 				}
 			}
 
@@ -1204,6 +1231,20 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 			bandwidth = tmp_bdwidth;
 			optReordering = tmp_reordering;
 		}
+
+		if (trial_num > 0) {
+			if (p_max_level >= max_level)
+				break;
+
+			const double stop_ratio = 0.01;
+			double max_level_ratio = 1.0 * (max_level - p_max_level) / p_max_level;
+
+			if (max_level_ratio < stop_ratio)
+				break;
+
+			p_max_level = max_level;
+		} else
+			p_max_level = max_level;
 
 		if(bandwidth <= BANDWIDTH_THRESHOLD)
 			break;
@@ -1289,26 +1330,55 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 	const int BANDWIDTH_THRESHOLD = 128;
 
 	BoolVector tried(m_n, false);
+	IntVector  pushed(node_end, -1);
+	IntVector  ori_degrees(node_end - node_begin);
+	IntVector  levels(m_n);
+	int        max_level, p_max_level;
+	thrust::transform(mat_csr.row_offsets.begin() + (node_begin + 1), mat_csr.row_offsets.begin() + (node_end), mat_csr.row_offsets.begin() + node_begin, ori_degrees.begin(), thrust::minus<int>());
 
-	tried[node_begin] = true;
 
 	CPUTimer timer;
 	timer.Start();
 
-	for (int num_trial = 0; num_trial < MAX_NUM_TRIAL; num_trial++) {
+	for (int trial_num = 0; trial_num < MAX_NUM_TRIAL; trial_num++) {
 		std::queue<int> q;
 		std::priority_queue<NodeType, std::vector<NodeType>, CompareValue<int> > pq;
 
 		int tmp_node;
-		BoolVector pushed(node_end, false);
 
-		if (num_trial > 0) {
-			tmp_node = rand() % (node_end - node_begin) + node_begin;
-			while (tried[tmp_node])
-				tmp_node = rand() % (node_end - node_begin) + node_begin;
-			tried[tmp_node] = pushed[tmp_node] = true;
-			q.push(tmp_node);
-		}
+		if (trial_num > 0) {
+			IntIterator max_level_iter = thrust::max_element(levels.begin() + node_begin, levels.begin() + node_end);
+			int max_count = thrust::count(levels.begin() + node_begin, levels.begin() + node_end, max_level);
+
+			if (max_count > 1) {
+				IntVector max_level_vertices(max_count);
+				IntVector max_level_valence(max_count);
+
+				thrust::copy_if(thrust::counting_iterator<int>(node_begin),
+						thrust::counting_iterator<int>(node_end),
+						levels.begin()+node_begin,
+						max_level_vertices.begin(),
+						EqualTo<int>(max_level));
+
+				thrust::gather(thrust::counting_iterator<int>(0),
+						thrust::counting_iterator<int>(max_count),
+						ori_degrees.begin(),
+						max_level_valence.begin());
+
+				int min_valence_pos = thrust::min_element(max_level_valence.begin(), max_level_valence.end()) - max_level_valence.begin();
+				tmp_node = max_level_vertices[min_valence_pos];
+			} else
+				tmp_node = max_level_iter - levels.begin();
+
+			while(tried[tmp_node])
+				tmp_node = (tmp_node + 1) % m_n;
+		} else
+			tmp_node = thrust::min_element(ori_degrees.begin(), ori_degrees.end()) - ori_degrees.begin() + node_begin;
+
+		tried[tmp_node]  = true;
+		levels[tmp_node] = 0;
+		pushed[tmp_node] = trial_num;
+		q.push(tmp_node);
 
 		int left_cnt = node_end - node_begin;
 		int j = node_begin, last = node_begin;
@@ -1318,9 +1388,9 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 				left_cnt++;
 				int i;
 				for(i = last; i < node_end; i++) {
-					if(!pushed[i]) {
+					if(pushed[i] != trial_num) {
 						q.push(i);
-						pushed[i] = true;
+						pushed[i] = trial_num;
 						last = i;
 						break;
 					}
@@ -1340,9 +1410,10 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 
 			for (int i = start_idx; i < end_idx; i++)  {
 				int target_node = column_indices[i];
-				if(!pushed[target_node]) {
-					pushed[target_node] = true;
+				if(pushed[target_node] != trial_num) {
+					pushed[target_node] = trial_num;
 					pq.push(thrust::make_tuple(target_node, row_offsets[target_node + 1] - row_offsets[target_node]));
+					max_level = levels[target_node] = levels[tmp_node] + 1;
 				}
 			}
 
@@ -1367,6 +1438,20 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 
 			thrust::copy(tmp_reordering.begin()+node_begin, tmp_reordering.begin()+node_end, optReordering.begin()+node_begin);
 		}
+
+		if (trial_num > 0) {
+			if (p_max_level >= max_level)
+				break;
+
+			const double stop_ratio = 0.01;
+			double max_level_ratio = 1.0 * (max_level - p_max_level) / p_max_level;
+
+			if (max_level_ratio < stop_ratio)
+				break;
+
+			p_max_level = max_level;
+		} else
+			p_max_level = max_level;
 
 		if(opt_bdwidth <= BANDWIDTH_THRESHOLD)
 			break;
