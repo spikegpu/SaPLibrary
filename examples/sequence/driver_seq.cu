@@ -136,19 +136,23 @@ int main(int argc, char** argv)
 	// Perform the solver setup.
 	mySolver.setup(A);
 
+	bool converged;
+
 	// Solve the linear system A*x = b for two different RHS.
 	// In each case, set the initial guess to 0.
 	{
 		Vector b(A.num_rows, 1.0);
 		Vector x(A.num_rows, 0.0);
-		mySolver.solve(mySpmv, b, x);
+		converged = mySolver.solve(mySpmv, b, x);
+		cout << (converged ? "Converged" : "Not Converged") << endl;
 		////cusp::io::write_matrix_market_file(x, "x1.mtx");
 	}
 
 	{
 		Vector b(A.num_rows, 2.0);
 		Vector x(A.num_rows, 0.0);
-		mySolver.solve(mySpmv, b, x);
+		converged = mySolver.solve(mySpmv, b, x);
+		cout << (converged ? "Converged" : "Not Converged") << endl;
 		////cusp::io::write_matrix_market_file(x, "x2.mtx");
 	}
 
@@ -160,14 +164,16 @@ int main(int argc, char** argv)
 	{
 		Vector b(A.num_rows, 1.0);
 		Vector x(A.num_rows, 0.0);
-		mySolver.solve(mySpmv, b, x);
+		converged = mySolver.solve(mySpmv, b, x);
+		cout << (converged ? "Converged" : "Not Converged") << endl;
 		////cusp::io::write_matrix_market_file(x, "y1.mtx");
 	}
 
 	{
 		Vector b(A.num_rows, 2.0);
 		Vector x(A.num_rows, 0.0);
-		mySolver.solve(mySpmv, b, x);
+		converged = mySolver.solve(mySpmv, b, x);
+		cout << (converged ? "Converged" : "Not Converged") << endl;
 		////cusp::io::write_matrix_market_file(x, "y2.mtx");
 	}
 

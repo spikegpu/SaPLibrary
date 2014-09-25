@@ -133,6 +133,8 @@ private:
 	int           m_nnz;
 	MatrixCsr     m_matrix;
 	MatrixCsr     m_matrix_diagonal;
+	IntVector     m_ori_indices;
+	IntVector     m_ori_indices_diagonal;
 
 	bool          m_trackReordering;
 
@@ -661,6 +663,7 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 		typeMap.resize(m_nnz);
 		offDiagMap.resize(m_nnz);
 		WVMap.resize(m_nnz);
+		m_ori_indices_diagonal.resize(m_nnz);
 	}
 
 	m_exists.resize(m_n);
@@ -685,6 +688,7 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 				Acoo.row_indices[num_entries]    = j;
 				Acoo.column_indices[num_entries] = l;
 				Acoo.values[num_entries]         = m_matrix.values[it];
+				m_ori_indices_diagonal[num_entries] = m_ori_indices[it];
 				num_entries++;
 			}
 			else {
@@ -709,13 +713,12 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 					}
 
 					// FIXME: add support for update
-#if 0
 					if (m_trackReordering) {
-						typeMap[it->m_ori_idx] = 0;
-						offDiagMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol);
-						WVMap[it->m_ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth;
+						int ori_idx = m_ori_indices[it];
+						typeMap[ori_idx] = 0;
+						offDiagMap[ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol);
+						WVMap[ori_idx] = curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth;
 					}
-#endif
 
 					offDiags_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) * bandwidth + (l-partStartCol)] = WV_host[curPartNum2*2*bandwidth*bandwidth + (j+bandwidth-partEndRow) + offDiagReorderings_right[curPartNum2*bandwidth+l-partStartCol] * bandwidth] = m_matrix.values[it];
 
@@ -739,13 +742,12 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 					}
 
 					// FIXME: add support for update
-#if 0
 					if (m_trackReordering) {
-						typeMap[it->m_ori_idx] = 0;
-						offDiagMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth);
-						WVMap[it->m_ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth;
+						int ori_idx = m_ori_indices[it];
+						typeMap[ori_idx] = 0;
+						offDiagMap[ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth);
+						WVMap[ori_idx] = (curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth;
 					}
-#endif
 
 					offDiags_host[(curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) * bandwidth + (l-partEndCol+bandwidth)] = WV_host[(curPartNum*2+1)*bandwidth*bandwidth + (j-partStartRow) + (offDiagReorderings_left[(curPartNum2-1)*bandwidth+l-partEndCol+bandwidth]) * bandwidth] = m_matrix.values[it];
 				} // end else
@@ -756,6 +758,7 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 	Acoo.row_indices.resize(num_entries);
 	Acoo.column_indices.resize(num_entries);
 	Acoo.values.resize(num_entries);
+	m_ori_indices_diagonal.resize(num_entries);
 	Acoo.num_entries = num_entries;
 	m_matrix_diagonal = Acoo;
 }
@@ -824,6 +827,11 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 			thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
 			IntVector column_indices(diagonal_nnz);
 			Vector    values(diagonal_nnz);
+			IntVector ori_indices;
+
+			if (m_trackReordering)
+				ori_indices.resize(diagonal_nnz);
+
 			for (int i = 0; i < diagonal_nnz; i++)
 				row_offsets[row_indices[i]] ++;
 
@@ -833,10 +841,14 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 				int idx = (--row_offsets[row_indices[i]]);
 				column_indices[idx] = m_matrix_diagonal.column_indices[i];
 				values[idx] = m_matrix_diagonal.values[i];
+				if (m_trackReordering)
+					ori_indices[idx] = m_ori_indices_diagonal[i];
 			}
 			m_matrix_diagonal.column_indices = column_indices;
 			m_matrix_diagonal.values         = values;
 			m_matrix_diagonal.row_offsets    = row_offsets;
+			if (m_trackReordering)
+				m_ori_indices_diagonal = ori_indices;
 		}
 		// cusp::detail::indices_to_offsets(row_indices, m_matrix_diagonal.row_offsets);
 	}
@@ -878,42 +890,41 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	ks_col.resize(m_n, 0);
 	ks_row.resize(m_n, 0);
 
-	// FIXME:add support for update
-#if 0
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
 			typeMap.resize(m_nnz);
 		bandedMatMap.resize(m_nnz);
 	}
-#endif
 
 	int idx = 0;
 	Acoo.resize(m_n, m_n, m_nnz);
 
 	// FIXME: add support for update
-#if 0
 	if (m_trackReordering) {
-		for (size_t it = 0; it < m_nnz; ++it, idx++) {
-			int j = m
-			int l = it->m_to;
+		for (int it2 = 0; it2 < m_n; it2++) {
+			int start_idx = m_matrix.row_offsets[it2];
+			int end_idx = m_matrix.row_offsets[it2+1];
 
-			size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
-			typeMap[it->m_ori_idx] = 1;
-			bandedMatMap[it->m_ori_idx] = i;
+			for (int it = start_idx; it < end_idx; ++it, ++idx) {
+				int j = it2;
+				int l = m_matrix.column_indices[it];
 
-			Acoo.row_indices[idx] = it->m_from;
-			Acoo.column_indices[idx] = it->m_to;
-			Acoo.values[idx] = it->m_val;
+				size_t i = (size_t) l * (2 * bandwidth + 1) + bandwidth + j - l;
+				int ori_idx = m_ori_indices[it];
+				typeMap[ori_idx] = 1;
+				bandedMatMap[ori_idx] = i;
 
-			if (ks_col[l] < j - l)
-				ks_col[l] = j - l;
-			if (ks_row[j] < l-j)
-				ks_row[j] = l-j;
-		}
-	} else 
-#endif
-	
-	{
+				Acoo.row_indices[idx] = j;
+				Acoo.column_indices[idx] = l;
+				Acoo.values[idx] = m_matrix.values[it];
+
+				if (ks_col[l] < j - l)
+					ks_col[l] = j - l;
+				if (ks_row[j] < l-j)
+					ks_row[j] = l-j;
+			}
+		} // end for
+	} else {
 		for (int it2 = 0; it2 < m_n; it2++) {
 			int start_idx = m_matrix.row_offsets[it2];
 			int end_idx = m_matrix.row_offsets[it2+1];
@@ -989,14 +1000,11 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			BOffsets[i+1] = BOffsets[i] + (partSize) * (factor * ks[i] + 1);
 	}
 
-	// FIXME: add support for update
-#if 0
 	if (m_trackReordering) {
 		if (typeMap.size() <= 0)
 			typeMap.resize(m_nnz);
 		bandedMatMap.resize(m_nnz);
 	}
-#endif
 
 	ks_col.resize(m_n, 0);
 	ks_row.resize(m_n, 0);
@@ -1033,12 +1041,11 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 				ks_row[j] = l-j;
 
 			// FIXME: add support for update
-#if 0
 			if (m_trackReordering) {
-				typeMap[it->m_ori_idx] = 1;
-				bandedMatMap[it->m_ori_idx] = i;
+				int ori_idx = m_ori_indices_diagonal[it];
+				typeMap[ori_idx] = 1;
+				bandedMatMap[ori_idx] = i;
 			}
-#endif
 		}
 	}
 
@@ -1271,6 +1278,10 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 			thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
 			IntVector column_indices(nnz);
 			Vector    values(nnz);
+			IntVector ori_indices;
+			if (m_trackReordering)
+				ori_indices.resize(nnz);
+
 			for (int i = 0; i < nnz; i++)
 				row_offsets[row_indices[i]] ++;
 
@@ -1280,10 +1291,16 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 				int idx = (--row_offsets[row_indices[i]]);
 				column_indices[idx] = mat_csr.column_indices[i];
 				values[idx] = mat_csr.values[i];
+				if (m_trackReordering)
+					ori_indices[idx] = m_ori_indices[i];
 			}
+
 			mat_csr.column_indices = column_indices;
 			mat_csr.values         = values;
 			mat_csr.row_offsets    = row_offsets;
+
+			if (m_trackReordering)
+				m_ori_indices = ori_indices;
 		}
 		// cusp::detail::indices_to_offsets(row_indices, mat_csr.row_offsets);
 	}
@@ -1551,6 +1568,9 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 	// Allocate space for the output vectors.
 	d_mc64RowPerm.resize(m_n);
 
+	if (m_trackReordering)
+		m_ori_indices.resize(m_nnz);
+
 	// Allocate space for temporary vectors.
 	DoubleVectorD  d_c_val(m_nnz);
 	DoubleVectorD  d_max_val_in_col(m_n, 0);
@@ -1610,7 +1630,7 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 	loc_timer.Start();
 
 	if (m_trackReordering)
-		scaleMap.resize(m_nnz);
+		scaleMap.resize(m_nnz, T(1.0));
 
 	// TODO: how to do scale when we apply only the first stage
 	if (mc64FirstStageOnly)
@@ -1630,13 +1650,9 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 				int to   = (Acsr.column_indices[l]);
 				T scaleFact = (T)(mc64RowScale[i] * mc64ColScale[to]);
 				m_matrix.values[l] = scaleFact * Acsr.values[l];
-				// FIXME: add support for update
-#if 0
-				if (m_trackReordering) {
+
+				if (m_trackReordering)
 					scaleMap[l] = scaleFact;
-					m_edges[l].m_ori_idx = l;
-				}
-#endif
 			}
 		}
 	} else {
@@ -1646,11 +1662,6 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 			for (int l = start_idx; l < end_idx; l++) {
 				row_indices[l] = new_row;
 				m_matrix.values[l] = Acsr.values[l];
-				// FIXME: add support for update
-#if 0
-				if (m_trackReordering)
-					m_edges[l].m_ori_idx = l;
-#endif
 			}
 		}
 
@@ -1678,6 +1689,8 @@ Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
 			int idx = (--row_offsets[row_indices[i]]);
 			column_indices[idx] = m_matrix.column_indices[i];
 			values[idx] = m_matrix.values[i];
+			if (m_trackReordering)
+				m_ori_indices[idx] = i;
 		}
 		m_matrix.column_indices = column_indices;
 		m_matrix.values         = values;
