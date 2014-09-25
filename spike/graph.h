@@ -688,7 +688,10 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 				Acoo.row_indices[num_entries]    = j;
 				Acoo.column_indices[num_entries] = l;
 				Acoo.values[num_entries]         = m_matrix.values[it];
-				m_ori_indices_diagonal[num_entries] = m_ori_indices[it];
+
+				if (m_trackReordering)
+					m_ori_indices_diagonal[num_entries] = m_ori_indices[it];
+
 				num_entries++;
 			}
 			else {
