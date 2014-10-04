@@ -1251,7 +1251,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 			int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
 			int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
 
-			device::copyFromCOOMatrixToBandedMatrix_variableBandwidth<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
+			device::var::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
 		}
 
 		m_timer.Stop();
@@ -4938,24 +4938,24 @@ Precond<PrecVector>::assembleReducedMat(PrecVector&  WV)
 
 	dim3 grids(m_k, m_numPartitions-1);
 
-	if (!m_variableBandwidth) {
+	if (m_variableBandwidth) {
+		int* p_WVOffsets = thrust::raw_pointer_cast(&m_WVOffsets[0]);
+		int* p_ROffsets  = thrust::raw_pointer_cast(&m_ROffsets[0]);
+		int* p_spike_ks  = thrust::raw_pointer_cast(&m_spike_ks[0]);
+	
+		if (m_k > 1024)
+			device::var::assembleReducedMat_general<PrecValueType><<<grids, 512>>>(p_spike_ks, p_WVOffsets, p_ROffsets, p_WV, p_R);
+		else if (m_k > 32)
+			device::var::assembleReducedMat_g32<PrecValueType><<<grids, m_k>>>(p_spike_ks, p_WVOffsets, p_ROffsets, p_WV, p_R);
+		else
+			device::var::assembleReducedMat<PrecValueType><<<m_numPartitions-1, m_k*m_k>>>(p_spike_ks, p_WVOffsets, p_ROffsets, p_WV, p_R);
+	} else {
 		if (m_k > 1024)
 			device::assembleReducedMat_general<PrecValueType><<<grids, 512>>>(m_k, p_WV, p_R);
 		else if (m_k > 32)
 			device::assembleReducedMat_g32<PrecValueType><<<grids, m_k>>>(m_k, p_WV, p_R);
 		else
 			device::assembleReducedMat<PrecValueType><<<m_numPartitions-1, m_k*m_k>>>(m_k, p_WV, p_R);
-	} else {
-		int* p_WVOffsets = thrust::raw_pointer_cast(&m_WVOffsets[0]);
-		int* p_ROffsets  = thrust::raw_pointer_cast(&m_ROffsets[0]);
-		int* p_spike_ks  = thrust::raw_pointer_cast(&m_spike_ks[0]);
-	
-		if (m_k > 1024)
-			device::assembleReducedMat_var_bandwidth_general<PrecValueType><<<grids, 512>>>(p_spike_ks, p_WVOffsets, p_ROffsets, p_WV, p_R);
-		else if (m_k > 32)
-			device::assembleReducedMat_var_bandwidth_g32<PrecValueType><<<grids, m_k>>>(p_spike_ks, p_WVOffsets, p_ROffsets, p_WV, p_R);
-		else
-			device::assembleReducedMat_var_bandwidth<PrecValueType><<<m_numPartitions-1, m_k*m_k>>>(p_spike_ks, p_WVOffsets, p_ROffsets, p_WV, p_R);
 	}
 }
 
@@ -4984,10 +4984,6 @@ Precond<PrecVector>::hasZeroPivots(const PrecVectorIterator&    start_B,
 {
 	// Create a strided range to select the main diagonal
 	strided_range<typename PrecVector::iterator> diag(start_B + k, end_B, step);
-
-	////std::cout << std::endl;
-	////thrust::copy(diag.begin(), diag.end(), std::ostream_iterator<PrecValueType>(std::cout, " "));
-	////std::cout << std::endl;
 
 	// Check if any of the diagonal elements is within the specified threshold
 	return thrust::any_of(diag.begin(), diag.end(), SmallerThan<PrecValueType>(threshold));

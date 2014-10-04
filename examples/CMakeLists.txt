@@ -46,7 +46,6 @@ SET(SPIKE_HEADERS
 	../../spike/bicgstab.h
 	../../spike/minres.h
 	../../spike/common.h
-	../../spike/components.h
 	../../spike/exception.h
 	../../spike/graph.h
 	../../spike/monitor.h

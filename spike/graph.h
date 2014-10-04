@@ -179,14 +179,6 @@ private:
 
 	static const double LOC_INFINITY;
 
-	// Functions used in MC64
-	void       find_minimum_match(const MatrixCsr& Acsr,
-								  bool             scale,
-			                      bool             mc64FirstStageOnly,
-								  IntVectorD&      mc64RowPerm,
-	                              DoubleVectorD&   mc64RowScale,
-	                              DoubleVectorD&   mc64ColScale,
-								  MatrixMapF&      scaleMap);
 	void       init_reduced_cval(bool           first_stage_only,
 			                     const IntVector&     row_ptr,
 	                             const IntVector&     rows,
@@ -715,7 +707,6 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 						offDiagWidths_right[curPartNum2]++;
 					}
 
-					// FIXME: add support for update
 					if (m_trackReordering) {
 						int ori_idx = m_ori_indices[it];
 						typeMap[ori_idx] = 0;
@@ -744,7 +735,6 @@ Graph<T>::assembleOffDiagMatrices(int         bandwidth,
 						offDiagWidths_left[curPartNum2-1]++;
 					}
 
-					// FIXME: add support for update
 					if (m_trackReordering) {
 						int ori_idx = m_ori_indices[it];
 						typeMap[ori_idx] = 0;
@@ -902,7 +892,6 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 	int idx = 0;
 	Acoo.resize(m_n, m_n, m_nnz);
 
-	// FIXME: add support for update
 	if (m_trackReordering) {
 		for (int it2 = 0; it2 < m_n; it2++) {
 			int start_idx = m_matrix.row_offsets[it2];
@@ -1043,7 +1032,6 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 			if (ks_row[j] < l-j)
 				ks_row[j] = l-j;
 
-			// FIXME: add support for update
 			if (m_trackReordering) {
 				int ori_idx = m_ori_indices_diagonal[it];
 				typeMap[ori_idx] = 1;
@@ -1088,7 +1076,142 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
                DoubleVectorD&   d_mc64ColScale,
                MatrixMapF&      scaleMap)
 {
-	find_minimum_match(Acsr, scale, mc64FirstStageOnly, d_mc64RowPerm, d_mc64RowScale, d_mc64ColScale, scaleMap);
+	CPUTimer loc_timer;
+
+	loc_timer.Start();
+	// Allocate space for the output vectors.
+	d_mc64RowPerm.resize(m_n);
+
+	if (m_trackReordering)
+		m_ori_indices.resize(m_nnz);
+
+	// Allocate space for temporary vectors.
+	DoubleVectorD  d_c_val(m_nnz);
+	DoubleVectorD  d_max_val_in_col(m_n, 0);
+
+	BoolVector     matched(m_n, 0);
+	BoolVector     rev_matched(m_n, 0);
+	IntVector      mc64RowReordering(m_n, 0);
+	IntVector      rev_match_nodes(m_nnz);
+
+	get_csc_matrix(Acsr, d_c_val, d_max_val_in_col);
+	loc_timer.Stop();
+	m_timeMC64_pre = loc_timer.getElapsed();
+
+	loc_timer.Start();
+	DoubleVector c_val           = d_c_val;
+	DoubleVector mc64RowScale(m_n);
+	DoubleVector mc64ColScale(m_n);
+	init_reduced_cval(mc64FirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, mc64ColScale, mc64RowScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
+	loc_timer.Stop();
+	m_timeMC64_first = loc_timer.getElapsed();
+
+	loc_timer.Start();
+
+	{
+		IntVector  irn(m_n);
+		IntVector  prev(m_n);
+		for(int i=0; i<m_n; i++) {
+			if(rev_matched[i]) continue;
+			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, mc64ColScale, mc64RowScale, c_val, irn);
+		}
+
+		{
+			for (int i=0; i<m_n; i++)
+				if (!matched[i])
+					throw system_error(system_error::Matrix_singular, "Singular matrix found");
+		}
+
+		DoubleVector max_val_in_col = d_max_val_in_col;
+		thrust::transform(mc64ColScale.begin(), mc64ColScale.end(), mc64ColScale.begin(), Exponential());
+		thrust::transform(thrust::make_transform_iterator(mc64RowScale.begin(), Exponential()),
+				thrust::make_transform_iterator(mc64RowScale.end(), Exponential()),
+				max_val_in_col.begin(),
+				mc64RowScale.begin(),
+				thrust::divides<double>());
+
+
+		d_mc64RowScale = mc64RowScale;
+		d_mc64ColScale = mc64ColScale;
+	}
+	loc_timer.Stop();
+	m_timeMC64_second = loc_timer.getElapsed();
+
+	IntVectorD d_mc64RowReordering   =  mc64RowReordering;
+	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), d_mc64RowReordering.begin(), d_mc64RowPerm.begin());
+
+
+	loc_timer.Start();
+
+	if (m_trackReordering)
+		scaleMap.resize(m_nnz, T(1.0));
+
+	// TODO: how to do scale when we apply only the first stage
+	if (mc64FirstStageOnly)
+		scale = false;
+
+	IntVector mc64RowPerm = d_mc64RowPerm;
+	IntVector row_indices(m_nnz);
+	// m_matrix  = Acsr;
+	m_matrix.resize(m_n, m_n, m_nnz);
+	thrust::copy(Acsr.column_indices.begin(), Acsr.column_indices.end(), m_matrix.column_indices.begin());
+	if (scale) {
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
+			int new_row = mc64RowPerm[i];
+			for (int l = start_idx; l < end_idx; l++) {
+				row_indices[l] = new_row;
+				int to   = (Acsr.column_indices[l]);
+				T scaleFact = (T)(mc64RowScale[i] * mc64ColScale[to]);
+				m_matrix.values[l] = scaleFact * Acsr.values[l];
+
+				if (m_trackReordering)
+					scaleMap[l] = scaleFact;
+			}
+		}
+	} else {
+		for (int i = 0; i < m_n; i++) {
+			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
+			int new_row = mc64RowPerm[i];
+			for (int l = start_idx; l < end_idx; l++) {
+				row_indices[l] = new_row;
+				m_matrix.values[l] = Acsr.values[l];
+			}
+		}
+
+		if (m_trackReordering)
+			cusp::blas::fill(scaleMap, (T) 1.0);
+	}
+
+	/*
+	{
+		thrust::sort_by_key(row_indices.begin(), row_indices.end(), thrust::make_zip_iterator(thrust::make_tuple(m_matrix.column_indices.begin(), m_matrix.values.begin())));
+		cusp::detail::indices_to_offsets(row_indices, m_matrix.row_offsets);
+	} */
+	{
+		IntVector& row_offsets = m_matrix.row_offsets;
+		int&       nnz         = m_nnz;
+		thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
+		IntVector column_indices(nnz);
+		Vector    values(nnz);
+		for (int i = 0; i < nnz; i++)
+			row_offsets[row_indices[i]] ++;
+
+		thrust::inclusive_scan(row_offsets.begin(), row_offsets.end(), row_offsets.begin());
+
+		for (int i = nnz - 1; i >= 0; i--) {
+			int idx = (--row_offsets[row_indices[i]]);
+			column_indices[idx] = m_matrix.column_indices[i];
+			values[idx] = m_matrix.values[i];
+			if (m_trackReordering)
+				m_ori_indices[idx] = i;
+		}
+		m_matrix.column_indices = column_indices;
+		m_matrix.values         = values;
+	}
+	loc_timer.Stop();
+	m_timeMC64_post = loc_timer.getElapsed();
+
 	return true;
 }
 
@@ -1332,8 +1455,6 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 {
 	static IntVector tmp_reordering(m_n);
 
-	// for(int i = node_begin; i < node_end; i++)
-		// optReordering[i] = i;
 	thrust::sequence(optReordering.begin()+node_begin, optReordering.begin()+node_end, node_begin);
 
 	int tmp_bdwidth = thrust::transform_reduce(thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin() + index_begin, mat_csr.column_indices.begin() + index_begin)), 
@@ -1541,7 +1662,6 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 }
 
 // ----------------------------------------------------------------------------
-// Graph::find_minimum_match()
 // Graph::get_csc_matrix
 // Graph::init_reduced_cval
 // Graph::find_shortest_aug_path
@@ -1549,158 +1669,6 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // These are the worker functions for the MC64 algorithm.
 // ----------------------------------------------------------------------------
 
-// ----------------------------------------------------------------------------
-// Graph::find_minimum_match()
-//
-// This is the entry function of the core part of MC64 algorithm, which reorders
-// the matrix by finding the minimum match of a bipartite graph.
-// ----------------------------------------------------------------------------
-template <typename T>
-void
-Graph<T>::find_minimum_match(const MatrixCsr& Acsr,
-							 bool             scale,
-							 bool             mc64FirstStageOnly, 
-							 IntVectorD&      d_mc64RowPerm,
-                             DoubleVectorD&   d_mc64RowScale,
-                             DoubleVectorD&   d_mc64ColScale,
-							 MatrixMapF&      scaleMap)
-{
-	CPUTimer loc_timer;
-
-	loc_timer.Start();
-	// Allocate space for the output vectors.
-	d_mc64RowPerm.resize(m_n);
-
-	if (m_trackReordering)
-		m_ori_indices.resize(m_nnz);
-
-	// Allocate space for temporary vectors.
-	DoubleVectorD  d_c_val(m_nnz);
-	DoubleVectorD  d_max_val_in_col(m_n, 0);
-
-	BoolVector     matched(m_n, 0);
-	BoolVector     rev_matched(m_n, 0);
-	IntVector      mc64RowReordering(m_n, 0);
-	IntVector      rev_match_nodes(m_nnz);
-
-	get_csc_matrix(Acsr, d_c_val, d_max_val_in_col);
-	loc_timer.Stop();
-	m_timeMC64_pre = loc_timer.getElapsed();
-
-	loc_timer.Start();
-	DoubleVector c_val           = d_c_val;
-	DoubleVector mc64RowScale(m_n);
-	DoubleVector mc64ColScale(m_n);
-	init_reduced_cval(mc64FirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, mc64ColScale, mc64RowScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
-	loc_timer.Stop();
-	m_timeMC64_first = loc_timer.getElapsed();
-
-	loc_timer.Start();
-
-	{
-		IntVector  irn(m_n);
-		IntVector  prev(m_n);
-		for(int i=0; i<m_n; i++) {
-			if(rev_matched[i]) continue;
-			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, mc64ColScale, mc64RowScale, c_val, irn);
-		}
-
-		{
-			for (int i=0; i<m_n; i++)
-				if (!matched[i])
-					throw system_error(system_error::Matrix_singular, "Singular matrix found");
-		}
-
-		DoubleVector max_val_in_col = d_max_val_in_col;
-		thrust::transform(mc64ColScale.begin(), mc64ColScale.end(), mc64ColScale.begin(), Exponential());
-		thrust::transform(thrust::make_transform_iterator(mc64RowScale.begin(), Exponential()),
-				thrust::make_transform_iterator(mc64RowScale.end(), Exponential()),
-				max_val_in_col.begin(),
-				mc64RowScale.begin(),
-				thrust::divides<double>());
-
-
-		d_mc64RowScale = mc64RowScale;
-		d_mc64ColScale = mc64ColScale;
-	}
-	loc_timer.Stop();
-	m_timeMC64_second = loc_timer.getElapsed();
-
-	IntVectorD d_mc64RowReordering   =  mc64RowReordering;
-	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), d_mc64RowReordering.begin(), d_mc64RowPerm.begin());
-
-
-	loc_timer.Start();
-
-	if (m_trackReordering)
-		scaleMap.resize(m_nnz, T(1.0));
-
-	// TODO: how to do scale when we apply only the first stage
-	if (mc64FirstStageOnly)
-		scale = false;
-
-	IntVector mc64RowPerm = d_mc64RowPerm;
-	IntVector row_indices(m_nnz);
-	// m_matrix  = Acsr;
-	m_matrix.resize(m_n, m_n, m_nnz);
-	thrust::copy(Acsr.column_indices.begin(), Acsr.column_indices.end(), m_matrix.column_indices.begin());
-	if (scale) {
-		for (int i = 0; i < m_n; i++) {
-			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
-			int new_row = mc64RowPerm[i];
-			for (int l = start_idx; l < end_idx; l++) {
-				row_indices[l] = new_row;
-				int to   = (Acsr.column_indices[l]);
-				T scaleFact = (T)(mc64RowScale[i] * mc64ColScale[to]);
-				m_matrix.values[l] = scaleFact * Acsr.values[l];
-
-				if (m_trackReordering)
-					scaleMap[l] = scaleFact;
-			}
-		}
-	} else {
-		for (int i = 0; i < m_n; i++) {
-			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
-			int new_row = mc64RowPerm[i];
-			for (int l = start_idx; l < end_idx; l++) {
-				row_indices[l] = new_row;
-				m_matrix.values[l] = Acsr.values[l];
-			}
-		}
-
-		if (m_trackReordering)
-			cusp::blas::fill(scaleMap, (T) 1.0);
-	}
-
-	/*
-	{
-		thrust::sort_by_key(row_indices.begin(), row_indices.end(), thrust::make_zip_iterator(thrust::make_tuple(m_matrix.column_indices.begin(), m_matrix.values.begin())));
-		cusp::detail::indices_to_offsets(row_indices, m_matrix.row_offsets);
-	} */
-	{
-		IntVector& row_offsets = m_matrix.row_offsets;
-		int&       nnz         = m_nnz;
-		thrust::fill(row_offsets.begin(), row_offsets.end(), 0);
-		IntVector column_indices(nnz);
-		Vector    values(nnz);
-		for (int i = 0; i < nnz; i++)
-			row_offsets[row_indices[i]] ++;
-
-		thrust::inclusive_scan(row_offsets.begin(), row_offsets.end(), row_offsets.begin());
-
-		for (int i = nnz - 1; i >= 0; i--) {
-			int idx = (--row_offsets[row_indices[i]]);
-			column_indices[idx] = m_matrix.column_indices[i];
-			values[idx] = m_matrix.values[i];
-			if (m_trackReordering)
-				m_ori_indices[idx] = i;
-		}
-		m_matrix.column_indices = column_indices;
-		m_matrix.values         = values;
-	}
-	loc_timer.Stop();
-	m_timeMC64_post = loc_timer.getElapsed();
-}
 
 // ----------------------------------------------------------------------------
 // Graph::get_csc_matrix()

@@ -446,18 +446,20 @@ copyFromCOOMatrixToBandedMatrix(int  nnz,
 	dB[l * col_width + delta + j - l] = vals[idx];
 }
 
+namespace var {
+
 template <typename T>
 __global__ void
-copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
-												  int* ks,
-												  int* rows,
-												  int* cols,
-												  T*   vals,
-												  T*   dB,
-												  int* offsets,
-												  int  partSize,
-												  int  remainder,
-												  bool saveMem)
+copyFromCOOMatrixToBandedMatrix(int  nnz,
+								int* ks,
+								int* rows,
+								int* cols,
+								T*   vals,
+								T*   dB,
+								int* offsets,
+								int  partSize,
+								int  remainder,
+								bool saveMem)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
@@ -492,11 +494,11 @@ copyFromCOOMatrixToBandedMatrix_variableBandwidth(int  nnz,
 
 template <typename T>
 __global__ void
-assembleReducedMat_var_bandwidth(int* ks,
-                                 int* offsets_src,
-                                 int* offsets_dst,
-                                 T*   dWV,
-                                 T*   d_comp)
+assembleReducedMat(int* ks,
+                   int* offsets_src,
+				   int* offsets_dst,
+				   T*   dWV,
+				   T*   d_comp)
 {
 	int tid = threadIdx.x, bid = blockIdx.x;
 	int k = ks[bid];
@@ -518,11 +520,11 @@ assembleReducedMat_var_bandwidth(int* ks,
 
 template <typename T>
 __global__ void
-assembleReducedMat_var_bandwidth_g32(int* ks,
-                                     int* offsets_src,
-                                     int* offsets_dst,
-                                     T*   dWV,
-                                     T*   d_comp)
+assembleReducedMat_g32(int* ks,
+                       int* offsets_src,
+                       int* offsets_dst,
+                       T*   dWV,
+                       T*   d_comp)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int k = ks[bidy];
@@ -545,11 +547,11 @@ assembleReducedMat_var_bandwidth_g32(int* ks,
 
 template <typename T>
 __global__ void
-assembleReducedMat_var_bandwidth_general(int* ks,
-                                         int* offsets_src,
-                                         int* offsets_dst,
-                                         T*   dWV,
-                                         T*   d_comp)
+assembleReducedMat_general(int* ks,
+                           int* offsets_src,
+                           int* offsets_dst,
+                           T*   dWV,
+                           T*   d_comp)
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int k = ks[bidy];
@@ -570,6 +572,7 @@ assembleReducedMat_var_bandwidth_general(int* ks,
 		d_comp[2*k*(r+k)+c+offset_dst] = dWV[k*r+c+offset_src];
 	}
 }
+} // namespace var
 
 template <typename T>
 __global__ void matrixVReordering(int  k,
