@@ -287,6 +287,8 @@ int main(int argc, char** argv)
 			// Half-bandwidth
 			outputItem( k);
 		}
+		// Actual NNZ after LU
+		outputItem( "N/A");
 		// nuKf
 		outputItem( "N/A");
 		// Reason why cannot solve (for unsuccessful solving only)
@@ -319,6 +321,8 @@ int main(int argc, char** argv)
 		// Half-bandwidth before drop-off 
 		outputItem( "N/A");
 		// Half-bandwidth
+		outputItem( "N/A");
+		// Actual NNZ after LU
 		outputItem( "N/A");
 		// nuKf
 		outputItem( "N/A");
@@ -376,6 +380,8 @@ int main(int argc, char** argv)
 		outputItem( "N/A");
 		// Half-bandwidth
 		outputItem( "N/A");
+		// Actual NNZ after LU
+		outputItem( "N/A");
 		// nuKf
 		outputItem( "N/A");
 		// Reason why cannot solve (for unsuccessful solving only)
@@ -409,6 +415,8 @@ int main(int argc, char** argv)
 		// Half-bandwidth before drop-off
 		outputItem( "N/A");
 		// Half-bandwidth
+		outputItem( "N/A");
+		// Actual NNZ after LU
 		outputItem( "N/A");
 		// nuKf
 		outputItem( "N/A");
@@ -461,6 +469,8 @@ int main(int argc, char** argv)
 		outputItem( stats.bandwidthReorder);
 		// Half-bandwidth
 		outputItem( stats.bandwidth);
+		// Actual NNZ after LU
+		outputItem( 1.0 * stats.actual_nnz / (A.num_rows * ((stats.bandwidth << 1) + 1)));
 		// nuKf
 		outputItem( stats.nuKf);
 

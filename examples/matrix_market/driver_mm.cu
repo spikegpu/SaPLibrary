@@ -39,6 +39,7 @@ using std::vector;
 
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
+	  OPT_SPD,
       OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
       OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
@@ -84,6 +85,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_HELP,          "-?",                   SO_NONE    },
 	{ OPT_HELP,          "-h",                   SO_NONE    },
 	{ OPT_HELP,          "--help",               SO_NONE    },
+	{ OPT_SPD,           "--spd",                SO_NONE    },
 	SO_END_OF_OPTIONS
 };
 
@@ -324,6 +326,10 @@ GetProblemSpecs(int             argc,
 				break;
 			case OPT_CONST_BAND:
 				opts.variableBandwidth = false;
+				break;
+			case OPT_SPD:
+				opts.isSPD   = true;
+				opts.saveMem = true;
 				break;
 		}
 	}

@@ -120,6 +120,8 @@ public:
 	int    getNumPartitions() const       {return m_numPartitions;}
 	double getActualDropOff() const       {return (double) m_dropOff_actual;}
 
+	int    getActualNumNonZeros() const   {return m_actual_nnz;}
+
 	//// NOTE:  Matrix here will usually be PrecMatrixCooH, except
 	////        when there's a single component when it will be whatever
 	////        the user passes to Solver::setup().
@@ -213,6 +215,8 @@ private:
 
 	int                  m_k_reorder;             // bandwidth after reordering
 	int                  m_k_mc64;                // bandwidth after MC64
+
+	int                  m_actual_nnz;            // The actual number of non-zeros after LU
 
 	PrecValueType        m_dropOff_actual;        // actual dropOff fraction achieved
 
@@ -387,6 +391,7 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_k(0),
+	m_actual_nnz(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
 	m_time_MC64(0),
@@ -422,6 +427,7 @@ Precond<PrecVector>::Precond()
 	m_k_reorder(0),
 	m_k_mc64(0),
 	m_k(0),
+	m_actual_nnz(0),
 	m_dropOff_actual(0),
 	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
@@ -487,6 +493,7 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_trackReordering    = prec.m_trackReordering;
 	m_ilu_level          = prec.m_ilu_level;
 	m_tolerance          = prec.m_tolerance;
+	m_actual_nnz         = prec.m_actual_nnz;
 }
 
 template <typename PrecVector>
@@ -511,6 +518,7 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_trackReordering    = prec.m_trackReordering;
 	m_ilu_level          = prec.m_ilu_level;
 	m_tolerance          = prec.m_tolerance;
+	m_actual_nnz         = prec.m_actual_nnz;
 
 	m_k                        = prec.m_k;
 	m_ks_host                  = prec.m_ks_host;
@@ -720,8 +728,10 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		return;
 
 	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
-	if (m_k == 0)
+	if (m_k == 0) {
+		m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
 		return;
+	}
 
 	if (m_ilu_level >= 0) {
 		m_timer.Start();
@@ -766,6 +776,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		m_timer.Start();
 		partBandedLU();
 		// m_Bh = m_B;
+		m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
 		m_timer.Stop();
 		m_time_bandLU = m_timer.getElapsed();
 		////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
@@ -860,6 +871,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		break;
 	}
 	// m_Bh = m_B;
+	m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
 
 	////cusp::io::write_matrix_market_file(m_B, "B_factorized.mtx");
 	////cusp::io::write_matrix_market_file(mat_WV, "WV.mtx");
@@ -4001,7 +4013,7 @@ Precond<PrecVector>::partBandedSweepsH(PrecVector& v)
 
 	omp_set_num_threads(std::min(numPartitions, 8));
 
-#pragma omp parallel for shared(numPartitions, partSize, remainder, sol_h)
+#pragma omp parallel if (numPartitions > 4) for shared(numPartitions, partSize, remainder, sol_h)
 	for (int p = 0; p < numPartitions; p++) {
 		int start_idx = 0, end_idx = 0;
 

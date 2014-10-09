@@ -118,6 +118,8 @@ struct Stats
 	double      rhsNorm;                /**< RHS norm (i.e. ||b||_2). */
 	double      residualNorm;           /**< Final residual norm (i.e. ||b-Ax||_2). */
 	double      relResidualNorm;        /**< Final relative residual norm (i.e. ||b-Ax||_2 / ||b||_2)*/
+
+	int         actual_nnz;
 };
 
 
@@ -322,6 +324,8 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	m_stats.time_bandUL = m_precond.getTimeBandUL();
 	m_stats.time_assembly = m_precond.gettimeAssembly();
 	m_stats.time_fullLU = m_precond.getTimeFullLU();
+
+	m_stats.actual_nnz  = m_precond.getActualNumNonZeros();
 
 	if (m_stats.bandwidth == 0)
 		m_stats.nuKf = 0.0;
