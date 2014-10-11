@@ -4013,7 +4013,7 @@ Precond<PrecVector>::partBandedSweepsH(PrecVector& v)
 
 	omp_set_num_threads(std::min(numPartitions, 8));
 
-#pragma omp parallel if (numPartitions > 4) for shared(numPartitions, partSize, remainder, sol_h)
+#pragma omp parallel for if (numPartitions > 4) shared(numPartitions, partSize, remainder, sol_h)
 	for (int p = 0; p < numPartitions; p++) {
 		int start_idx = 0, end_idx = 0;
 
