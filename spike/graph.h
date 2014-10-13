@@ -61,6 +61,16 @@ public:
 	typedef typename thrust::tuple<int, int, T>                  WeightedEdgeType;
 	typedef typename thrust::tuple<int, double>                  Dijkstra;
 
+private:
+	typedef enum {
+		INACTIVE,
+		PREACTIVE,
+		ACTIVE,
+		POSTACTIVE
+	} Status;
+	typedef typename cusp::array1d<Status, cusp::host_memory>    StatusVector;
+
+public:
 	Graph(bool trackReordering = false);
 
 	double     getTimeMC64() const     {return m_timeMC64;}
@@ -77,6 +87,7 @@ public:
 					   bool             mc64FirstStageOnly,
 	                   bool             scale,
 					   bool             doRCM,
+					   bool             doSloan,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
 	                   IntVectorD&      d_mc64RowPerm,
@@ -127,6 +138,31 @@ public:
 
 	void       get_csr_matrix(MatrixCsr&        Acsr,
 							  int               numPartitions);
+
+	void       unorderedBFS(bool          doRCM,
+			        		bool          doSloan,
+							IntVector&    tmp_reordering,
+							IntVector&    row_offsets,
+							IntVector&    column_indices,
+							IntVector&    visited,
+							IntVector&    levels,
+							IntVector&    ori_degrees,
+							BoolVector&   tried);
+
+	void       unorderedBFSIteration(int            width,
+							         int            start_idx,
+									 int            end_idx,
+									 IntVector&     tmp_reordering,
+									 IntVector&     levels,
+									 IntVector&     visited,
+									 IntVector&     row_offsets,
+									 IntVector&     column_indices,
+									 IntVector&     ori_degrees,
+									 BoolVector&    tried,
+									 IntVector&     costs,
+									 IntVector&     ori_costs,
+									 StatusVector&  status,
+									 int &          next_level);
 
 private:
 	int           m_n;
@@ -200,6 +236,10 @@ private:
 	void       get_csc_matrix(const MatrixCsr&  Acsr,
 	                          DoubleVectorD&    c_val,
 	                          DoubleVectorD&    max_val_in_col);
+
+	int        sloan(MatrixCsr&   matcsr,
+	                 IntVector&   optReordering,
+	                 IntVector&   optPerm);
 
 public:
 	template <typename VType>
@@ -376,6 +416,7 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 				  bool              mc64FirstStageOnly,
                   bool              scale,
 				  bool              doRCM,
+				  bool              doSloan,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
                   IntVectorD&       d_mc64RowPerm,
@@ -429,6 +470,8 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	int bandwidth;
 	if (doRCM)
 		bandwidth = RCM(m_matrix, optReordering, optPerm);
+	else if (doSloan)
+		bandwidth = sloan(m_matrix, optReordering, optPerm);
 	else {
 		bandwidth = k_mc64;
 		optReordering.resize(m_n);
@@ -2046,6 +2089,427 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 
 	return success;
 }
+
+template<typename T>
+int
+Graph<T>::sloan(MatrixCsr&   matcsr,
+	            IntVector&   optReordering,
+	            IntVector&   optPerm)
+{
+	IntVector   row_indices(m_nnz);
+	IntVector   tmp_row_indices(m_nnz << 1);
+	IntVector   tmp_column_indices(m_nnz << 1);
+	IntVector   tmp_row_offsets(m_n + 1);
+
+	IntVector&  column_indices = matcsr.column_indices;
+	IntVector&  row_offsets    = matcsr.row_offsets;
+
+	cusp::detail::offsets_to_indices(row_offsets, row_indices);
+
+	EdgeIterator begin = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), column_indices.begin()));
+	EdgeIterator end   = thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   column_indices.end()));
+	buildTopology(begin, end, 0, m_n, tmp_row_offsets, tmp_column_indices);
+
+	IntVector   ori_degrees(m_n);
+	BoolVector  tried(m_n, false);
+	IntVector   visited(m_n, -1);
+	IntVector   levels(m_n);
+
+	thrust::transform(tmp_row_offsets.begin() + 1, tmp_row_offsets.end(), tmp_row_offsets.begin(), ori_degrees.begin(), thrust::minus<int>());
+
+	optReordering.resize(m_n);
+	optPerm.resize(m_n);
+
+	unorderedBFS(false,
+			     true,
+				 optReordering,
+				 tmp_row_offsets,
+				 tmp_column_indices,
+				 visited,
+				 levels,
+				 ori_degrees,
+				 tried);
+
+	thrust::scatter(thrust::make_counting_iterator(0),
+					thrust::make_counting_iterator(int(m_n)),
+					optReordering.begin(),
+					optPerm.begin());
+
+	int bandwidth;
+	{
+		int* perm_array = thrust::raw_pointer_cast(&optPerm[0]);
+		thrust::transform(thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), matcsr.column_indices.begin())),
+				thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   matcsr.column_indices.end())),
+				thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), matcsr.column_indices.begin())),
+				PermuteEdge(perm_array));
+
+		bandwidth = thrust::transform_reduce(begin, end, EdgeLength(), 0, thrust::maximum<int>());
+		{
+			int &nnz = m_nnz;
+			IntVector row_offsets(m_n + 1, 0);
+			IntVector column_indices(nnz);
+			Vector    values(nnz);
+			IntVector ori_indices;
+			if (m_trackReordering)
+				ori_indices.resize(nnz);
+
+			for (int i = 0; i < nnz; i++)
+				row_offsets[row_indices[i]] ++;
+
+			thrust::inclusive_scan(row_offsets.begin(), row_offsets.end(), row_offsets.begin());
+
+			for (int i = nnz - 1; i >= 0; i--) {
+				int idx = (--row_offsets[row_indices[i]]);
+				column_indices[idx] = matcsr.column_indices[i];
+				values[idx] = matcsr.values[i];
+				if (m_trackReordering)
+					ori_indices[idx] = m_ori_indices[i];
+			}
+
+			matcsr.column_indices = column_indices;
+			matcsr.values         = values;
+			matcsr.row_offsets    = row_offsets;
+
+			if (m_trackReordering)
+				m_ori_indices = ori_indices;
+		}
+	}
+
+	BoolVector counted(m_n, false);
+	for (int i = 0; i < m_n; i++) {
+		if (optReordering[i] < 0 || optReordering[i] >= m_n) {
+			fprintf(stderr, "%d %d BAKA31\n", i, optReordering[i]);
+			exit(-1);
+		}
+		if (counted[optReordering[i]]) {
+			fprintf(stderr, "%d %d BAKA32\n", i, optReordering[i]);
+			exit(-1);
+		}
+		counted[optReordering[i]] = true;
+	}
+
+	for (int i = 0; i < m_n; i++)
+		if (!counted[i]) {
+			fprintf(stderr, "%d BAKA4\n", i);
+			exit(-1);
+		}
+
+	thrust::fill(counted.begin(), counted.end(), false);
+	for (int i = 0; i < m_n; i++) {
+		if (optPerm[i] < 0 || optPerm[i] >= m_n) {
+			fprintf(stderr, "%d %d BAKA11\n", i, optPerm[i]);
+			exit(-1);
+		}
+		if (counted[optPerm[i]]) {
+			fprintf(stderr, "%d %d BAKA12\n", i, optPerm[i]);
+			exit(-1);
+		}
+		counted[optPerm[i]] = true;
+	}
+
+	for (int i = 0; i < m_n; i++)
+		if (!counted[i]) {
+			fprintf(stderr, "%d BAKA2\n", i);
+			exit(-1);
+		}
+
+
+
+	return bandwidth;
+}
+
+template <typename T>
+void 
+Graph<T>::unorderedBFS(bool          doRCM,
+					   bool          doSloan,
+					   IntVector&    tmp_reordering,
+					   IntVector&    row_offsets,
+					   IntVector&    column_indices,
+					   IntVector&    visited,
+					   IntVector&    levels,
+					   IntVector&    ori_degrees,
+					   BoolVector&   tried)
+{
+	int min_idx = thrust::min_element(ori_degrees.begin(), ori_degrees.end()) - ori_degrees.begin();
+
+	visited[min_idx]   = 0;
+	tried[min_idx]     = true;
+	tmp_reordering[0]  = min_idx;
+
+	int queue_begin = 0, queue_end = 1;
+
+	IntVector comp_offsets(1, 0);
+
+	int last = 0;
+	int cur_comp = 0;
+
+	int width = 0, max_width = 0;
+
+	IntVector costs(m_n), ori_costs(m_n);
+
+	StatusVector status(m_n, INACTIVE);
+
+	for (int l = 0; l < m_n; l ++) {
+		int n_queue_begin = queue_end;
+		if (n_queue_begin - queue_begin > 0) {
+			if (width < n_queue_begin - queue_begin)
+				width = n_queue_begin - queue_begin;
+
+			for (int l2 = queue_begin; l2 < n_queue_begin; l2 ++) {
+				levels[l2] = l;
+				int  row = tmp_reordering[l2];
+				int  start_idx = row_offsets[row], end_idx = row_offsets[row + 1];
+
+				for (int j = start_idx; j < end_idx; j++) {
+					int column = column_indices[j];
+					if (visited[column] != 0) {
+						visited[column] = 0;
+						tmp_reordering[queue_end ++] = column;
+					}
+				}
+			}
+
+			queue_begin = n_queue_begin;
+		} else {
+			comp_offsets.push_back(queue_begin);
+			cur_comp ++;
+
+			if (max_width < width) max_width = width;
+
+			if (queue_begin - comp_offsets[cur_comp - 1] > 32) {
+				unorderedBFSIteration(width,
+						comp_offsets[cur_comp-1],
+						comp_offsets[cur_comp],
+						tmp_reordering,
+						levels,
+						visited,
+						row_offsets,
+						column_indices,
+						ori_degrees,
+						tried,
+						costs,
+						ori_costs,
+						status,
+						l);
+			}
+			width = 0;
+
+			if (queue_begin >= m_n) break;
+
+			for (int j = last; j < m_n; j++)
+				if (visited[j] < 0) {
+					visited[j] = 0;
+					tmp_reordering[n_queue_begin] = j;
+					last = j;
+					tried[j] = true;
+					queue_end ++;
+					l --;
+					break;
+				}
+		}
+	}
+}
+
+template <typename T>
+void
+Graph<T>::unorderedBFSIteration(int            width,
+							    int            start_idx,
+							    int            end_idx,
+							    IntVector&     tmp_reordering,
+							    IntVector&     levels,
+							    IntVector&     visited,
+							    IntVector&     row_offsets,
+							    IntVector&     column_indices,
+							    IntVector&     ori_degrees,
+							    BoolVector&    tried,
+							    IntVector&     costs,
+							    IntVector&     ori_costs,
+							    StatusVector&  status,
+							    int &          next_level)
+{
+	int S = tmp_reordering[start_idx], E = -1;
+	int pS = S, pE;
+
+	int next_level_bak = next_level;
+
+	const int ITER_COUNT = 10;
+
+	int p_max_level = levels[end_idx - 1];
+	int max_level = p_max_level;
+	int start_level = levels[start_idx];
+
+	IntVector tmp_reordering_bak(end_idx - start_idx);
+
+	for (int i = 1; i < ITER_COUNT; i++)
+	{
+		int max_level_start_idx = thrust::lower_bound(levels.begin() + start_idx, levels.begin() + end_idx, max_level) - levels.begin();
+
+		int max_count = end_idx - max_level_start_idx;
+
+		IntVector max_level_valence(max_count);
+		if( max_count > 1 ) {
+
+			thrust::gather(tmp_reordering.begin() + max_level_start_idx, tmp_reordering.begin() + end_idx, ori_degrees.begin(), max_level_valence.begin());
+
+			thrust::sort_by_key(max_level_valence.begin(), max_level_valence.end(), tmp_reordering.begin() + max_level_start_idx);
+
+			E = tmp_reordering[max_level_start_idx];
+		}
+		else
+			E = tmp_reordering[end_idx - 1];
+
+		if (tried[E]) {
+			int j;
+			for (j = max_level_start_idx; j < end_idx; j++)
+				if (!tried[tmp_reordering[j]]) {
+					E = tmp_reordering[j];
+					break;
+				}
+			if (j >= end_idx) {
+				E = pE;
+				S = pS;
+				break;
+			}
+		}
+		pE = E;
+
+		int queue_begin = start_idx;
+		int queue_end   = start_idx + 1;
+
+		tmp_reordering[start_idx] = E;
+		tried[E] = true;
+		visited[E] = i;
+		levels[start_idx]  = start_level;
+
+		int l;
+		int tmp_width = 0;
+		for (l = start_level; l < m_n; l ++) {
+			int n_queue_begin = queue_end;
+			if (tmp_width < n_queue_begin - queue_begin)
+				tmp_width = n_queue_begin - queue_begin;
+
+			if (n_queue_begin - queue_begin > 0)
+			{
+				for (int l2 = queue_begin; l2 < n_queue_begin; l2++) {
+					levels[l2] = l;
+					int row = tmp_reordering[l2];
+					int start_idx = row_offsets[row], end_idx = row_offsets[row + 1];
+					for (int j = start_idx; j < end_idx; j++) {
+						int column = column_indices[j];
+						if (visited[column] != i) {
+							visited[column] = i;
+							tmp_reordering[queue_end++] = column;
+						}
+					}
+				}
+				queue_begin = n_queue_begin;
+			} else
+				break;
+		}
+
+		if (tmp_width > width) {
+			next_level = next_level_bak;
+			break;
+		}
+
+		max_level = levels[end_idx - 1];
+		if (max_level <= p_max_level) {
+			next_level = max_level + 1;
+
+			break;
+		}
+
+		width = tmp_width;
+
+
+		p_max_level = max_level;
+		next_level_bak = next_level = l;
+
+		pS = S;
+		S  = E;
+	}
+	thrust::copy(tmp_reordering.begin() + start_idx, tmp_reordering.begin() + end_idx, tmp_reordering_bak.begin());
+
+	//// fprintf(stderr, "S = %d, E = %d\n", S, E);
+
+	const int W1 = 2, W2 = 1;
+
+	for (int i = start_idx; i < end_idx; i++)
+		costs[i] = (m_n - 1 - ori_degrees[tmp_reordering[i]]) * W1 + levels[i] * W2;
+
+	thrust::scatter(costs.begin() + start_idx, costs.begin() + end_idx, tmp_reordering.begin() + start_idx, ori_costs.begin());
+
+	int head = 0, tail = 1;
+	tmp_reordering_bak[0] = S;
+	status[S] = PREACTIVE;
+	//// pq.push(thrust::make_tuple(ori_costs[S],S));
+
+	int cur_idx = start_idx;
+
+	while(head < tail) {
+		int cur_node = tmp_reordering_bak[head];
+		int max_cost = ori_costs[cur_node];
+		int idx = head;
+
+		{
+			for (int i = head + 1; i < tail; i++)
+				if (max_cost < ori_costs[tmp_reordering_bak[i]]) {
+					idx = i;
+					cur_node = tmp_reordering_bak[i];
+					max_cost = ori_costs[cur_node + start_idx];
+				}
+		}
+
+		if (idx != head) 
+			tmp_reordering_bak[idx] = tmp_reordering_bak[head];
+
+		if (status[cur_node] == PREACTIVE) {
+			int start_idx2 = row_offsets[cur_node], end_idx2 = row_offsets[cur_node + 1];
+
+			for (int l = start_idx2; l < end_idx2; l++) {
+				int column = column_indices[l];
+				if (status[column] == POSTACTIVE) continue;
+				ori_costs[column] += W1;
+				//// pq.push(thrust::make_tuple(ori_costs[column], column));
+				if (status[column] == INACTIVE) {
+					tmp_reordering_bak[tail] = column;
+					status[column] = PREACTIVE;
+					tail ++;
+				}
+			}
+		}
+
+		status[cur_node] = POSTACTIVE;
+		tmp_reordering[cur_idx ++] = cur_node;
+
+		int start_idx2 = row_offsets[cur_node], end_idx2 = row_offsets[cur_node + 1];
+
+		for (int l = start_idx2; l < end_idx2; l++) {
+			int column = column_indices[l];
+			if (status[column] != PREACTIVE) continue;
+			ori_costs[column] += W1;
+			status[column] = ACTIVE;
+			//// pq.push(thrust::make_tuple(ori_costs[column], column));
+
+			int start_idx3 = row_offsets[column], end_idx3 = row_offsets[column + 1];
+
+			for (int l2 = start_idx3; l2 < end_idx3; l2++) {
+				int column2 = column_indices[l2];
+				if (status[column2] == POSTACTIVE) continue;
+
+				ori_costs[column2] += W1;
+				//// pq.push(thrust::make_tuple(ori_costs[column2], column2));
+				if (status[column2] == INACTIVE) {
+					status[column2] = PREACTIVE;
+					tmp_reordering_bak[tail] = column2;
+					tail ++;
+				}
+			}
+		}
+		head++;
+	}
+}
+
 
 } // namespace spike
 
