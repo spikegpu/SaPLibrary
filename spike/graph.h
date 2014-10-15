@@ -241,6 +241,8 @@ private:
 	                 IntVector&   optReordering,
 	                 IntVector&   optPerm);
 
+	size_t     symbolicFactorization(const MatrixCsr&  Acsr);
+
 public:
 	template <typename VType>
 	struct AbsoluteValue: public thrust::unary_function<VType, VType>
@@ -2175,46 +2177,6 @@ Graph<T>::sloan(MatrixCsr&   matcsr,
 		}
 	}
 
-	BoolVector counted(m_n, false);
-	for (int i = 0; i < m_n; i++) {
-		if (optReordering[i] < 0 || optReordering[i] >= m_n) {
-			fprintf(stderr, "%d %d BAKA31\n", i, optReordering[i]);
-			exit(-1);
-		}
-		if (counted[optReordering[i]]) {
-			fprintf(stderr, "%d %d BAKA32\n", i, optReordering[i]);
-			exit(-1);
-		}
-		counted[optReordering[i]] = true;
-	}
-
-	for (int i = 0; i < m_n; i++)
-		if (!counted[i]) {
-			fprintf(stderr, "%d BAKA4\n", i);
-			exit(-1);
-		}
-
-	thrust::fill(counted.begin(), counted.end(), false);
-	for (int i = 0; i < m_n; i++) {
-		if (optPerm[i] < 0 || optPerm[i] >= m_n) {
-			fprintf(stderr, "%d %d BAKA11\n", i, optPerm[i]);
-			exit(-1);
-		}
-		if (counted[optPerm[i]]) {
-			fprintf(stderr, "%d %d BAKA12\n", i, optPerm[i]);
-			exit(-1);
-		}
-		counted[optPerm[i]] = true;
-	}
-
-	for (int i = 0; i < m_n; i++)
-		if (!counted[i]) {
-			fprintf(stderr, "%d BAKA2\n", i);
-			exit(-1);
-		}
-
-
-
 	return bandwidth;
 }
 
@@ -2430,8 +2392,6 @@ Graph<T>::unorderedBFSIteration(int            width,
 	}
 	thrust::copy(tmp_reordering.begin() + start_idx, tmp_reordering.begin() + end_idx, tmp_reordering_bak.begin());
 
-	//// fprintf(stderr, "S = %d, E = %d\n", S, E);
-
 	const int W1 = 2, W2 = 1;
 
 	for (int i = start_idx; i < end_idx; i++)
@@ -2509,6 +2469,135 @@ Graph<T>::unorderedBFSIteration(int            width,
 		head++;
 	}
 }
+
+template <typename T>
+size_t
+Graph<T>::symbolicFactorization(const MatrixCsr&  Acsr)
+{
+	std::vector<IntVector> prL(Acsr.num_rows), prU(Acsr.num_rows);
+
+	IntVector A_column_offsets(Acsr.num_rows + 1), A_row_indices(Acsr.num_entries), A_column_indices = Acsr.column_indices;
+	{
+		cusp::detail::offsets_to_indices(Acsr.row_offsets, A_row_indices);
+		thrust::sort_by_key(A_column_indices.begin(), A_column_indices.end(), A_row_indices.begin());
+		cusp::detail::indices_to_offsets(A_column_indices, A_column_offsets);
+	}
+
+	IntVector L_column_offsets(Acsr.num_rows + 1, 0), L_row_indices;
+	IntVector U_row_offsets(Acsr.num_rows + 1, 0),    U_column_indices;
+	IntVector pushed_L(Acsr.num_rows, -1);
+	IntVector pushed_U(Acsr.num_rows, -1);
+
+	for (int i = 0; i < Acsr.num_rows; i++) {
+		int start_idx = A_column_offsets[i], end_idx = A_column_offsets[i+1];
+		int l_cur_idx = L_row_indices.size(), u_cur_idx = U_column_indices.size();
+
+		for (int j = start_idx; j < end_idx; j++) {
+			int row = A_row_indices[j];
+			if (row <= i || pushed_L[row] == i) continue;
+			L_row_indices.push_back(row);
+			pushed_L[row] = i;
+		}
+
+		start_idx = Acsr.row_offsets[i];
+		end_idx = Acsr.row_offsets[i+1];
+
+		for (int j = start_idx; j < end_idx; j++) {
+			int column = Acsr.column_indices[j];
+			if (column <= i  || pushed_U[column] == i) continue;
+			U_column_indices.push_back(column);
+			pushed_U[column] = i;
+		}
+
+		int sizeL = prL[i].size(), sizeU = prU[i].size();
+
+		for (int l = 0; l < sizeL; l++) {
+			int column = prL[i][l];
+			start_idx = L_column_offsets[column];
+			end_idx = L_column_offsets[column + 1];
+
+			for (int j = end_idx - 1; j >= start_idx; j--) {
+				int row = L_row_indices[j];
+				if (row <= i) break;
+				if (pushed_L[row] == i) continue;
+				L_row_indices.push_back(row);
+				pushed_L[row] = i;
+			}
+		}
+
+		for (int l = 0; l < sizeU; l++) {
+			int row = prU[i][l];
+			start_idx = U_row_offsets[row];
+			end_idx = U_row_offsets[row+1];
+
+			for (int j = end_idx - 1; j >= start_idx; j--) {
+				int column = U_column_indices[j];
+				if (column <= i) break;
+				if (pushed_U[column] == i) continue;
+				U_column_indices.push_back(column);
+				pushed_U[column] = i;
+			}
+		}
+
+		thrust::sort(L_row_indices.begin() + l_cur_idx, L_row_indices.end());
+		thrust::sort(U_column_indices.begin() + u_cur_idx, U_column_indices.end());
+
+		int K = Acsr.num_rows - 1;
+
+		bool found = false;
+		while (l_cur_idx < L_row_indices.size() && u_cur_idx < U_column_indices.size()) {
+			while (l_cur_idx < L_row_indices.size()) {
+				if (L_row_indices[l_cur_idx] < U_column_indices[u_cur_idx])
+					l_cur_idx ++;
+				else if (L_row_indices[l_cur_idx] > U_column_indices[u_cur_idx])
+					break;
+				else {
+					found = true;
+					K     = L_row_indices[l_cur_idx];
+					break;
+				}
+			}
+
+			if (found) break;
+
+			while(u_cur_idx < U_column_indices.size()) {
+				if (L_row_indices[l_cur_idx] > U_column_indices[u_cur_idx])
+					u_cur_idx ++;
+				else if (L_row_indices[l_cur_idx] < U_column_indices[u_cur_idx])
+					break;
+				else {
+					found = true;
+					K     = L_row_indices[l_cur_idx];
+					break;
+				}
+			}
+			if (found) break;
+		}
+		
+		L_column_offsets[i + 1] = L_row_indices.size();
+		U_row_offsets[i + 1]    = U_column_indices.size();
+
+		start_idx = L_column_offsets[i];
+		end_idx = L_column_offsets[i + 1];
+		for (int j = start_idx; j < end_idx; j++) {
+			int row = L_row_indices[j];
+			if (row > K) break;
+			if (row <= i) continue;
+			prL[row].push_back(i);
+		}
+
+		start_idx = U_row_offsets[i];
+		end_idx = U_row_offsets[i + 1];
+		for (int j = start_idx; j < end_idx; j++) {
+			int column = U_column_indices[j];
+			if (column > K) break;
+			if (column <= i) continue;
+			prU[column].push_back(i);
+		}
+	}
+
+	return L_row_indices.size() + U_column_indices.size() + (size_t)Acsr.num_rows;
+}	
 
 
 } // namespace spike
