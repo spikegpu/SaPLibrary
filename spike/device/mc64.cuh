@@ -97,19 +97,6 @@ findInitialMatch(int N, int *row_offsets, int *column_indices, T *values, T *u_v
 	}
 }
 
-__global__ void
-clearMatchesWithContention(int N, int *column_indices, int *matches, int *rev_matches, bool *rev_matched)
-{
-	int tid = threadIdx.x + blockIdx.x * blockDim.x;
-	if (tid >= N || !rev_matched[tid]) return;
-
-	int column = column_indices[rev_matches[tid]];
-
-	if (matches[column] != tid) {
-		rev_matched[tid] = false;
-	}
-}
-
 } // namespace device
 } // namespace spike
 

@@ -1785,32 +1785,7 @@ Graph<T>::init_reduced_cval(bool           first_stage_only,
 		thrust::reduce_by_key(row_indices.begin(), row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), u_val.begin(), thrust::equal_to<double>(), thrust::minimum<double>());
 	}
 
-#if 0
-	int *p_row_offsets    =   thrust::raw_pointer_cast(&row_ptr[0]);
-	int *p_column_indices =   thrust::raw_pointer_cast(&rows[0]);
-	double *p_values      =   thrust::raw_pointer_cast(&c_val[0]);
-	double *p_u_values    =   thrust::raw_pointer_cast(&u_val[0]);
-	double *p_v_values    =   thrust::raw_pointer_cast(&v_val[0]);
-	int *p_matches        =   thrust::raw_pointer_cast(&match_nodes[0]);
-	int *p_rev_matches    =   thrust::raw_pointer_cast(&rev_match_nodes[0]);
-	bool *p_matched       =   thrust::raw_pointer_cast(&matched[0]);
-	bool *p_rev_matched   =   thrust::raw_pointer_cast(&rev_matched[0]);
 
-	int blockX = m_n, blockY = 1;
-	kernelConfigAdjust(blockX, blockY, 32768);
-	dim3 grids(blockX, blockY);
-
-
-	device::findInitialMatch<<<grids, 64>>>(m_n, p_row_offsets, p_column_indices, p_values, p_u_values, p_v_values,
-			                                p_matches, p_rev_matches, p_matched, p_rev_matched);
-
-	blockX = 1;
-	int threadX = m_n;
-	kernelConfigAdjust(threadX, blockX, 512);
-	device::clearMatchesWithContention<<<blockX, threadX>>> (m_n, p_column_indices, p_matches, p_rev_matches, p_rev_matched);
-#endif
-
-#if 1
 	cusp::blas::fill(v_val, LOC_INFINITY);
 	for(int i = 0; i < m_n; i++) {
 		int start_idx = row_ptr[i], end_idx = row_ptr[i+1];
@@ -1946,7 +1921,7 @@ Graph<T>::init_reduced_cval(bool           first_stage_only,
 		thrust::transform_if(u_val.begin(), u_val.end(), matched.begin(), u_val.begin(), ClearValue(), is_not());
 		thrust::transform_if(v_val.begin(), v_val.end(), rev_matched.begin(), v_val.begin(), ClearValue(), is_not());
 	}
-#endif
+
 }
 
 // ----------------------------------------------------------------------------
