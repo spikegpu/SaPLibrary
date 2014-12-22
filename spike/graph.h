@@ -184,6 +184,15 @@ private:
 
 	BoolVector    m_exists;
 
+	// Temporarily used in partitioned RCM for buffering
+	IntVector     m_buffer_reordering;
+
+	// Temporarily used in the third stage of DB for buffering
+	IntVector     m_DB_B;
+	BoolVector    m_DB_inB;
+	DoubleVector  m_DB_d_vals;
+	BoolVector    m_DB_visited;
+
 	bool       MC64(const MatrixCsr& Acsr,
 			        bool             scale,
 					bool             mc64FirstStageOnly,
@@ -430,6 +439,8 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	m_n = Acsr.num_rows;
 	m_nnz = Acsr.num_entries;
 
+	m_buffer_reordering.resize(m_n);
+
 	// Apply mc64 algorithm. Note that we must ensure we always work with
 	// double precision scale vectors.
 	//
@@ -440,6 +451,12 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 		loc_timer.Start();
 		DoubleVectorD  mc64RowScaleD;
 		DoubleVectorD  mc64ColScaleD;
+
+		m_DB_inB.resize(m_n, false);
+		m_DB_B.resize(m_n, 0);
+		m_DB_d_vals.resize(m_n, LOC_INFINITY);
+		m_DB_visited.resize(m_n, false);
+
 		MC64(Acsr, scale, mc64FirstStageOnly, d_mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
 		d_mc64RowScale = mc64RowScaleD;
 		d_mc64ColScale = mc64ColScaleD;
@@ -1498,8 +1515,6 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 						 IntVector&     row_offsets,
 						 IntVector&     row_indices)
 {
-	static IntVector tmp_reordering(m_n);
-
 	thrust::sequence(optReordering.begin()+node_begin, optReordering.begin()+node_end, node_begin);
 
 	int tmp_bdwidth = thrust::transform_reduce(thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin() + index_begin, mat_csr.column_indices.begin() + index_begin)), 
@@ -1587,7 +1602,7 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 			}
 
 			tmp_node = q.front();
-			tmp_reordering[j] = tmp_node;
+			m_buffer_reordering[j] = tmp_node;
 			j++;
 
 			q.pop();
@@ -1611,7 +1626,7 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 
 		thrust::scatter(thrust::make_counting_iterator(node_begin),
 		                thrust::make_counting_iterator(node_end),
-		                tmp_reordering.begin() + node_begin,
+		                m_buffer_reordering.begin() + node_begin,
 		                optPerm.begin());
 
 		{
@@ -1622,7 +1637,7 @@ Graph<T>::partitionedRCM(MatrixCsr&     mat_csr,
 		if(opt_bdwidth > tmp_bdwidth) {
 			opt_bdwidth = tmp_bdwidth;
 
-			thrust::copy(tmp_reordering.begin()+node_begin, tmp_reordering.begin()+node_end, optReordering.begin()+node_begin);
+			thrust::copy(m_buffer_reordering.begin()+node_begin, m_buffer_reordering.begin()+node_end, optReordering.begin()+node_begin);
 		}
 
 		if (trial_num > 0) {
@@ -1947,9 +1962,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 {
 	bool success = false;
 
-	static IntVector B(m_n, 0);
 	int b_cnt = 0;
-	static BoolVector inB(m_n, false);
 
 	std::priority_queue<Dijkstra, std::vector<Dijkstra>, CompareValue<double> > Q;
 
@@ -1963,15 +1976,12 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 	int ksap = -1;
 	prev[init_node] = -1;
 
-	static DoubleVector d_vals(m_n, LOC_INFINITY);
-	static BoolVector visited(m_n, false);
-
 	while(1) {
 		int start_cur = row_ptr[cur_node];
 		int end_cur = row_ptr[cur_node+1];
 		for(i = start_cur; i < end_cur; i++) {
 			int cur_row = rows[i];
-			if(inB[cur_row]) continue;
+			if(m_DB_inB[cur_row]) continue;
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
 			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
 			if (reduced_cval + 1e-10 < 0)
@@ -1984,8 +1994,8 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 					ksap = i;
 
 					match_nodes[isap] = cur_node;
-				} else if (d_new < d_vals[cur_row]){
-					d_vals[cur_row] = d_new;
+				} else if (d_new < m_DB_d_vals[cur_row]){
+					m_DB_d_vals[cur_row] = d_new;
 					prev[match_nodes[cur_row]] = cur_node;
 					Q.push(thrust::make_tuple(cur_row, d_new));
 					irn[cur_row] = i;
@@ -1999,7 +2009,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		while(!Q.empty()) {
 			min_d = Q.top();
 			Q.pop();
-			if(visited[thrust::get<0>(min_d)]) 
+			if(m_DB_visited[thrust::get<0>(min_d)]) 
 				continue;
 			found = true;
 			break;
@@ -2008,16 +2018,16 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 			break;
 
 		int tmp_idx = thrust::get<0>(min_d);
-		visited[tmp_idx] = true;
+		m_DB_visited[tmp_idx] = true;
 
 		lsp = thrust::get<1>(min_d);
 		if(lsap <= lsp) {
-			visited[tmp_idx] = false;
-			d_vals[tmp_idx] = LOC_INFINITY;
+			m_DB_visited[tmp_idx] = false;
+			m_DB_d_vals[tmp_idx] = LOC_INFINITY;
 			break;
 		}
-		inB[tmp_idx] = true;
-		B[b_cnt++] = tmp_idx;
+		m_DB_inB[tmp_idx] = true;
+		m_DB_B[b_cnt++] = tmp_idx;
 
 		cur_node = match_nodes[tmp_idx];
 	}
@@ -2047,20 +2057,20 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 		success = true;
 
 		for (i = 0; i < b_cnt; i++) {
-			int tmp_row = B[i];
+			int tmp_row = m_DB_B[i];
 			int j_val = match_nodes[tmp_row];
 			int tmp_k = rev_match_nodes[j_val];
-			u_val[tmp_row] += d_vals[tmp_row] - lsap;
+			u_val[tmp_row] += m_DB_d_vals[tmp_row] - lsap;
 			v_val[j_val] = c_val[tmp_k] - u_val[tmp_row];
-			d_vals[tmp_row] = LOC_INFINITY;
-			visited[tmp_row] = false;
-			inB[tmp_row] = false;
+			m_DB_d_vals[tmp_row] = LOC_INFINITY;
+			m_DB_visited[tmp_row] = false;
+			m_DB_inB[tmp_row] = false;
 		}
 
 		while(!Q.empty()) {
 			Dijkstra tmpD = Q.top();
 			Q.pop();
-			d_vals[thrust::get<0>(tmpD)] = LOC_INFINITY;
+			m_DB_d_vals[thrust::get<0>(tmpD)] = LOC_INFINITY;
 		}
 	}
 
