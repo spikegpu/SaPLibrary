@@ -1451,7 +1451,8 @@ blockedBandLU_critical_const_phase1_safe(T *dA, int start_row, int K, int B, int
 		else
 			cur_last = K;
 
-		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		__syncthreads();
 
 		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
@@ -1595,7 +1596,8 @@ blockedBandUL_critical_const_phase1_safe(T *dA, int start_row, int K, int B, int
 		else
 			cur_last = K;
 
-		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		__syncthreads();
 
 		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)

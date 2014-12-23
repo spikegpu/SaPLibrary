@@ -41,7 +41,7 @@ using std::string;
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_TOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, 
-      OPT_MATFILE,
+      OPT_MATFILE, OPT_MATFILE_NEW,
       OPT_SAFE_FACT};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
@@ -60,6 +60,8 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_DROPOFF_FRAC,  "--drop-off-fraction",  SO_REQ_CMB },
 	{ OPT_MATFILE,       "-m",                   SO_REQ_CMB },
 	{ OPT_MATFILE,       "--matrix-file",        SO_REQ_CMB },
+	{ OPT_MATFILE_NEW,   "-n",                   SO_REQ_CMB },
+	{ OPT_MATFILE_NEW,   "--matrix-file-new",    SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
@@ -102,6 +104,7 @@ void spikeSetDevice();
 bool GetProblemSpecs(int             argc, 
                      char**          argv,
                      string&         fileMat,
+                     string&         fileMatNew,
                      int&            numPart,
                      spike::Options& opts);
 
@@ -117,25 +120,26 @@ int main(int argc, char** argv)
 {
 	// Set up the problem to be solved.
 	string         fileMat;
+	string         fileMatNew;
 	int            numPart;
 	spike::Options opts;
 
-	if (!GetProblemSpecs(argc, argv, fileMat, numPart, opts))
+	if (!GetProblemSpecs(argc, argv, fileMat, fileMatNew, numPart, opts))
 		return 1;
 	
 	// Get the device with most available memory.
-	spikeSetDevice();
+	//// spikeSetDevice();
 
 	// Get matrix and rhs.
-	Matrix A;
+	Matrix A, A2;
 	cusp::io::read_matrix_market_file(A, fileMat);
 
 	// Create the SPIKE Solver object and the custom SPMV functor.
-	SpikeSolver mySolver(numPart, opts);
+	SpikeSolver *mySolverPointer = new SpikeSolver(numPart, opts);
 	CustomSpmv  mySpmv(A);
 
 	// Perform the solver setup.
-	mySolver.setup(A);
+	mySolverPointer -> setup(A);
 
 	bool converged;
 
@@ -144,45 +148,67 @@ int main(int argc, char** argv)
 	{
 		Vector b(A.num_rows, 1.0);
 		Vector x(A.num_rows, 0.0);
-		converged = mySolver.solve(mySpmv, b, x);
+		converged = mySolverPointer -> solve(mySpmv, b, x);
 		cout << (converged ? "Converged" : "Not Converged") << endl;
+		if (converged) {
+			const spike::Stats &stats = mySolverPointer -> getStats();
+			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+		}
 		////cusp::io::write_matrix_market_file(x, "x1.mtx");
 	}
 
 	{
 		Vector b(A.num_rows, 2.0);
 		Vector x(A.num_rows, 0.0);
-		converged = mySolver.solve(mySpmv, b, x);
+		converged = mySolverPointer -> solve(mySpmv, b, x);
 		cout << (converged ? "Converged" : "Not Converged") << endl;
+		if (converged) {
+			const spike::Stats &stats = mySolverPointer -> getStats();
+			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+		}
 		////cusp::io::write_matrix_market_file(x, "x2.mtx");
 	}
 
-	// Perturb the non-zero entries in the A matrix and update the Spike solver.
-	// Then solve again the linear system A*x = b twice.
-	cusp::blas::scal(A.values, 1.1);
-	bool update_success = mySolver.update(A.values);
-
-	if (update_success)
-	{
-		{
-			Vector b(A.num_rows, 1.0);
-			Vector x(A.num_rows, 0.0);
-			converged = mySolver.solve(mySpmv, b, x);
-			cout << (converged ? "Converged" : "Not Converged") << endl;
-			////cusp::io::write_matrix_market_file(x, "y1.mtx");
-		}
-
-		{
-			Vector b(A.num_rows, 2.0);
-			Vector x(A.num_rows, 0.0);
-			converged = mySolver.solve(mySpmv, b, x);
-			cout << (converged ? "Converged" : "Not Converged") << endl;
-			////cusp::io::write_matrix_market_file(x, "y2.mtx");
-		}
-	} else {
-		cerr << "Update failed (probably due to matrix pattern change)." << endl;
-		return 1;
+	cout << endl;
+	cout << "Now solve a new system" << endl;
+	cusp::io::read_matrix_market_file(A2, fileMatNew);
+	CustomSpmv  mySpmv2(A2);
+	//// cusp::blas::scal(A.values, 1.1);
+	bool update_success = mySolverPointer -> update(A2.values);
+	if (!update_success) {
+		cerr << "Update failed (probably due to the change of system pattern)" << endl;
+		cerr << A.num_rows << " " << A.num_entries << endl;
+		cerr << A2.num_rows << " " << A2.num_entries << endl;
+		delete mySolverPointer;
+		mySolverPointer = new SpikeSolver(numPart, opts);
+		mySolverPointer -> setup(A2);
 	}
+
+	{
+		Vector b(A2.num_rows, 1.0);
+		Vector x(A2.num_rows, 0.0);
+		converged = mySolverPointer -> solve(mySpmv2, b, x);
+		cout << (converged ? "Converged" : "Not Converged") << endl;
+		if (converged) {
+			const spike::Stats &stats = mySolverPointer -> getStats();
+			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+		}
+		////cusp::io::write_matrix_market_file(x, "y1.mtx");
+	}
+
+	{
+		Vector b(A2.num_rows, 2.0);
+		Vector x(A2.num_rows, 0.0);
+		converged = mySolverPointer -> solve(mySpmv2, b, x);
+		cout << (converged ? "Converged" : "Not Converged") << endl;
+		if (converged) {
+			const spike::Stats &stats = mySolverPointer -> getStats();
+			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+		}
+		////cusp::io::write_matrix_market_file(x, "y2.mtx");
+	}
+
+	delete mySolverPointer;
 
 
 	return 0;
@@ -229,6 +255,7 @@ bool
 GetProblemSpecs(int             argc, 
                 char**          argv,
                 string&         fileMat,
+                string&         fileMatNew,
                 int&            numPart,
                 spike::Options& opts)
 {
@@ -276,6 +303,9 @@ GetProblemSpecs(int             argc,
 			case OPT_MATFILE:
 				fileMat = args.OptionArg();
 				break;
+			case OPT_MATFILE_NEW:
+				fileMatNew = args.OptionArg();
+				break;
 			case OPT_SAFE_FACT:
 				opts.safeFactorization = true;
 				break;
@@ -296,9 +326,16 @@ GetProblemSpecs(int             argc,
 		return false;
 	}
 
+	if (fileMatNew.length() == 0) {
+		cout << "The new matrix filename is required." << endl << endl;
+		ShowUsage();
+		return false;
+	}
+
 	// Print out the problem specifications.
 	cout << endl;
 	cout << "Matrix file: " << fileMat << endl;
+	cout << "Matrix file new: " << fileMatNew << endl;
 	cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
 	cout << "Relative tolerance: " << opts.relTol << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
@@ -325,6 +362,9 @@ void ShowUsage()
 	cout << " -m=MATFILE" << endl;
 	cout << " --matrix-file=MATFILE" << endl;
 	cout << "        Read the matrix from the MatrixMarket file MATFILE." << endl;
+	cout << " -n=MATFILE_NEW" << endl;
+	cout << " --matrix-file-new=MATFILE_NEW" << endl;
+	cout << "        Read the new matrix from the MatrixMarket file MATFILE_NEW." << endl;
 	cout << " -p=NUM_PARTITIONS" << endl;
 	cout << " --num-partitions=NUM_PARTITIONS" << endl;
 	cout << "        Specify the number of partitions." << endl;

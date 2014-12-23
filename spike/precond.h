@@ -202,6 +202,7 @@ private:
 	PrecVector           m_mc64ColScale;          // MC64 col scaling
 
 	PrecVector           m_B;                     // banded matrix (LU factors)
+	PrecVector           m_B2;                    // banded matrix (LU factors)
 	PrecVectorH          m_Bh;                    // FIXME: currently for hacking purpose only, to be removed
 	PrecVector           m_offDiags;              // contains the off-diagonal blocks of the original banded matrix
 	PrecVector           m_R;                     // diagonal blocks in the reduced matrix (LU factors)
@@ -946,7 +947,8 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 	if (m_ilu_level >= 0) {
 		if (m_numPartitions > 1 && m_precondType == Spike) {
 			if (m_variableBandwidth) {
-				static PrecVector buffer(m_n);
+				static PrecVector buffer;
+				buffer.resize(m_n);
 				permute(rhs, m_secondReordering,buffer);
 				// Calculate modified RHS
 				sparseSweep(rhs, rhs);
@@ -979,19 +981,7 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 	}
 
 	if (m_numPartitions > 1 && m_precondType == Spike) {
-		if (!m_variableBandwidth) {
-			sol = rhs;
-			// Calculate modified RHS
-			partBandedFwdSweep(rhs);
-			partBandedBckSweep(rhs);
-
-			// Solve reduced system
-			partFullFwdSweep(rhs);
-			partFullBckSweep(rhs);
-
-			// Purify RHS
-			purifyRHS(rhs, sol);
-		} else {
+		if (m_variableBandwidth) {
 			static PrecVector buffer;
 			buffer.resize(m_n);
 			permute(rhs, m_secondReordering,buffer);
@@ -1007,6 +997,18 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 
 			purifyRHS(sol, buffer);
 			permute(buffer, m_secondPerm, sol);
+		} else {
+			sol = rhs;
+			// Calculate modified RHS
+			partBandedFwdSweep(rhs);
+			partBandedBckSweep(rhs);
+
+			// Solve reduced system
+			partFullFwdSweep(rhs);
+			partFullBckSweep(rhs);
+
+			// Purify RHS
+			purifyRHS(rhs, sol);
 		}
 	} else
 		sol = rhs;
@@ -3577,12 +3579,10 @@ Precond<PrecVector>::partBlockedBandedLU_var()
 
 			device::var::blockedBandLU_critical_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, p_ks, p_BOffsets, BLOCK_FACTOR, partSize, remainder, false);
 		}
-	} else if (tmp_k > 27){
+	} else if (tmp_k > 27)
 		device::var::bandLU_g32_safe<PrecValueType><<<m_numPartitions, 512>>>(dB, p_ks, p_BOffsets, partSize, remainder, false);
-	} else {
+	else
 		device::var::bandLU_safe<PrecValueType><<<m_numPartitions,  tmp_k * tmp_k >>>(dB, p_ks, p_BOffsets, partSize, remainder, false);
-	}
-
 
 	if (m_safeFactorization)
 		device::var::boostLastPivot<PrecValueType><<<m_numPartitions, 1>>>(dB, partSize, p_ks, p_BOffsets, partSize, remainder);
@@ -3606,6 +3606,7 @@ Precond<PrecVector>::partBlockedBandedLU_var()
 				device::var::bandLU_post_divide_per_partition_general<PrecValueType><<<grids, 512>>>(dB, m_ks_host[i], m_BOffsets_host[i], partSize);
 		}
 	}
+
 }
 
 template <typename PrecVector>

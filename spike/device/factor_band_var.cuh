@@ -818,7 +818,8 @@ blockedBandLU_critical_phase1_safe(T *dA, int start_row, int *ks, int *offsets, 
 	for (int row = start_row; row < last_row; row ++) {
 		int cur_last = last[row + row_delta];
 
-		sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
+		if (threadIdx.x == 0)
+			sharedA = boostValue(dA[pivotIdx], dA[pivotIdx], (T)BURST_VALUE, (T)BURST_NEW_VALUE);
 		__syncthreads();
 
 		for (int tid = threadIdx.x + 1; tid <= cur_last; tid += blockDim.x)
@@ -876,8 +877,8 @@ blockedBandLU_critical_phase2(T *dA, int start_row, int *ks, int *offsets, int b
 	extern __shared__ T sharedElem[];
 
 	if (threadIdx.x + k < bid) {
-		sharedElem[threadIdx.x] = (T)0;
-		return;
+		sharedElem[threadIdx.x] = T(0);
+		//// return;
 	} else
 		sharedElem[threadIdx.x] = dA[pivotIdx + bid * (k << 1) + threadIdx.x];
 
@@ -890,7 +891,8 @@ blockedBandLU_critical_phase2(T *dA, int start_row, int *ks, int *offsets, int b
 		__syncthreads();
 	}
 
-	dA[pivotIdx + bid * (k << 1) + threadIdx.x] = sharedElem[threadIdx.x];
+	if (threadIdx.x + k >= bid) 
+		dA[pivotIdx + bid * (k << 1) + threadIdx.x] = sharedElem[threadIdx.x];
 }
 
 template <typename T>

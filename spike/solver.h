@@ -174,6 +174,7 @@ private:
 	Precond<PrecVector>                 m_precond;
 
 	int                                 m_n;
+	int                                 m_nnz;
 	bool                                m_trackReordering;
 	bool                                m_setupDone;
 
@@ -285,7 +286,8 @@ template <typename Matrix>
 bool
 Solver<Array, PrecValueType>::setup(const Matrix& A)
 {
-	m_n = A.num_rows;
+	m_n   = A.num_rows;
+	m_nnz = A.num_entries;
 
 	CPUTimer timer;
 
@@ -369,6 +371,9 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
 	if (!m_trackReordering)
 		throw system_error(system_error::Illegal_update, "Illegal call to update() with reordering tracking disabled.");
 
+	// If the matrix pattern has actually changed, FIXME: do we need more checking?
+	if (entries.size() != m_nnz)
+		return false;
 
 	// Update the preconditioner.
 	CPUTimer timer;
