@@ -1210,7 +1210,6 @@ blockedBandLU_critical_phase2(T *dA, int start_row, int k, int b)
 
 	if (threadIdx.x + k < bid) {
 		sharedElem[threadIdx.x] = (T)0;
-		return;
 	} else
 		sharedElem[threadIdx.x] = dA[pivotIdx + bid * (k << 1) + threadIdx.x];
 
@@ -1223,7 +1222,8 @@ blockedBandLU_critical_phase2(T *dA, int start_row, int k, int b)
 		__syncthreads();
 	}
 
-	dA[pivotIdx + bid * (k << 1) + threadIdx.x] = sharedElem[threadIdx.x];
+	if (threadIdx.x + k >= bid)
+		dA[pivotIdx + bid * (k << 1) + threadIdx.x] = sharedElem[threadIdx.x];
 }
 
 template <typename T>
@@ -1505,7 +1505,6 @@ blockedBandLU_critical_const_phase2(T *dA, int start_row, int K, int B, int part
 
 	if (threadIdx.x + K < bid) {
 		sharedElem[threadIdx.x] = (T)0;
-		return;
 	} else
 		sharedElem[threadIdx.x] = dA[pivotIdx + bid * (K << 1) + threadIdx.x];
 
@@ -1518,7 +1517,8 @@ blockedBandLU_critical_const_phase2(T *dA, int start_row, int K, int B, int part
 		__syncthreads();
 	}
 
-	dA[pivotIdx + bid * (K << 1) + threadIdx.x] = sharedElem[threadIdx.x];
+	if (threadIdx.x + K >= bid)
+		dA[pivotIdx + bid * (K << 1) + threadIdx.x] = sharedElem[threadIdx.x];
 }
 
 template <typename T>
@@ -1649,7 +1649,6 @@ blockedBandUL_critical_const_phase2(T *dA, int start_row, int K, int B, int part
 
 	if (bid > K + threadIdx.x) {
 		sharedElem[threadIdx.x] = (T)0;
-		return;
 	} else
 		sharedElem[threadIdx.x] = dA[pivotIdx - bid * (K << 1) - threadIdx.x];
 
@@ -1662,7 +1661,8 @@ blockedBandUL_critical_const_phase2(T *dA, int start_row, int K, int B, int part
 		__syncthreads();
 	}
 
-	dA[pivotIdx - bid * (K << 1) - threadIdx.x] = sharedElem[threadIdx.x];
+	if (bid <= K + threadIdx.x)
+		dA[pivotIdx - bid * (K << 1) - threadIdx.x] = sharedElem[threadIdx.x];
 }
 
 template <typename T>
