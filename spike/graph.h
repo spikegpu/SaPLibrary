@@ -10,7 +10,7 @@
 
 #include <cusp/csr_matrix.h>
 #include <cusp/coo_matrix.h>
-#include <cusp/blas.h>
+#include <cusp/blas/blas.h>
 #include <cusp/print.h>
 
 #include <thrust/scan.h>
@@ -478,7 +478,7 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 
 	{
 		IntVector row_indices(m_nnz);
-		cusp::detail::offsets_to_indices(m_matrix.row_offsets, row_indices);
+		cusp::offsets_to_indices(m_matrix.row_offsets, row_indices);
 		k_mc64 = thrust::inner_product(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), 0, thrust::maximum<int>(), Difference());
 	}
 
@@ -658,7 +658,7 @@ Graph<T>::dropOff(T   frac,
 			}
 		}
 
-		cusp::detail::indices_to_offsets(Acoo.row_indices, m_matrix.row_offsets);
+		cusp::indices_to_offsets(Acoo.row_indices, m_matrix.row_offsets);
 		m_matrix.column_indices = Acoo.column_indices;
 		m_matrix.values         = Acoo.values;
 		m_matrix.num_entries    = m_nnz;
@@ -845,7 +845,7 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 
 	IntVector row_indices(diagonal_nnz);
 	IntVector row_offsets(m_n + 1);
-	cusp::detail::offsets_to_indices(m_matrix_diagonal.row_offsets, row_indices);
+	cusp::offsets_to_indices(m_matrix_diagonal.row_offsets, row_indices);
 
 	for (int i = 0; i < numPartitions; i++) {
 		if (i < remainder)
@@ -905,7 +905,7 @@ Graph<T>::secondLevelReordering(int       bandwidth,
 			if (m_trackReordering)
 				m_ori_indices_diagonal = ori_indices;
 		}
-		// cusp::detail::indices_to_offsets(row_indices, m_matrix_diagonal.row_offsets);
+		// cusp::indices_to_offsets(row_indices, m_matrix_diagonal.row_offsets);
 	}
 
 	first_rows.resize(numPartitions - 1);
@@ -1248,7 +1248,7 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 	/*
 	{
 		thrust::sort_by_key(row_indices.begin(), row_indices.end(), thrust::make_zip_iterator(thrust::make_tuple(m_matrix.column_indices.begin(), m_matrix.values.begin())));
-		cusp::detail::indices_to_offsets(row_indices, m_matrix.row_offsets);
+		cusp::indices_to_offsets(row_indices, m_matrix.row_offsets);
 	} */
 	{
 		IntVector& row_offsets = m_matrix.row_offsets;
@@ -1304,7 +1304,7 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 	IntVector column_indices(nnz);
 	IntVector row_offsets(m_n + 1);
 	IntVector ori_degrees(m_n);
-	cusp::detail::offsets_to_indices(mat_csr.row_offsets, row_indices);
+	cusp::offsets_to_indices(mat_csr.row_offsets, row_indices);
 	thrust::transform(mat_csr.row_offsets.begin() + 1, mat_csr.row_offsets.end(), mat_csr.row_offsets.begin(), ori_degrees.begin(), thrust::minus<int>());
 
 	EdgeIterator begin = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), mat_csr.column_indices.begin()));
@@ -1490,7 +1490,7 @@ Graph<T>::RCM(MatrixCsr&   mat_csr,
 			if (m_trackReordering)
 				m_ori_indices = ori_indices;
 		}
-		// cusp::detail::indices_to_offsets(row_indices, mat_csr.row_offsets);
+		// cusp::indices_to_offsets(row_indices, mat_csr.row_offsets);
 	}
 
 	return bandwidth;
@@ -1749,7 +1749,7 @@ Graph<T>::get_csc_matrix(const MatrixCsr&  Acsr,
 	c_val   = Acsr.values;
 	{
 		IntVectorD    d_row_indices(nnz);
-		cusp::detail::offsets_to_indices(d_row_offsets, d_row_indices);
+		cusp::offsets_to_indices(d_row_offsets, d_row_indices);
 		thrust::transform(c_val.begin(), c_val.end(), c_val.begin(), AbsoluteValue<double>());
 		thrust::reduce_by_key(d_row_indices.begin(), d_row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), max_val_in_col.begin(), thrust::equal_to<double>(), thrust::maximum<double>());
 	}
@@ -1796,7 +1796,7 @@ Graph<T>::init_reduced_cval(bool           first_stage_only,
 {
 	{
 		IntVector row_indices(c_val.size());
-		cusp::detail::offsets_to_indices(row_ptr, row_indices);
+		cusp::offsets_to_indices(row_ptr, row_indices);
 		thrust::reduce_by_key(row_indices.begin(), row_indices.end(), c_val.begin(), thrust::make_discard_iterator(), u_val.begin(), thrust::equal_to<double>(), thrust::minimum<double>());
 	}
 
@@ -2091,7 +2091,7 @@ Graph<T>::sloan(MatrixCsr&   matcsr,
 	IntVector&  column_indices = matcsr.column_indices;
 	IntVector&  row_offsets    = matcsr.row_offsets;
 
-	cusp::detail::offsets_to_indices(row_offsets, row_indices);
+	cusp::offsets_to_indices(row_offsets, row_indices);
 
 	EdgeIterator begin = thrust::make_zip_iterator(thrust::make_tuple(row_indices.begin(), column_indices.begin()));
 	EdgeIterator end   = thrust::make_zip_iterator(thrust::make_tuple(row_indices.end(),   column_indices.end()));
@@ -2463,9 +2463,9 @@ Graph<T>::symbolicFactorization(const MatrixCsr&  Acsr)
 
 	IntVector A_column_offsets(Acsr.num_rows + 1), A_row_indices(Acsr.num_entries), A_column_indices = Acsr.column_indices;
 	{
-		cusp::detail::offsets_to_indices(Acsr.row_offsets, A_row_indices);
+		cusp::offsets_to_indices(Acsr.row_offsets, A_row_indices);
 		thrust::sort_by_key(A_column_indices.begin(), A_column_indices.end(), A_row_indices.begin());
-		cusp::detail::indices_to_offsets(A_column_indices, A_column_offsets);
+		cusp::indices_to_offsets(A_column_indices, A_column_offsets);
 	}
 
 	IntVector L_column_offsets(Acsr.num_rows + 1, 0), L_row_indices;

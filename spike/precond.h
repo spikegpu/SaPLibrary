@@ -5,9 +5,9 @@
 #ifndef SPIKE_PRECOND_CUH
 #define SPIKE_PRECOND_CUH
 
-#include <cusp/blas.h>
+#include <cusp/blas/blas.h>
 #include <cusp/print.h>
-#include <cusp/format.h>
+#include <cusp/format_utils.h>
 
 #include <thrust/logical.h>
 #include <thrust/functional.h>
@@ -200,6 +200,9 @@ private:
 
 	PrecVector           m_mc64RowScale;          // MC64 row scaling
 	PrecVector           m_mc64ColScale;          // MC64 col scaling
+
+	PrecVector           m_buffer;
+	PrecVector           m_buffer2;
 
 	PrecVector           m_B;                     // banded matrix (LU factors)
 	PrecVector           m_B2;                    // banded matrix (LU factors)
@@ -723,6 +726,8 @@ Precond<PrecVector>::setup(const Matrix&  A)
 	// the preconditioner solve function (while allowing for different types).
 	m_vp.resize(m_n);
 	m_zp.resize(m_n);
+	m_buffer.resize(m_n);
+	m_buffer2.resize(m_n);
 
 	// For MC64 test only, directly exit
 	if (m_testMC64)
@@ -920,10 +925,8 @@ Precond<PrecVector>::solve(PrecVector&  v,
 {
 	if (m_reorder) {
 		leftTrans(v, z);
-		static PrecVector buffer;
-		buffer.resize(m_n);
-		getSRev(z, buffer);
-		rightTrans(buffer, z);
+		getSRev(z, m_buffer);
+		rightTrans(m_buffer, z);
 	} else {
 		cusp::blas::copy(v, z);
 		PrecVector buffer = z;
@@ -947,9 +950,7 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 	if (m_ilu_level >= 0) {
 		if (m_numPartitions > 1 && m_precondType == Spike) {
 			if (m_variableBandwidth) {
-				static PrecVector buffer;
-				buffer.resize(m_n);
-				permute(rhs, m_secondReordering,buffer);
+				permute(rhs, m_secondReordering,m_buffer2);
 				// Calculate modified RHS
 				sparseSweep(rhs, rhs);
 
@@ -959,8 +960,8 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 				partFullFwdSweep(sol);
 				partFullBckSweep(sol);
 
-				purifyRHS(sol, buffer);
-				permute(buffer, m_secondPerm, sol);
+				purifyRHS(sol, m_buffer2);
+				permute(m_buffer2, m_secondPerm, sol);
 			} else {
 				sol = rhs;
 				// Calculate modified RHS
@@ -982,9 +983,7 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 
 	if (m_numPartitions > 1 && m_precondType == Spike) {
 		if (m_variableBandwidth) {
-			static PrecVector buffer;
-			buffer.resize(m_n);
-			permute(rhs, m_secondReordering,buffer);
+			permute(rhs, m_secondReordering,m_buffer2);
 			// Calculate modified RHS
 			partBandedFwdSweep(rhs);
 			partBandedBckSweep(rhs);
@@ -995,8 +994,8 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 			partFullFwdSweep(sol);
 			partFullBckSweep(sol);
 
-			purifyRHS(sol, buffer);
-			permute(buffer, m_secondPerm, sol);
+			purifyRHS(sol, m_buffer2);
+			permute(m_buffer2, m_secondPerm, sol);
 		} else {
 			sol = rhs;
 			// Calculate modified RHS

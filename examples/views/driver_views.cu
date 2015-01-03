@@ -19,7 +19,7 @@
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
-#include <cusp/blas.h>
+#include <cusp/blas/blas.h>
 
 #include <spike/solver.h>
 #include <spike/spmv.h>

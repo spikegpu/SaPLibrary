@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include <cusp/blas.h>
+#include <cusp/blas/blas.h>
 #include <cusp/multiply.h>
 #include <cusp/array1d.h>
 
