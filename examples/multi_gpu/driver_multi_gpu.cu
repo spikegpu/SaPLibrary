@@ -9,6 +9,9 @@
 #include <cusp/blas/blas.h>
 
 #include <spike/solver.h>
+#include <spike/timer.h>
+
+#include <omp.h>
 
 
 // -----------------------------------------------------------------------------
@@ -146,42 +149,56 @@ int main(int argc, char** argv)
 	CustomSpmv  mySpmv2(A2);
 	SpikeSolver mySolver2(numPart, opts);
 
+	spike::CPUTimer loc_timer;
+	double elapsed;
+	omp_set_num_threads(2);
+	
+	loc_timer.Start();
 	// Solve the linear system A*x = b for two different RHS.
 	// In each case, set the initial guess to 0.
+#pragma omp parallel
 	{
-		// Perform the solver setup.
-		cudaSetDevice(0);
-		mySolver.setup(A);
+		int tid = omp_get_thread_num();
+		cudaSetDevice(tid);
 
-		bool converged;
+		if (tid == 0)
+		{
+			// Perform the solver setup.
+			cudaSetDevice(0);
+			mySolver.setup(A);
 
-		Vector b(A.num_rows, 1.0);
-		Vector x(A.num_rows, 0.0);
-		converged = mySolver.solve(mySpmv, b, x);
-		cout << "System 1:" << (converged ? "Converged" : "Not Converged") << endl;
-		if (converged) {
-			const spike::Stats &stats = mySolver.getStats();
-			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+			bool converged;
+
+			Vector b(A.num_rows, 1.0);
+			Vector x(A.num_rows, 0.0);
+			converged = mySolver.solve(mySpmv, b, x);
+			cout << "System 1:" << (converged ? "Converged" : "Not Converged") << endl;
+			if (converged) {
+				const spike::Stats &stats = mySolver.getStats();
+				cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+			}
+			////cusp::io::write_matrix_market_file(x, "x1.mtx");
+		} else if (tid == 1) {
+
+			cudaSetDevice(1);
+			mySolver2.setup(A2);
+
+			bool converged;
+
+			Vector b(A2.num_rows, 1.0);
+			Vector x(A2.num_rows, 0.0);
+			converged = mySolver2.solve(mySpmv2, b, x);
+			cout << "System 2:" << (converged ? "Converged" : "Not Converged") << endl;
+			if (converged) {
+				const spike::Stats &stats = mySolver2.getStats();
+				cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
+			}
+			////cusp::io::write_matrix_market_file(x, "y1.mtx");
 		}
-		////cusp::io::write_matrix_market_file(x, "x1.mtx");
 	}
-
-	{
-		cudaSetDevice(1);
-		mySolver2.setup(A2);
-
-		bool converged;
-
-		Vector b(A2.num_rows, 1.0);
-		Vector x(A2.num_rows, 0.0);
-		converged = mySolver2.solve(mySpmv2, b, x);
-		cout << "System 2:" << (converged ? "Converged" : "Not Converged") << endl;
-		if (converged) {
-			const spike::Stats &stats = mySolver2.getStats();
-			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
-		}
-		////cusp::io::write_matrix_market_file(x, "y1.mtx");
-	}
+	loc_timer.Stop();
+	elapsed = loc_timer.getElapsed();
+	cout << "Time elapsed: " << elapsed << endl;
 
 	return 0;
 }
