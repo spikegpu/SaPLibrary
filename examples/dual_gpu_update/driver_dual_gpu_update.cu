@@ -225,8 +225,8 @@ int main(int argc, char** argv)
 
 			// If the preconditioner has been updated, or the working thread fails to solve the problem, do a switch
 			if (update_done || !solveSuccess) {
-				if (systems_to_solve <= 0) break;
 #pragma omp barrier
+				if (systems_to_solve <= 0) break;
 #pragma omp single
 				{
 					update_done = false;
