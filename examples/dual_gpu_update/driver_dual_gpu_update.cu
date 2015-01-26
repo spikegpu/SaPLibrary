@@ -128,6 +128,8 @@ int main(int argc, char** argv)
 	if (!GetProblemSpecs(argc, argv, fileMat, numPart, systems_to_solve, opts))
 		return 1;
 
+	int            init_systems_to_solve = systems_to_solve;
+
 	opts.trackReordering = true;
 	
 	// Get matrix and rhs.
@@ -149,7 +151,7 @@ int main(int argc, char** argv)
 	cusp::io::read_matrix_market_file(A[1], fileMat);
 	mySolver[1] = new SpikeSolver(numPart, opts);
 	mySpmv[1]   = new CustomSpmv(A[1]);
-	b[1].resize(A[0].num_rows, 1.0);
+	b[1].resize(A[1].num_rows, 1.0);
 	x[1].resize(A[1].num_rows);
 
 	spike::CPUTimer loc_timer;
@@ -169,9 +171,10 @@ int main(int argc, char** argv)
 	bool update_done = false;
 	bool solveSuccess = true;
 	bool matrix_updated = false;
+	bool system_changed = false;
 	// Solve the linear system A*x = b for two different RHS.
 	// In each case, set the initial guess to 0.
-#pragma omp parallel shared(systems_to_solve, working_thread, g_lock, update_done, solveSuccess, matrix_updated)
+#pragma omp parallel shared(init_systems_to_solve, systems_to_solve, working_thread, g_lock, update_done, solveSuccess, matrix_updated, system_changed, opts)
 	{
 		int tid = omp_get_thread_num();
 		cudaSetDevice(tid);
@@ -227,16 +230,42 @@ int main(int argc, char** argv)
 			if (update_done || !solveSuccess) {
 #pragma omp barrier
 				if (systems_to_solve <= 0) break;
+
+				if (!system_changed && systems_to_solve < (init_systems_to_solve >> 1) && solveSuccess) {
+				//// if (false) {
+#pragma omp barrier
 #pragma omp single
-				{
-					update_done = false;
-					solveSuccess = true;
+					{
+						system_changed = true;
+						working_thread = 0;
+						update_done    = false;
+						solveSuccess   = true;
+						matrix_updated = false;
+					}
+					delete mySolver[tid];
+					delete mySpmv[tid];
+					cusp::io::read_matrix_market_file(A[tid], "/home/ali/CUDA_project/reordering/matrices/88950-lhs.mtx");
+					mySolver[tid] = new SpikeSolver(numPart, opts);
+					mySpmv[tid]   = new CustomSpmv(A[tid]);
+					b[tid].resize(A[tid].num_rows);
+					cusp::blas::fill(b[tid], 1.0);
+					x[tid].resize(A[tid].num_rows);
+					
+					if (tid == 0) {
+						mySolver[0] -> setup(A[0]);
+					}
+				} else {
+#pragma omp single
+					{
+						update_done = false;
+						solveSuccess = true;
 
-					// Copy all results that the other worker are needed for next step
-					thrust::copy(b[loc_working_thread].begin(), b[loc_working_thread].end(), b[1-loc_working_thread].begin());
+						// Copy all results that the other worker are needed for next step
+						thrust::copy(b[loc_working_thread].begin(), b[loc_working_thread].end(), b[1-loc_working_thread].begin());
 
-					// Get the up-to-date matrix
-					thrust::copy(A[loc_working_thread].values.begin(), A[loc_working_thread].values.end(), A[1-loc_working_thread].values.begin());
+						// Get the up-to-date matrix
+						thrust::copy(A[loc_working_thread].values.begin(), A[loc_working_thread].values.end(), A[1-loc_working_thread].values.begin());
+					}
 				}
 			}
 		}
