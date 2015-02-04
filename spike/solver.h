@@ -11,7 +11,11 @@
 
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
+#ifdef   USE_OLD_CUSP
+#include <cusp/blas.h>
+#else
 #include <cusp/blas/blas.h>
+#endif
 #include <cusp/print.h>
 #include <cusp/io/matrix_market.h>
 #include <cusp/krylov/cg.h>

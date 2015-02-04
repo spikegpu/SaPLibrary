@@ -7,7 +7,11 @@
 
 #include <vector>
 
+#ifdef   USE_OLD_CUSP
+#include <cusp/blas.h>
+#else
 #include <cusp/blas/blas.h>
+#endif
 #include <cusp/multiply.h>
 #include <cusp/array1d.h>
 

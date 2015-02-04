@@ -27,7 +27,11 @@
 #define SPIKE_BICGSTAB_H
 
 #include <cusp/array1d.h>
+#ifdef   USE_OLD_CUSP
+#include <cusp/blas.h>
+#else
 #include <cusp/blas/blas.h>
+#endif
 #include <cusp/multiply.h>
 
 #include <spike/monitor.h>

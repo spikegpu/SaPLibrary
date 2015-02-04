@@ -5,9 +5,15 @@
 #ifndef SPIKE_PRECOND_CUH
 #define SPIKE_PRECOND_CUH
 
+#ifdef   USE_OLD_CUSP
+#include <cusp/blas.h>
+#include <cusp/detail/format_utils.h>
+#else
 #include <cusp/blas/blas.h>
-#include <cusp/print.h>
 #include <cusp/format_utils.h>
+#endif
+
+#include <cusp/print.h>
 
 #include <thrust/logical.h>
 #include <thrust/functional.h>
@@ -1156,8 +1162,35 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	transfer_timer.Start();
 
 	// Reorder the matrix and apply drop-off. For this, we convert the
-	// input matrix to COO format and copy it on the host.
-	PrecMatrixCsrH Acsrh = A;
+	// input matrix to CSR format and copy it on the host.
+	PrecMatrixCsrH Acsrh;
+
+#ifdef USE_OLD_CUSP
+	Acsrh = A;
+#else
+	{
+		PrecMatrixCooH Acooh = A;
+
+		if (!Acooh.is_sorted_by_row()) {
+			Acsrh.resize(A.num_rows, A.num_rows, A.num_entries);
+
+			thrust::fill(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), 0);
+
+			for (int i = 0; i < Acooh.num_entries; i++)
+				Acsrh.row_offsets[Acooh.row_indices[i]] ++;
+
+			thrust::inclusive_scan(Acsrh.row_offsets.begin(), Acsrh.row_offsets.end(), Acsrh.row_offsets.begin());
+
+			for (int i = Acooh.num_entries - 1; i >= 0; i--) {
+				int idx = (--Acsrh.row_offsets[Acooh.row_indices[i]]);
+				Acsrh.column_indices[idx] = Acooh.column_indices[i];
+				Acsrh.values[idx]         = Acooh.values[i];
+			}
+		} else 
+			Acsrh = Acooh;
+	}
+#endif
+
 	transfer_timer.Stop();
 	m_time_transfer = transfer_timer.getElapsed();
 

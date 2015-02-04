@@ -43,6 +43,8 @@ typedef long long int64_t;
 #define BURST_VALUE (1e-7)
 #define BURST_NEW_VALUE (1e-4)
 
+// #define USE_OLD_CUSP
+
 
 namespace spike {
 
