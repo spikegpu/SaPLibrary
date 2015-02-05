@@ -46,7 +46,7 @@ typedef typename cusp::array1d<PREC_REAL, cusp::device_memory>    PrecVector;
 
 typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
 typedef typename spike::Precond<PrecVector>                       SpikePrecond;
-typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
+typedef typename spike::SpmvCuSparse<Matrix>                      SpmvFunctor;
 
 
 
@@ -208,8 +208,10 @@ int main(int argc, char** argv)
 	// Create the SPIKE Solver object and the SPMV functor. Perform the solver
 	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
+	cusparseHandle_t handle;
+	cusparseCreate(&handle);
 	SpikeSolver  mySolver(numPart, opts);
-	SpmvFunctor  mySpmv(A);
+	SpmvFunctor  mySpmv(A, handle);
 	Vector       x(A.num_rows, 0);
 
 	bool solveSuccess = true; 
