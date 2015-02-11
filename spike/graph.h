@@ -2407,7 +2407,7 @@ Graph<T>::unorderedBFSIteration(int            width,
 		pS = S;
 		S  = E;
 	}
-	thrust::copy(tmp_reordering.begin() + start_idx, tmp_reordering.begin() + end_idx, tmp_reordering_bak.begin());
+	//// thrust::copy(tmp_reordering.begin() + start_idx, tmp_reordering.begin() + end_idx, tmp_reordering_bak.begin());
 
 	const int W1 = 2, W2 = 1;
 
@@ -2416,29 +2416,45 @@ Graph<T>::unorderedBFSIteration(int            width,
 
 	thrust::scatter(costs.begin() + start_idx, costs.begin() + end_idx, tmp_reordering.begin() + start_idx, ori_costs.begin());
 
-	int head = 0, tail = 1;
-	tmp_reordering_bak[0] = S;
+	//// int head = 0, tail = 1;
+	//// tmp_reordering_bak[0] = S;
 	status[S] = PREACTIVE;
-	//// pq.push(thrust::make_tuple(ori_costs[S],S));
 
 	int cur_idx = start_idx;
 
-	while(head < tail) {
-		int cur_node = tmp_reordering_bak[head];
-		int max_cost = ori_costs[cur_node];
-		int idx = head;
+	std::priority_queue<thrust::tuple<int, int > > pq;
+	pq.push(thrust::make_tuple(ori_costs[S],S));
 
-		{
-			for (int i = head + 1; i < tail; i++)
-				if (max_cost < ori_costs[tmp_reordering_bak[i]]) {
-					idx = i;
-					cur_node = tmp_reordering_bak[i];
-					max_cost = ori_costs[cur_node + start_idx];
-				}
+	//// while(head < tail) {
+	while(! pq.empty()) {
+		//// int cur_node = tmp_reordering_bak[head];
+		thrust::tuple<int, int> tmp_tuple = pq.top();
+		pq.pop();
+		int cur_node = thrust::get<1>(tmp_tuple);
+		//// int max_cost = ori_costs[cur_node];
+		//// int idx = head;
+		bool found = (status[cur_node] != POSTACTIVE);
+		while (!found) {
+			if (pq.empty()) break;
+			tmp_tuple = pq.top();
+			pq.pop();
+			cur_node = thrust::get<1>(tmp_tuple);
+			found = (status[cur_node] != POSTACTIVE);
 		}
 
-		if (idx != head) 
-			tmp_reordering_bak[idx] = tmp_reordering_bak[head];
+		if (!found) break;
+
+		//// {
+			////for (int i = head + 1; i < tail; i++)
+	////			if (max_cost < ori_costs[tmp_reordering_bak[i]]) {
+	////				idx = i;
+	////				cur_node = tmp_reordering_bak[i];
+	////				max_cost = ori_costs[cur_node + start_idx];
+	////			}
+	////	}
+
+		//// if (idx != head) 
+			//// tmp_reordering_bak[idx] = tmp_reordering_bak[head];
 
 		if (status[cur_node] == PREACTIVE) {
 			int start_idx2 = row_offsets[cur_node], end_idx2 = row_offsets[cur_node + 1];
@@ -2447,11 +2463,11 @@ Graph<T>::unorderedBFSIteration(int            width,
 				int column = column_indices[l];
 				if (status[column] == POSTACTIVE) continue;
 				ori_costs[column] += W1;
-				//// pq.push(thrust::make_tuple(ori_costs[column], column));
+				pq.push(thrust::make_tuple(ori_costs[column], column));
 				if (status[column] == INACTIVE) {
-					tmp_reordering_bak[tail] = column;
+					//// tmp_reordering_bak[tail] = column;
 					status[column] = PREACTIVE;
-					tail ++;
+					//// tail ++;
 				}
 			}
 		}
@@ -2466,7 +2482,7 @@ Graph<T>::unorderedBFSIteration(int            width,
 			if (status[column] != PREACTIVE) continue;
 			ori_costs[column] += W1;
 			status[column] = ACTIVE;
-			//// pq.push(thrust::make_tuple(ori_costs[column], column));
+			pq.push(thrust::make_tuple(ori_costs[column], column));
 
 			int start_idx3 = row_offsets[column], end_idx3 = row_offsets[column + 1];
 
@@ -2475,15 +2491,15 @@ Graph<T>::unorderedBFSIteration(int            width,
 				if (status[column2] == POSTACTIVE) continue;
 
 				ori_costs[column2] += W1;
-				//// pq.push(thrust::make_tuple(ori_costs[column2], column2));
+				pq.push(thrust::make_tuple(ori_costs[column2], column2));
 				if (status[column2] == INACTIVE) {
 					status[column2] = PREACTIVE;
-					tmp_reordering_bak[tail] = column2;
-					tail ++;
+					//// tmp_reordering_bak[tail] = column2;
+					//// tail ++;
 				}
 			}
 		}
-		head++;
+		//// head++;
 	}
 }
 
