@@ -1191,6 +1191,26 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	}
 #endif
 
+	{
+		int num_entries = 0;
+		IntVectorH   row_offsets(Acsrh.num_rows + 1, 0);
+		for (int i = 0; i < Acsrh.num_rows; i++) {
+			int start_idx = Acsrh.row_offsets[i], end_idx = Acsrh.row_offsets[i+1];
+			for (int j = start_idx; j < end_idx; j++) {
+				if (Acsrh.values[j] != 0) {
+					if (num_entries != j) {
+						Acsrh.column_indices[num_entries] = Acsrh.column_indices[j];
+						Acsrh.values[num_entries] = Acsrh.values[j];
+					}
+					num_entries ++;
+				}
+			}
+			row_offsets[i + 1] = num_entries;
+		}
+		Acsrh.resize(Acsrh.num_rows, Acsrh.num_rows, num_entries);
+		thrust::copy(row_offsets.begin(), row_offsets.end(), Acsrh.row_offsets.begin());
+	}
+
 	transfer_timer.Stop();
 	m_time_transfer = transfer_timer.getElapsed();
 
