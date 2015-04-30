@@ -480,6 +480,19 @@ int main(int argc, char** argv)
 		// nuKf
 		outputItem( stats.nuKf);
 
+		// The relative infinity norm of solution
+		REAL nrm_target = cusp::blas::nrmmax(x_target);
+		cusp::blas::axpy(x_target, x, (REAL)(-1));
+		REAL rel_err = fabs(cusp::blas::nrmmax(x))/ nrm_target;
+		REAL abs_sum = cusp::blas::nrm1(x);
+
+		if (isnan(abs_sum))
+			solveSuccess = false;
+		else if (rel_err > 0.01)
+			solveSuccess = false;
+		else
+			solveSuccess = true;
+
 		// Reason why cannot solve (for unsuccessful solving only)
 		if (solveSuccess)
 			outputItem ( "OK");
@@ -488,14 +501,9 @@ int main(int argc, char** argv)
 		// Enable Diagonal boosting?
 		outputItem (opts.safeFactorization);
 
-		// The relative infinity norm of solution
-		REAL nrm_target = cusp::blas::nrmmax(x_target);
-		cusp::blas::axpy(x_target, x, (REAL)(-1));
-		REAL rel_err = fabs(cusp::blas::nrmmax(x))/ nrm_target;
-
-		if (isnan(cusp::blas::nrm1(x)))
+		if (isnan(abs_sum))
 			outputItem("NaN", COLOR_RED);
-		else if (rel_err >= 1)
+		else if (rel_err > 0.01)
 			outputItem(rel_err, COLOR_RED);
 		else
 			outputItem(rel_err);
