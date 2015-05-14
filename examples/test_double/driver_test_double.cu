@@ -580,6 +580,9 @@ int main(int argc, char** argv)
 			// Slowdown
 			if (solveSuccess) {
 				double slowdown = (stats.timeSetup + stats.timeSolve) / map_it->second;
+				if (map_it->second < 0)
+					slowdown = 0.0;
+
 				if (slowdown >= 5)
 					outputItem(slowdown, COLOR_RED);
 				else if (slowdown < 1)

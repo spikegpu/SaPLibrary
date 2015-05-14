@@ -794,21 +794,33 @@ Precond<PrecVector>::setup(const Matrix&  A)
 		////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
 		return;
 	}
-	
-	// We are using more than one partition, so we must assemble the
-	// truncated Spike reduced matrix R.
-	m_R.resize((2 * m_k) * (2 * m_k) * (m_numPartitions - 1));
 
-	// Extract off-diagonal blocks from the banded matrix and store them
-	// in the array m_offDiags.
 	PrecVector mat_WV;
-	mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
 
-	m_timer.Start();
-	extractOffDiagonal(mat_WV);
-	m_timer.Stop();
-	m_time_offDiags = m_timer.getElapsed();
+	try {
+		// We are using more than one partition, so we must assemble the
+		// truncated Spike reduced matrix R.
+		m_R.resize((2 * m_k) * (2 * m_k) * (m_numPartitions - 1));
 
+		// Extract off-diagonal blocks from the banded matrix and store them
+		// in the array m_offDiags.
+		mat_WV.resize(2 * m_k * m_k * (m_numPartitions-1));
+
+		m_timer.Start();
+		extractOffDiagonal(mat_WV);
+		m_timer.Stop();
+		m_time_offDiags = m_timer.getElapsed();
+	} catch (const std::bad_alloc& ) {
+		m_precondType = Block;
+		m_timer.Start();
+		partBandedLU();
+		// m_Bh = m_B;
+		m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
+		m_timer.Stop();
+		m_time_bandLU = m_timer.getElapsed();
+		return;
+	}
+	
 
 	switch (m_factMethod) {
 	case LU_only:
@@ -823,12 +835,17 @@ Precond<PrecVector>::setup(const Matrix&  A)
 			m_time_bandLU = m_timer.getElapsed();
 
 			////cusp::io::write_matrix_market_file(m_B, "B_lu.mtx");
-
-			m_timer.Start();
-			calculateSpikes(mat_WV);
-			assembleReducedMat(mat_WV);
-			m_timer.Stop();
-			m_time_assembly = m_timer.getElapsed();
+			try{
+				m_timer.Start();
+				calculateSpikes(mat_WV);
+				assembleReducedMat(mat_WV);
+				m_timer.Stop();
+				m_time_assembly = m_timer.getElapsed();
+			} catch (const std::bad_alloc& ) {
+				m_precondType = Block;
+				m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
+				return;
+			}
 		}
 
 		break;
@@ -862,22 +879,28 @@ Precond<PrecVector>::setup(const Matrix&  A)
 
 			cudaDeviceSetCacheConfig(cudaFuncCachePreferNone);
 
-			m_timer.Start();
-			calculateSpikes(B2, mat_WV);
-			assembleReducedMat(mat_WV);
-			copyLastPartition(B2);
-			{
-				PrecValueType *dB = thrust::raw_pointer_cast(&m_B[0]);
-				int gridX = m_n, gridY = 1;
-				kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
-				dim3 grids(gridX, gridY);
-				if (m_k > 512)
-					device::bandLUUL_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_n, m_k, m_numPartitions);
-				else
-					device::bandLUUL_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_n, m_k, m_numPartitions);
+			try {
+				m_timer.Start();
+				calculateSpikes(B2, mat_WV);
+				assembleReducedMat(mat_WV);
+				copyLastPartition(B2);
+				{
+					PrecValueType *dB = thrust::raw_pointer_cast(&m_B[0]);
+					int gridX = m_n, gridY = 1;
+					kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
+					dim3 grids(gridX, gridY);
+					if (m_k > 512)
+						device::bandLUUL_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_n, m_k, m_numPartitions);
+					else
+						device::bandLUUL_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_n, m_k, m_numPartitions);
+				}
+				m_timer.Stop();
+				m_time_assembly = m_timer.getElapsed();
+			} catch (const std::bad_alloc& ) {
+				m_precondType = Block;
+				m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
+				return;
 			}
-			m_timer.Stop();
-			m_time_assembly = m_timer.getElapsed();
 		}
 
 		break;
