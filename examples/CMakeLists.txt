@@ -65,7 +65,7 @@ SET(SPIKE_CUHEADERS
 	../../spike/device/sweep_band_const.cuh
 	../../spike/device/sweep_band_var.cuh
 	../../spike/device/sweep_band_sparse.cuh
-	../../spike/device/mc64.cuh
+	../../spike/device/db.cuh
 )
 
 ADD_SUBDIRECTORY(matrix_market)
@@ -74,7 +74,7 @@ ADD_SUBDIRECTORY(restart)
 ADD_SUBDIRECTORY(sequence)
 ADD_SUBDIRECTORY(test)
 ADD_SUBDIRECTORY(test_double)
-ADD_SUBDIRECTORY(test_mc64)
+ADD_SUBDIRECTORY(test_db)
 ADD_SUBDIRECTORY(synthetic_banded)
 ADD_SUBDIRECTORY(multi_gpu)
 ADD_SUBDIRECTORY(dual_gpu_update)

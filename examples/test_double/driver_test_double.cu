@@ -66,7 +66,7 @@ using std::vector;
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_PART,
       OPT_SPD, OPT_SAVE_MEM,
-      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING, OPT_MC64_FIRST_STAGE_ONLY,
+      OPT_NO_REORDERING, OPT_NO_DB, OPT_NO_SCALING, OPT_DB_FIRST_STAGE_ONLY,
       OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE, 
@@ -106,10 +106,10 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_SPD,           "--spd",                SO_NONE    },
 	{ OPT_SAVE_MEM,      "--save-mem",           SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
-	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
+	{ OPT_NO_DB,         "--no-db",            SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
-	{ OPT_MC64_FIRST_STAGE_ONLY,
-	                     "--mc64-first-stage-only", SO_NONE },
+	{ OPT_DB_FIRST_STAGE_ONLY,
+	                     "--db-first-stage-only", SO_NONE },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
 	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
@@ -274,8 +274,8 @@ int main(int argc, char** argv)
 	outputItem( A.num_entries);
 	// SPD
 	outputItem( opts.isSPD);
-	// Perform MC64
-	outputItem(opts.performMC64);
+	// Perform DB
+	outputItem(opts.performDB);
 
 	try {
 		mySolver.setup(A);
@@ -284,10 +284,10 @@ int main(int argc, char** argv)
 
 		{
 			const SpikePrecond &precond = mySolver.getPreconditioner();
-			int k_mc64 = precond.getBandwidthMC64(), k_reorder = precond.getBandwidthReordering(), k = precond.getBandwidth();
+			int k_db = precond.getBandwidthDB(), k_reorder = precond.getBandwidthReordering(), k = precond.getBandwidth();
 
-			// Half-bandwidth after MC64
-			outputItem( k_mc64);
+			// Half-bandwidth after DB
+			outputItem( k_db);
 			// Half-bandwidth before drop-off 
 			outputItem( k_reorder);
 			// Half-bandwidth
@@ -322,7 +322,7 @@ int main(int argc, char** argv)
 		return 1;
 	} catch (const spike::system_error& se) {
 		solveSuccess = false;
-		// Half-bandwidth after MC64
+		// Half-bandwidth after DB
 		outputItem( "N/A");
 		// Half-bandwidth before drop-off 
 		outputItem( "N/A");
@@ -344,7 +344,7 @@ int main(int argc, char** argv)
 			case spike::system_error::Illegal_update:
 				outputItem ("Illegal update", COLOR_RED);
 				break;
-			case spike::system_error::Negative_MC64_weight:
+			case spike::system_error::Negative_DB_weight:
 				outputItem ("Internal system error", COLOR_RED);
 				break;
 			default:
@@ -380,7 +380,7 @@ int main(int argc, char** argv)
 		solveSuccess = mySolver.solve(mySpmv, b, x);
 	} catch (const std::bad_alloc& ) {
 		solveSuccess = false;
-		// Half-bandwidth after MC64
+		// Half-bandwidth after DB
 		outputItem( "N/A");
 		// Half-bandwidth before drop-off
 		outputItem( "N/A");
@@ -416,7 +416,7 @@ int main(int argc, char** argv)
 		return 1;
 	} catch (const spike::system_error& se) {
 		solveSuccess = false;
-		// Half-bandwidth after MC64
+		// Half-bandwidth after DB
 		outputItem( "N/A");
 		// Half-bandwidth before drop-off
 		outputItem( "N/A");
@@ -435,7 +435,7 @@ int main(int argc, char** argv)
 			case spike::system_error::Illegal_update:
 				outputItem( "Illegal update", COLOR_RED);
 				break;
-			case spike::system_error::Negative_MC64_weight:
+			case spike::system_error::Negative_DB_weight:
 				outputItem( "Internal system error", COLOR_RED);
 				break;
 			default:
@@ -469,8 +469,8 @@ int main(int argc, char** argv)
 
 	{
 		spike::Stats stats = mySolver.getStats();
-		// Half-bandwidth after MC64
-		outputItem( stats.bandwidthMC64);
+		// Half-bandwidth after DB
+		outputItem( stats.bandwidthDB);
 		// Half-bandwidth before drop-off
 		outputItem( stats.bandwidthReorder);
 		// Half-bandwidth
@@ -508,10 +508,10 @@ int main(int argc, char** argv)
 		else
 			outputItem(rel_err);
 		
-		// Time for MC64 reordering
-		outputItem( stats.time_MC64);
+		// Time for DB reordering
+		outputItem( stats.time_DB);
 		// Time for RCM reordering
-		outputItem( stats.time_reorder - stats.time_MC64);
+		outputItem( stats.time_reorder - stats.time_DB);
 		// Time for drop off
 		outputItem( stats.time_dropOff);
 		// Time for data transferring
@@ -770,14 +770,14 @@ GetProblemSpecs(int             argc,
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
 				break;
-			case OPT_NO_MC64:
-				opts.performMC64 = false;
+			case OPT_NO_DB:
+				opts.performDB = false;
 				break;
 			case OPT_NO_SCALING:
 				opts.applyScaling = false;
 				break;
-			case OPT_MC64_FIRST_STAGE_ONLY:
-				opts.mc64FirstStageOnly = true;
+			case OPT_DB_FIRST_STAGE_ONLY:
+				opts.dbFirstStageOnly = true;
 				opts.applyScaling = false;
 				break;
 			case OPT_MATFILE:
@@ -861,9 +861,9 @@ GetProblemSpecs(int             argc,
 		return false;
 	}
 
-	// For symmetric positive definitive matrix, do not perform MC64
+	// For symmetric positive definitive matrix, do not perform DB
 	if (opts.isSPD) {
-		opts.performMC64 = false;
+		opts.performDB = false;
 		opts.applyScaling = false;
 		opts.solverType = spike::CG_C;
 		opts.saveMem = true;
@@ -873,10 +873,10 @@ GetProblemSpecs(int             argc,
 	// If no reordering, force using constant bandwidth.
 	if (!opts.performReorder) {
 		opts.variableBandwidth = false;
-		opts.performMC64 = false;
+		opts.performDB = false;
 	}
 
-	if (!opts.performMC64)
+	if (!opts.performDB)
 		opts.applyScaling = false;
 
 	// If using variable bandwidth, force using LU factorization.
@@ -901,8 +901,8 @@ void ShowUsage()
 	cout << "        Specify the number of partitions (default 1)." << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering." << endl;
-	cout << " --no-mc64" << endl;
-	cout << "        Do not perform MC64 reordering." << endl;
+	cout << " --no-db" << endl;
+	cout << "        Do not perform DB reordering." << endl;
 	cout << " --no-scaling" << endl;
 	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;

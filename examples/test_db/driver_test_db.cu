@@ -64,7 +64,7 @@ using std::vector;
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_PART,
       OPT_SPD, OPT_SAVE_MEM,
-      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING, OPT_MC64_FIRST_STAGE_ONLY,
+      OPT_NO_REORDERING, OPT_NO_DB, OPT_NO_SCALING, OPT_DB_FIRST_STAGE_ONLY,
       OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE, 
@@ -104,10 +104,10 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_SPD,           "--spd",                SO_NONE    },
 	{ OPT_SAVE_MEM,      "--save-mem",           SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
-	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
+	{ OPT_NO_DB,         "--no-db",              SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
-	{ OPT_MC64_FIRST_STAGE_ONLY,
-	                     "--mc64-first-stage-only", SO_NONE },
+	{ OPT_DB_FIRST_STAGE_ONLY,
+	                     "--db-first-stage-only", SO_NONE },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
 	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
@@ -186,8 +186,8 @@ int main(int argc, char** argv)
 	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, opts))
 		return 1;
 
-	opts.testMC64 = true;
-	opts.performMC64 = true;
+	opts.testDB = true;
+	opts.performDB = true;
 
 	// Get the device with most available memory.
 	spikeSetDevice();
@@ -251,16 +251,16 @@ int main(int argc, char** argv)
 	{
 		spike::Stats stats = mySolver.getStats();
 
-		// Time for MC64 reordering (pre-processing)
-		outputItem( stats.time_MC64_pre);
-		// Time for MC64 reordering (first stage)
-		outputItem( stats.time_MC64_first);
-		// Time for MC64 reordering (second stage)
-		outputItem( stats.time_MC64_second);
-		// Time for MC64 reordering (post-processing)
-		outputItem( stats.time_MC64_post);
-		// Time for MC64 reordering
-		outputItem( stats.time_MC64);
+		// Time for DB reordering (pre-processing)
+		outputItem( stats.time_DB_pre);
+		// Time for DB reordering (first stage)
+		outputItem( stats.time_DB_first);
+		// Time for DB reordering (second stage)
+		outputItem( stats.time_DB_second);
+		// Time for DB reordering (post-processing)
+		outputItem( stats.time_DB_post);
+		// Time for DB reordering
+		outputItem( stats.time_DB);
 
 		cout << "</tr>" << endl;
 	}
@@ -413,12 +413,12 @@ GetProblemSpecs(int             argc,
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
 				break;
-			case OPT_MC64_FIRST_STAGE_ONLY:
-				opts.mc64FirstStageOnly = true;
+			case OPT_DB_FIRST_STAGE_ONLY:
+				opts.dbFirstStageOnly = true;
 				opts.applyScaling = false;
 				break;
-			case OPT_NO_MC64:
-				opts.performMC64 = false;
+			case OPT_NO_DB:
+				opts.performDB = false;
 				break;
 			case OPT_NO_SCALING:
 				opts.applyScaling = false;
@@ -501,9 +501,9 @@ GetProblemSpecs(int             argc,
 		return false;
 	}
 
-	// For symmetric positive definitive matrix, do not perform MC64
+	// For symmetric positive definitive matrix, do not perform DB
 	if (opts.isSPD) {
-		opts.performMC64 = false;
+		opts.performDB = false;
 		opts.applyScaling = false;
 		opts.solverType = spike::CG_C;
 		opts.saveMem = true;
@@ -513,10 +513,10 @@ GetProblemSpecs(int             argc,
 	// If no reordering, force using constant bandwidth.
 	if (!opts.performReorder) {
 		opts.variableBandwidth = false;
-		opts.performMC64 = false;
+		opts.performDB = false;
 	}
 
-	if (!opts.performMC64)
+	if (!opts.performDB)
 		opts.applyScaling = false;
 
 	// If using variable bandwidth, force using LU factorization.
@@ -541,8 +541,8 @@ void ShowUsage()
 	cout << "        Specify the number of partitions (default 1)." << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering." << endl;
-	cout << " --no-mc64" << endl;
-	cout << "        Do not perform MC64 reordering." << endl;
+	cout << " --no-db" << endl;
+	cout << "        Do not perform DB reordering." << endl;
 	cout << " --no-scaling" << endl;
 	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;

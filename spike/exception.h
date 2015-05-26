@@ -16,7 +16,7 @@ public:
 	enum Reason
 	{
 		Zero_pivoting        = -1,
-		Negative_MC64_weight = -2,
+		Negative_DB_weight = -2,
 		Illegal_update       = -3,
 		Illegal_solve        = -4,
 		Matrix_singular      = -5

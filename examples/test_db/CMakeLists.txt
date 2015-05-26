@@ -4,5 +4,5 @@
 SOURCE_GROUP("Spike Headers" FILES ${SPIKE_HEADERS})
 SOURCE_GROUP("Spike CUDA Headers" FILES ${SPIKE_CUHEADERS})
 
-cuda_add_executable(driver_test_mc64 driver_test_mc64.cu ${SPIKE_HEADERS} ${SPIKE_CUHEADERS})
-target_link_libraries(driver_test_mc64 cusparse)
+cuda_add_executable(driver_test_db driver_test_db.cu ${SPIKE_HEADERS} ${SPIKE_CUHEADERS})
+target_link_libraries(driver_test_db cusparse)

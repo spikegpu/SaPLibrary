@@ -44,7 +44,7 @@ using std::vector;
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
 	  OPT_SPD,
-      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING,
+      OPT_NO_REORDERING, OPT_NO_DB, OPT_NO_SCALING,
       OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE,
@@ -77,7 +77,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_OUTFILE,       "-o",                   SO_REQ_CMB },
 	{ OPT_OUTFILE,       "--output-file",        SO_REQ_CMB },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
-	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
+	{ OPT_NO_DB,         "--no-db",              SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
@@ -260,8 +260,8 @@ GetProblemSpecs(int             argc,
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
 				break;
-			case OPT_NO_MC64:
-				opts.performMC64 = false;
+			case OPT_NO_DB:
+				opts.performDB = false;
 				break;
 			case OPT_NO_SCALING:
 				opts.applyScaling = false;
@@ -354,12 +354,12 @@ GetProblemSpecs(int             argc,
 
 	// If no reordering, force using constant bandwidth.
 	if (!opts.performReorder) {
-		opts.performMC64 = false;
+		opts.performDB = false;
 		opts.variableBandwidth = false;
 	}
 
-	// If no MC64 reordering, force no scaling.
-	if (!opts.performMC64)
+	// If no DB reordering, force no scaling.
+	if (!opts.performDB)
 		opts.applyScaling = false;
 
 	// If using variable bandwidth, force using LU factorization.
@@ -414,7 +414,7 @@ GetProblemSpecs(int             argc,
 		if (maxBandwidth_specified)
 			cout << "Maximum bandwidth: " << opts.maxBandwidth << endl;
 		cout << (opts.performReorder ? "Perform reordering." : "Do not perform reordering.") << endl;
-		cout << (opts.performMC64 ? "Perform MC64 reordering." : "Do not perform MC64 reordering.") << endl;
+		cout << (opts.performDB ? "Perform DB reordering." : "Do not perform DB reordering.") << endl;
 		cout << (opts.applyScaling ? "Apply scaling." : "Do not apply scaling.") << endl;
 		cout << (opts.safeFactorization ? "Use safe factorization." : "Use non-safe fast factorization.") << endl;
 		cout << (opts.variableBandwidth ? "Use variable bandwidth method." : "Use constant bandwidth method.") << endl;
@@ -439,10 +439,10 @@ void ShowUsage()
 	cout << "        Specify the number of partitions." << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering (default false)." << endl;
-	cout << " --no-mc64" << endl;
-	cout << "        Do not perform MC64 reordering (ignored if --no-reordering is specified; default false)." << endl;
+	cout << " --no-db" << endl;
+	cout << "        Do not perform DB reordering (ignored if --no-reordering is specified; default false)." << endl;
 	cout << " --no-scaling" << endl;
-	cout << "        Do not perform MC64 scaling (ignored if --no-reordering or --no-mc64 is specified; default false)." << endl;
+	cout << "        Do not perform DB scaling (ignored if --no-reordering or --no-db is specified; default false)." << endl;
 	cout << " -t=TOLERANCE" << endl;
 	cout << " --tolerance=TOLERANCE" << endl;
 	cout << " --relTol=TOLERANCE" << endl;
@@ -522,7 +522,7 @@ void PrintStats(bool               success,
 	cout << "Residual norm        = " << stats.residualNorm << endl;
 	cout << "Rel. residual norm   = " << stats.relResidualNorm << endl;
 	cout << endl;
-	cout << "Bandwidth after MC64       = " << stats.bandwidthMC64 << endl;
+	cout << "Bandwidth after DB         = " << stats.bandwidthDB << endl;
 	cout << "Bandwidth after reordering = " << stats.bandwidthReorder << endl;
 	cout << "Bandwidth after drop-off   = " << stats.bandwidth << endl;
 	cout << "Actual drop-off fraction   = " << stats.actualDropOff << endl;

@@ -82,9 +82,9 @@ public:
 	        bool                isSPD,
 	        bool                saveMem,
 	        bool                reorder,
-	        bool                testMC64,
-	        bool                doMC64,
-	        bool                mc64FirstStageOnly,
+	        bool                testDB,
+	        bool                doDB,
+	        bool                dbFirstStageOnly,
 	        bool                scale,
 	        double              dropOff_frac,
 	        int                 maxBandwidth,
@@ -102,11 +102,11 @@ public:
 
 	Precond & operator = (const Precond &prec);
 
-	double getTimeMC64() const            {return m_time_MC64;}
-	double getTimeMC64Pre() const         {return m_time_MC64_pre;}
-	double getTimeMC64First() const       {return m_time_MC64_first;}
-	double getTimeMC64Second() const      {return m_time_MC64_second;}
-	double getTimeMC64Post() const        {return m_time_MC64_post;}
+	double getTimeDB() const            {return m_time_DB;}
+	double getTimeDBPre() const         {return m_time_DB_pre;}
+	double getTimeDBFirst() const       {return m_time_DB_first;}
+	double getTimeDBSecond() const      {return m_time_DB_second;}
+	double getTimeDBPost() const        {return m_time_DB_post;}
 	double getTimeReorder() const         {return m_time_reorder;}
 	double getTimeDropOff() const         {return m_time_dropOff;}
 	double getTimeCPUAssemble() const     {return m_time_cpu_assemble;}
@@ -120,7 +120,7 @@ public:
 	double getTimeShuffle() const         {return m_time_shuffle;}
 
 	int    getBandwidthReordering() const {return m_k_reorder;}
-	int    getBandwidthMC64() const       {return m_k_mc64;}
+	int    getBandwidthDB() const       {return m_k_db;}
 	int    getBandwidth() const           {return m_k;}
 
 	int    getNumPartitions() const       {return m_numPartitions;}
@@ -149,9 +149,9 @@ private:
 	bool                 m_isSPD;
 	bool                 m_saveMem; 
 	bool                 m_reorder;
-	bool                 m_testMC64;
-	bool                 m_doMC64;
-	bool                 m_mc64FirstStageOnly;
+	bool                 m_testDB;
+	bool                 m_doDB;
+	bool                 m_dbFirstStageOnly;
 	bool                 m_scale;
 	PrecValueType        m_dropOff_frac;
 	int                  m_maxBandwidth;
@@ -204,8 +204,8 @@ private:
 	IntVector            m_secondReordering;      // 2nd stage reverse reordering
 	IntVector            m_secondPerm;            // 2nd stage reordering
 
-	PrecVector           m_mc64RowScale;          // MC64 row scaling
-	PrecVector           m_mc64ColScale;          // MC64 col scaling
+	PrecVector           m_dbRowScale;            // DB row scaling
+	PrecVector           m_dbColScale;            // DB col scaling
 
 	PrecVector           m_buffer;
 	PrecVector           m_buffer2;
@@ -224,7 +224,7 @@ private:
 	PrecVectorH          m_WV_host;
 
 	int                  m_k_reorder;             // bandwidth after reordering
-	int                  m_k_mc64;                // bandwidth after MC64
+	int                  m_k_db;                  // bandwidth after DB
 
 	int                  m_actual_nnz;            // The actual number of non-zeros after LU
 
@@ -235,12 +235,12 @@ private:
 	PrecVector           m_zp;                    // copy of solution vector
 
 	GPUTimer             m_timer;
-	double               m_time_MC64;             // CPU time for MC64 reordering
-	double               m_time_MC64_pre;         // CPU time for MC64 reordering (pre-processing)
-	double               m_time_MC64_first;       // CPU time for MC64 reordering (first stage)
-	double               m_time_MC64_second;      // CPU time for MC64 reordering (second stage)
-	double               m_time_MC64_post;        // CPU time for MC64 reordering (post-processing)
-	double               m_time_reorder;          // CPU time for matrix reordering
+	double               m_time_DB;               // CPU time for DB reordering
+	double               m_time_DB_pre;           // CPU time for DB reordering (pre-processing)
+	double               m_time_DB_first;         // CPU time for DB reordering (first stage)
+	double               m_time_DB_second;        // CPU time for DB reordering (second stage)
+	double               m_time_DB_post;          // CPU time for DB reordering (post-processing)
+	double               m_time_reorder;          // CPU time for DB matrix reordering
 	double               m_time_dropOff;          // CPU time for drop off
 	double               m_time_cpu_assemble;     // Time for acquiring the banded matrix and off-diagonal matrics on CPU
 	double               m_time_transfer;         // Time for data transferring from CPU to GPU
@@ -368,9 +368,9 @@ Precond<PrecVector>::Precond(int                 numPart,
                              bool                isSPD,
                              bool                saveMem,
                              bool                reorder,
-                             bool                testMC64,
-                             bool                doMC64,
-                             bool                mc64FirstStageOnly,
+                             bool                testDB,
+                             bool                doDB,
+                             bool                dbFirstStageOnly,
                              bool                scale,
                              double              dropOff_frac,
                              int                 maxBandwidth,
@@ -385,9 +385,9 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_isSPD(isSPD),
 	m_saveMem(saveMem),
 	m_reorder(reorder),
-	m_testMC64(testMC64),
-	m_doMC64(doMC64),
-	m_mc64FirstStageOnly(mc64FirstStageOnly),
+	m_testDB(testDB),
+	m_doDB(doDB),
+	m_dbFirstStageOnly(dbFirstStageOnly),
 	m_scale(scale),
 	m_dropOff_frac((PrecValueType)dropOff_frac),
 	m_maxBandwidth(maxBandwidth),
@@ -399,16 +399,16 @@ Precond<PrecVector>::Precond(int                 numPart,
 	m_ilu_level(ilu_level),
 	m_tolerance(tolerance),
 	m_k_reorder(0),
-	m_k_mc64(0),
+	m_k_db(0),
 	m_k(0),
 	m_actual_nnz(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
-	m_time_MC64(0),
-	m_time_MC64_pre(0),
-	m_time_MC64_first(0),
-	m_time_MC64_second(0),
-	m_time_MC64_post(0),
+	m_time_DB(0),
+	m_time_DB_pre(0),
+	m_time_DB_first(0),
+	m_time_DB_second(0),
+	m_time_DB_post(0),
 	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -430,22 +430,22 @@ Precond<PrecVector>::Precond()
 :	m_isSPD(false),
 	m_saveMem(false),
 	m_reorder(false),
-	m_testMC64(false),
-	m_doMC64(false),
-	m_mc64FirstStageOnly(false),
+	m_testDB(false),
+	m_doDB(false),
+	m_dbFirstStageOnly(false),
 	m_scale(false),
 	m_k_reorder(0),
-	m_k_mc64(0),
+	m_k_db(0),
 	m_k(0),
 	m_actual_nnz(0),
 	m_dropOff_actual(0),
 	m_maxBandwidth(std::numeric_limits<int>::max()),
 	m_time_reorder(0),
-	m_time_MC64(0),
-	m_time_MC64_pre(0),
-	m_time_MC64_first(0),
-	m_time_MC64_second(0),
-	m_time_MC64_post(0),
+	m_time_DB(0),
+	m_time_DB_pre(0),
+	m_time_DB_first(0),
+	m_time_DB_second(0),
+	m_time_DB_post(0),
 	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -465,15 +465,15 @@ Precond<PrecVector>::Precond()
 template <typename PrecVector>
 Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 :	m_k_reorder(0),
-	m_k_mc64(0),
+	m_k_db(0),
 	m_k(0),
 	m_dropOff_actual(0),
 	m_time_reorder(0),
-	m_time_MC64(0),
-	m_time_MC64_pre(0),
-	m_time_MC64_first(0),
-	m_time_MC64_second(0),
-	m_time_MC64_post(0),
+	m_time_DB(0),
+	m_time_DB_pre(0),
+	m_time_DB_first(0),
+	m_time_DB_second(0),
+	m_time_DB_post(0),
 	m_time_dropOff(0),
 	m_time_cpu_assemble(0),
 	m_time_transfer(0),
@@ -490,9 +490,9 @@ Precond<PrecVector>::Precond(const Precond<PrecVector> &prec)
 	m_isSPD              = prec.m_isSPD;
 	m_saveMem            = prec.m_saveMem;
 	m_reorder            = prec.m_reorder;
-	m_testMC64           = prec.m_testMC64;
-	m_doMC64             = prec.m_doMC64;
-	m_mc64FirstStageOnly = prec.m_mc64FirstStageOnly;
+	m_testDB             = prec.m_testDB;
+	m_doDB               = prec.m_doDB;
+	m_dbFirstStageOnly   = prec.m_dbFirstStageOnly;
 	m_scale              = prec.m_scale;
 	m_dropOff_frac       = prec.m_dropOff_frac;
 	m_maxBandwidth       = prec.m_maxBandwidth;
@@ -515,9 +515,9 @@ Precond<PrecVector>::operator=(const Precond<PrecVector>& prec)
 	m_isSPD              = prec.m_isSPD;
 	m_saveMem            = prec.m_saveMem;
 	m_reorder            = prec.m_reorder;
-	m_testMC64           = prec.m_testMC64;
-	m_doMC64             = prec.m_doMC64;
-	m_mc64FirstStageOnly = prec.m_mc64FirstStageOnly;
+	m_testDB             = prec.m_testDB;
+	m_doDB               = prec.m_doDB;
+	m_dbFirstStageOnly   = prec.m_dbFirstStageOnly;
 	m_scale              = prec.m_scale;
 	m_dropOff_frac       = prec.m_dropOff_frac;
 	m_maxBandwidth       = prec.m_maxBandwidth;
@@ -706,7 +706,7 @@ Precond<PrecVector>::update(const PrecVector& entries)
 /**
  * This function performs the initial preconditioner setup, based on the
  * specified matrix:
- * (1) Reorder the matrix (MC64 and/or RCM)
+ * (1) Reorder the matrix (DB and/or RCM)
  * (2) Element drop-off (optional)
  * (3) LU factorization
  * (4) Get the reduced matrix
@@ -735,8 +735,8 @@ Precond<PrecVector>::setup(const Matrix&  A)
 	m_buffer.resize(m_n);
 	m_buffer2.resize(m_n);
 
-	// For MC64 test only, directly exit
-	if (m_testMC64)
+	// For DB test only, directly exit
+	if (m_testDB)
 		return;
 
 	////cusp::io::write_matrix_market_file(m_B, "B.mtx");
@@ -1050,8 +1050,8 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 }
 
 /**
- * This function left transforms the system. We first apply the MC64 row
- * scaling and permutation (or only the MC64 row permutation) after which we
+ * This function left transforms the system. We first apply the DB row
+ * scaling and permutation (or only the DB row permutation) after which we
  * apply the RCM row permutation.
  */
 template <typename PrecVector>
@@ -1060,14 +1060,14 @@ Precond<PrecVector>::leftTrans(PrecVector&  v,
                                PrecVector&  z)
 {
 	if (m_scale)
-		scaleAndPermute(v, m_optPerm, m_mc64RowScale, z);
+		scaleAndPermute(v, m_optPerm, m_dbRowScale, z);
 	else
 		permute(v, m_optPerm, z);
 }
 
 /**
  * This function right transforms the system. We apply the RCM column 
- * permutation and, if needed, the MC64 column scaling.
+ * permutation and, if needed, the DB column scaling.
  */
 template <typename PrecVector>
 void
@@ -1075,7 +1075,7 @@ Precond<PrecVector>::rightTrans(PrecVector&  v,
                                 PrecVector&  z)
 {
 	if (m_scale)
-		permuteAndScale(v, m_optReordering, m_mc64ColScale, z);
+		permuteAndScale(v, m_optReordering, m_dbColScale, z);
 	else
 		permute(v, m_optReordering, z);
 }
@@ -1170,10 +1170,10 @@ Precond<PrecVector>::combinePermutation(IntVector&  perm,
  *   m_optReordering
  *   m_optPerm
  *       permutation arrays obtained from the symmetric RCM algorithm
- *       row and column permutations obtained from the MC64 algorithm
- *   mc64RowScale
- *   mc64ColScale
- *       row and column scaling factors obtained from the MC64 algorithm
+ *       row and column permutations obtained from the DB algorithm
+ *   dbRowScale
+ *   dbColScale
+ *       row and column scaling factors obtained from the DB algorithm
  */
 template <typename PrecVector>
 template <typename Matrix>
@@ -1243,7 +1243,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	IntVectorH   secondReorder;
 	IntVectorH   secondPerm;
 
-	IntVector    mc64RowPerm(m_n);
+	IntVector    dbRowPerm(m_n);
 
 	Graph<PrecValueType>  graph(m_trackReordering);
 
@@ -1260,17 +1260,17 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 	bool         doRCM   = (m_ilu_level < 0 && (m_maxBandwidth > BANDWIDTH_THRESHOLD));
 	bool         doSloan = (m_ilu_level >= 0);
 	reorder_timer.Start();
-	m_k_reorder = graph.reorder(Acsrh, m_testMC64, m_doMC64, m_mc64FirstStageOnly, m_scale, doRCM, doSloan, optReordering, optPerm, mc64RowPerm, m_mc64RowScale, m_mc64ColScale, scaleMap, m_k_mc64);
+	m_k_reorder = graph.reorder(Acsrh, m_testDB, m_doDB, m_dbFirstStageOnly, m_scale, doRCM, doSloan, optReordering, optPerm, dbRowPerm, m_dbRowScale, m_dbColScale, scaleMap, m_k_db);
 	reorder_timer.Stop();
 
-	m_time_MC64        = graph.getTimeMC64();
-	m_time_MC64_pre    = graph.getTimeMC64Pre();
-	m_time_MC64_first  = graph.getTimeMC64First();
-	m_time_MC64_second = graph.getTimeMC64Second();
-	m_time_MC64_post   = graph.getTimeMC64Post();
+	m_time_DB        = graph.getTimeDB();
+	m_time_DB_pre    = graph.getTimeDBPre();
+	m_time_DB_first  = graph.getTimeDBFirst();
+	m_time_DB_second = graph.getTimeDBSecond();
+	m_time_DB_post   = graph.getTimeDBPost();
 	m_time_reorder += reorder_timer.getElapsed();
 
-	if (m_testMC64)
+	if (m_testDB)
 		return;
 	
 	if (m_k_reorder > m_maxBandwidth || m_dropOff_frac > 0) {
@@ -1439,7 +1439,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
 	{
 		IntVector buffer2(m_n);
-		combinePermutation(mc64RowPerm, m_optPerm, buffer2);
+		combinePermutation(dbRowPerm, m_optPerm, buffer2);
 		m_optPerm = buffer2;
 	}
 

@@ -58,13 +58,13 @@ struct Options
 	double              relTol;               /**< Relative tolerance; default: 1e-6 */
 	double              absTol;               /**< Absolute tolerance; default: 0 */
 
-	bool                testMC64;             /**< Indicate that we are running the test for MC64*/
+	bool                testDB;               /**< Indicate that we are running the test for DB*/
 	bool                isSPD;                /**< Indicate whether the matrix is symmetric positive definitive; default: false*/
 	bool                saveMem;                /**< (For SPD matrix only) Indicate whether to use memory-saving yet slower mode or not; default: false*/
 	bool                performReorder;       /**< Perform matrix reorderings? default: true */
-	bool                performMC64;          /**< Perform MC64 reordering? default: true */
-	bool                mc64FirstStageOnly;   /**< In MC64, only the first stage is to be performed? default: false*/
-	bool                applyScaling;         /**< Apply MC64 scaling? default: true */
+	bool                performDB;            /**< Perform DB reordering? default: true */
+	bool                dbFirstStageOnly;     /**< In DB, only the first stage is to be performed? default: false*/
+	bool                applyScaling;         /**< Apply DB scaling? default: true */
 	int                 maxBandwidth;         /**< Maximum half-bandwidth; default: INT_MAX */
 	double              dropOffFraction;      /**< Maximum fraction of the element-wise matrix 1-norm that can be dropped-off; default: 0 */
 
@@ -91,12 +91,12 @@ struct Stats
 	double      timeUpdate;             /**< Time to update the preconditioner. */
 	double      timeSolve;              /**< Time for Krylov solve. */
 
-	double      time_MC64;              /**< Time to do MC64 reordering. */
-	double      time_MC64_pre;          /**< Time to do MC64 reordering (pre-processing). */
-	double      time_MC64_first;        /**< Time to do MC64 reordering (first stage). */
-	double      time_MC64_second;       /**< Time to do MC64 reordering (second stage). */
-	double      time_MC64_post;         /**< Time to do MC64 reordering (post-processing). */
-	double      time_reorder;           /**< Time to do reordering. */
+	double      time_DB;                /**< Time to do DB reordering. */
+	double      time_DB_pre;            /**< Time to do DB reordering (pre-processing). */
+	double      time_DB_first;          /**< Time to do DB reordering (first stage). */
+	double      time_DB_second;         /**< Time to do DB reordering (second stage). */
+	double      time_DB_post;           /**< Time to do DB reordering (post-processing). */
+	double      time_reorder;           /**< Time to do DB reordering. */
 	double      time_dropOff;           /**< Time for drop-off*/
 	double      time_cpu_assemble;      /**< Time on CPU to assemble the banded matrix and off-diagonal spikes. */
 	double      time_transfer;          /**< Time to transfer data from CPU to GPU. */
@@ -110,7 +110,7 @@ struct Stats
 	double      time_shuffle;           /**< Total time to do vector reordering and scaling. */
 
 	int         bandwidthReorder;       /**< Half-bandwidth after reordering. */
-	int         bandwidthMC64;          /**< Half-bandwidth after MC64. */
+	int         bandwidthDB;            /**< Half-bandwidth after DB. */
 	int         bandwidth;              /**< Half-bandwidth after reordering and drop-off. */
 	double      nuKf;                   /**< Non-uniform K factor. Indicates whether the K changes a lot from row to row. */
 	double      flops_LU;               /**< FLOPs of LU*/
@@ -201,12 +201,12 @@ Options::Options()
 	maxNumIterations(100),
 	relTol(1e-6),
 	absTol(0),
-	testMC64(false),
+	testDB(false),
 	isSPD(false),
 	saveMem(false),
 	performReorder(true),
-	performMC64(true),
-	mc64FirstStageOnly(false),
+	performDB(true),
+	dbFirstStageOnly(false),
 	applyScaling(true),
 	maxBandwidth(std::numeric_limits<int>::max()),
 	dropOffFraction(0),
@@ -227,11 +227,11 @@ inline
 Stats::Stats()
 :	timeSetup(0),
 	timeSolve(0),
-	time_MC64(0),
-	time_MC64_pre(0),
-	time_MC64_first(0),
-	time_MC64_second(0),
-	time_MC64_post(0),
+	time_DB(0),
+	time_DB_pre(0),
+	time_DB_first(0),
+	time_DB_second(0),
+	time_DB_post(0),
 	time_reorder(0),
 	time_dropOff(0),
 	time_cpu_assemble(0),
@@ -244,7 +244,7 @@ Stats::Stats()
 	time_fullLU(0),
 	time_shuffle(0),
 	bandwidthReorder(0),
-	bandwidthMC64(0),
+	bandwidthDB(0),
 	bandwidth(0),
 	nuKf(0),
 	flops_LU(0),
@@ -267,7 +267,7 @@ template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
 :	m_monitor(opts.maxNumIterations, opts.relTol, opts.absTol),
-	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testMC64, opts.performMC64, opts.mc64FirstStageOnly, opts.applyScaling,
+	m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testDB, opts.performDB, opts.dbFirstStageOnly, opts.applyScaling,
 	          opts.dropOffFraction, opts.maxBandwidth, opts.factMethod, opts.precondType, 
 	          opts.safeFactorization, opts.variableBandwidth, opts.trackReordering, opts.ilu_level, opts.relTol),
 	m_solver(opts.solverType),
@@ -305,7 +305,7 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 
 	m_stats.bandwidthReorder = m_precond.getBandwidthReordering();
 	m_stats.bandwidth = m_precond.getBandwidth();
-	m_stats.bandwidthMC64 = m_precond.getBandwidthMC64();
+	m_stats.bandwidthDB= m_precond.getBandwidthDB();
 	m_stats.nuKf = (double) cusp::blas::nrm1(m_precond.m_ks_row_host) + cusp::blas::nrm1(m_precond.m_ks_col_host);
 	m_stats.flops_LU = 0;
 	{
@@ -315,11 +315,11 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
 	}
 	m_stats.numPartitions = m_precond.getNumPartitions();
 	m_stats.actualDropOff = m_precond.getActualDropOff();
-	m_stats.time_MC64 = m_precond.getTimeMC64();
-	m_stats.time_MC64_pre = m_precond.getTimeMC64Pre();
-	m_stats.time_MC64_first = m_precond.getTimeMC64First();
-	m_stats.time_MC64_second = m_precond.getTimeMC64Second();
-	m_stats.time_MC64_post = m_precond.getTimeMC64Post();
+	m_stats.time_DB = m_precond.getTimeDB();
+	m_stats.time_DB_pre = m_precond.getTimeDBPre();
+	m_stats.time_DB_first = m_precond.getTimeDBFirst();
+	m_stats.time_DB_second = m_precond.getTimeDBSecond();
+	m_stats.time_DB_post = m_precond.getTimeDBPost();
 	m_stats.time_reorder = m_precond.getTimeReorder();
 	m_stats.time_dropOff = m_precond.getTimeDropOff();
 	m_stats.time_cpu_assemble = m_precond.getTimeCPUAssemble();

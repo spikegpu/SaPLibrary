@@ -1,10 +1,10 @@
 /** \file data_transfer.cuh
  *
- * CUDA kernels for MC64
+ * CUDA kernels for DB
  */
 
-#ifndef MC64_CUH
-#define MC64_CUH
+#ifndef DB_CUH
+#define DB_CUH
 
 namespace spike {
 namespace device {

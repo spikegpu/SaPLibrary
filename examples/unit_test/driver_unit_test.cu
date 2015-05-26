@@ -68,7 +68,7 @@ using std::vector;
 // ID values to identify command line arguments
 enum {OPT_HELP, OPT_PART,
       OPT_SPD, OPT_SAVE_MEM,
-      OPT_NO_REORDERING, OPT_NO_MC64, OPT_NO_SCALING, OPT_MC64_FIRST_STAGE_ONLY,
+      OPT_NO_REORDERING, OPT_NO_DB, OPT_NO_SCALING, OPT_DB_FIRST_STAGE_ONLY,
       OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, OPT_MAX_BANDWIDTH,
       OPT_MATFILE, OPT_RHSFILE, 
@@ -108,10 +108,10 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_SPD,           "--spd",                SO_NONE    },
 	{ OPT_SAVE_MEM,      "--save-mem",           SO_NONE    },
 	{ OPT_NO_REORDERING, "--no-reordering",      SO_NONE    },
-	{ OPT_NO_MC64,       "--no-mc64",            SO_NONE    },
+	{ OPT_NO_DB,         "--no-db",              SO_NONE    },
 	{ OPT_NO_SCALING,    "--no-scaling",         SO_NONE    },
-	{ OPT_MC64_FIRST_STAGE_ONLY,
-	                     "--mc64-first-stage-only", SO_NONE },
+	{ OPT_DB_FIRST_STAGE_ONLY,
+	                     "--db-first-stage-only", SO_NONE },
 	{ OPT_FACTORIZATION, "-f",                   SO_REQ_CMB },
 	{ OPT_FACTORIZATION, "--factorization-method", SO_REQ_CMB },
 	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
@@ -257,7 +257,7 @@ bool MatrixTest::execute()
 	// SPD
 	// addMetric("SPD", opts.isSPD);
 	// Perform DB
-	// addMetric("DB", opts.performMC64);
+	// addMetric("DB", opts.performDB);
 
 	try {
 		mySolver.setup(A);
@@ -266,10 +266,10 @@ bool MatrixTest::execute()
 
 		{
 			const SpikePrecond &precond = mySolver.getPreconditioner();
-			int k_mc64 = precond.getBandwidthMC64(), k_reorder = precond.getBandwidthReordering(), k = precond.getBandwidth();
+			int k_db = precond.getBandwidthDB(), k_reorder = precond.getBandwidthReordering(), k = precond.getBandwidth();
 
-			// Half-bandwidth after MC64
-			addMetric("K-DB", k_mc64);
+			// Half-bandwidth after DB
+			addMetric("K-DB", k_db);
 			// Half-bandwidth before drop-off 
 			addMetric("K-noDrop", k_reorder);
 			// Half-bandwidth
@@ -295,7 +295,7 @@ bool MatrixTest::execute()
 			case spike::system_error::Illegal_update:
 				addMetric ("Solves", "Illegal update");
 				break;
-			case spike::system_error::Negative_MC64_weight:
+			case spike::system_error::Negative_DB_weight:
 				addMetric ("Solves", "Internal system error");
 				break;
 			default:
@@ -329,7 +329,7 @@ bool MatrixTest::execute()
 			case spike::system_error::Illegal_update:
 				addMetric("Solves", "Illegal update");
 				break;
-			case spike::system_error::Negative_MC64_weight:
+			case spike::system_error::Negative_DB_weight:
 				addMetric("Solves", "Internal system error");
 				break;
 			default:
@@ -343,11 +343,11 @@ bool MatrixTest::execute()
 	}
 
 	{
-		/// addMetric("T-DB", stats.time_MC64);
+		/// addMetric("T-DB", stats.time_DB);
 		/*
 		spike::Stats stats = mySolver.getStats();
-		// Half-bandwidth after MC64
-		addMetric("K-DB", (int)(stats.bandwidthMC64));
+		// Half-bandwidth after DB
+		addMetric("K-DB", (int)(stats.bandwidthDB));
 		// Half-bandwidth before drop-off
 		addMetric("K-noDrop", (int)(stats.bandwidthReorder));
 		// Half-bandwidth
@@ -375,10 +375,10 @@ bool MatrixTest::execute()
 		else
 			addMetric("SolAcc", rel_err);
 		
-		// Time for MC64 reordering
-		addMetric("T-DB", stats.time_MC64);
+		// Time for DB reordering
+		addMetric("T-DB", stats.time_DB);
 		// Time for RCM reordering
-		addMetric("T-CM", stats.time_reorder - stats.time_MC64);
+		addMetric("T-CM", stats.time_reorder - stats.time_DB);
 		// Time for drop off
 		addMetric("T-Drop", stats.time_dropOff);
 		// Time for data transferring
@@ -644,14 +644,14 @@ GetProblemSpecs(int             argc,
 			case OPT_NO_REORDERING:
 				opts.performReorder = false;
 				break;
-			case OPT_NO_MC64:
-				opts.performMC64 = false;
+			case OPT_NO_DB:
+				opts.performDB = false;
 				break;
 			case OPT_NO_SCALING:
 				opts.applyScaling = false;
 				break;
-			case OPT_MC64_FIRST_STAGE_ONLY:
-				opts.mc64FirstStageOnly = true;
+			case OPT_DB_FIRST_STAGE_ONLY:
+				opts.dbFirstStageOnly = true;
 				opts.applyScaling = false;
 				break;
 			case OPT_MATFILE:
@@ -735,9 +735,9 @@ GetProblemSpecs(int             argc,
 		return false;
 	}
 
-	// For symmetric positive definitive matrix, do not perform MC64
+	// For symmetric positive definitive matrix, do not perform DB
 	if (opts.isSPD) {
-		opts.performMC64 = false;
+		opts.performDB = false;
 		opts.applyScaling = false;
 		opts.solverType = spike::CG_C;
 		opts.saveMem = true;
@@ -747,10 +747,10 @@ GetProblemSpecs(int             argc,
 	// If no reordering, force using constant bandwidth.
 	if (!opts.performReorder) {
 		opts.variableBandwidth = false;
-		opts.performMC64 = false;
+		opts.performDB = false;
 	}
 
-	if (!opts.performMC64)
+	if (!opts.performDB)
 		opts.applyScaling = false;
 
 	// If using variable bandwidth, force using LU factorization.
@@ -775,8 +775,8 @@ void ShowUsage()
 	cout << "        Specify the number of partitions (default 1)." << endl;
 	cout << " --no-reordering" << endl;
 	cout << "        Do not perform reordering." << endl;
-	cout << " --no-mc64" << endl;
-	cout << "        Do not perform MC64 reordering." << endl;
+	cout << " --no-db" << endl;
+	cout << "        Do not perform DB reordering." << endl;
 	cout << " --no-scaling" << endl;
 	cout << "        Do not perform scaling (ignored if --no-reordering is specified)" << endl;
 	cout << " -t=TOLERANCE" << endl;

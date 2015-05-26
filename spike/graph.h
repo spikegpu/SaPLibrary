@@ -26,7 +26,7 @@
 #include <spike/common.h>
 #include <spike/timer.h>
 #include <spike/device/data_transfer.cuh>
-#include <spike/device/mc64.cuh>
+#include <spike/device/db.cuh>
 
 #include <spike/exception.h>
 
@@ -77,28 +77,28 @@ private:
 public:
 	Graph(bool trackReordering = false);
 
-	double     getTimeMC64() const     {return m_timeMC64;}
-	double     getTimeMC64Pre() const     {return m_timeMC64_pre;}
-	double     getTimeMC64First() const     {return m_timeMC64_first;}
-	double     getTimeMC64Second() const     {return m_timeMC64_second;}
-	double     getTimeMC64Post() const     {return m_timeMC64_post;}
+	double     getTimeDB() const     {return m_timeDB;}
+	double     getTimeDBPre() const     {return m_timeDB_pre;}
+	double     getTimeDBFirst() const     {return m_timeDB_first;}
+	double     getTimeDBSecond() const     {return m_timeDB_second;}
+	double     getTimeDBPost() const     {return m_timeDB_post;}
 	double     getTimeRCM() const      {return m_timeRCM;}
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
 	int        reorder(const MatrixCsr& Acsr,
-	                   bool             testMC64,
-	                   bool             doMC64,
-					   bool             mc64FirstStageOnly,
+	                   bool             testDB,
+	                   bool             doDB,
+					   bool             dbFirstStageOnly,
 	                   bool             scale,
 					   bool             doRCM,
 					   bool             doSloan,
 	                   IntVector&       optReordering,
 	                   IntVector&       optPerm,
-	                   IntVectorD&      d_mc64RowPerm,
-	                   VectorD&         d_mc64RowScale,
-	                   VectorD&         d_mc64ColScale,
+	                   IntVectorD&      d_dbRowPerm,
+	                   VectorD&         d_dbRowScale,
+	                   VectorD&         d_dbColScale,
 	                   MatrixMapF&      scaleMap,
-	                   int&             k_mc64);
+	                   int&             k_db);
 
 	int        dropOff(T   frac,
 	                   int maxBandwidth,
@@ -178,11 +178,11 @@ private:
 
 	bool          m_trackReordering;
 
-	double        m_timeMC64;
-	double        m_timeMC64_pre;
-	double        m_timeMC64_first;
-	double        m_timeMC64_second;
-	double        m_timeMC64_post;
+	double        m_timeDB;
+	double        m_timeDB_pre;
+	double        m_timeDB_first;
+	double        m_timeDB_second;
+	double        m_timeDB_post;
 	double        m_timeRCM;
 	double        m_timeDropoff;
 
@@ -197,13 +197,13 @@ private:
 	DoubleVector  m_DB_d_vals;
 	BoolVector    m_DB_visited;
 
-	bool       MC64(const MatrixCsr& Acsr,
-			        bool             scale,
-					bool             mc64FirstStageOnly,
-	                IntVectorD&      mc64RowPerm,
-	                DoubleVectorD&   mc64RowScale,
-	                DoubleVectorD&   mc64ColScale,
-	                MatrixMapF&      scaleMap);
+	bool       DB(const MatrixCsr& Acsr,
+			      bool             scale,
+				  bool             dbFirstStageOnly,
+	              IntVectorD&      dbRowPerm,
+	              DoubleVectorD&   dbRowScale,
+	              DoubleVectorD&   dbColScale,
+	              MatrixMapF&      scaleMap);
 
 	int        RCM(MatrixCsr&   matcsr,
 	               IntVector&   optReordering,
@@ -404,11 +404,11 @@ const double Graph<T>::LOC_INFINITY = 1e37;
 // ----------------------------------------------------------------------------
 template <typename T>
 Graph<T>::Graph(bool trackReordering)
-:	m_timeMC64(0),
-	m_timeMC64_pre(0),
-	m_timeMC64_first(0),
-	m_timeMC64_second(0),
-	m_timeMC64_post(0),
+:	m_timeDB(0),
+	m_timeDB_pre(0),
+	m_timeDB_first(0),
+	m_timeDB_second(0),
+	m_timeDB_post(0),
 	m_timeRCM(0),
 	m_timeDropoff(0),
 	m_trackReordering(trackReordering)
@@ -426,57 +426,57 @@ Graph<T>::Graph(bool trackReordering)
 template <typename T>
 int
 Graph<T>::reorder(const MatrixCsr&  Acsr,
-                  bool              testMC64,
-                  bool              doMC64,
-				  bool              mc64FirstStageOnly,
+                  bool              testDB,
+                  bool              doDB,
+				  bool              dbFirstStageOnly,
                   bool              scale,
 				  bool              doRCM,
 				  bool              doSloan,
                   IntVector&        optReordering,
                   IntVector&        optPerm,
-                  IntVectorD&       d_mc64RowPerm,
-                  VectorD&          d_mc64RowScale,
-                  VectorD&          d_mc64ColScale,
+                  IntVectorD&       d_dbRowPerm,
+                  VectorD&          d_dbRowScale,
+                  VectorD&          d_dbColScale,
                   MatrixMapF&       scaleMap,
-                  int&              k_mc64)
+                  int&              k_db)
 {
 	m_n = Acsr.num_rows;
 	m_nnz = Acsr.num_entries;
 
 	m_buffer_reordering.resize(m_n);
 
-	// Apply mc64 algorithm. Note that we must ensure we always work with
+	// Apply DB algorithm. Note that we must ensure we always work with
 	// double precision scale vectors.
 	//
 	// TODO:  how can we check if the precision of Vector is already
 	//        double, so that we can save extra copies.
-	if (doMC64) {
+	if (doDB) {
 		GPUTimer loc_timer;
 		loc_timer.Start();
-		DoubleVectorD  mc64RowScaleD;
-		DoubleVectorD  mc64ColScaleD;
+		DoubleVectorD  dbRowScaleD;
+		DoubleVectorD  dbColScaleD;
 
 		m_DB_inB.resize(m_n, false);
 		m_DB_B.resize(m_n, 0);
 		m_DB_d_vals.resize(m_n, LOC_INFINITY);
 		m_DB_visited.resize(m_n, false);
 
-		MC64(Acsr, scale, mc64FirstStageOnly, d_mc64RowPerm, mc64RowScaleD, mc64ColScaleD, scaleMap);
-		d_mc64RowScale = mc64RowScaleD;
-		d_mc64ColScale = mc64ColScaleD;
+		DB(Acsr, scale, dbFirstStageOnly, d_dbRowPerm, dbRowScaleD, dbColScaleD, scaleMap);
+		d_dbRowScale = dbRowScaleD;
+		d_dbColScale = dbColScaleD;
 		loc_timer.Stop();
-		m_timeMC64 = loc_timer.getElapsed();
+		m_timeDB = loc_timer.getElapsed();
 	} else {
-		d_mc64RowScale.resize(m_n);
-		d_mc64ColScale.resize(m_n);
-		d_mc64RowPerm.resize(m_n);
+		d_dbRowScale.resize(m_n);
+		d_dbColScale.resize(m_n);
+		d_dbRowPerm.resize(m_n);
 		scaleMap.resize(m_nnz);
 
 		m_matrix = Acsr;
 
-		thrust::sequence(d_mc64RowPerm.begin(), d_mc64RowPerm.end());
-		cusp::blas::fill(d_mc64RowScale, (T) 1.0);
-		cusp::blas::fill(d_mc64ColScale, (T) 1.0);
+		thrust::sequence(d_dbRowPerm.begin(), d_dbRowPerm.end());
+		cusp::blas::fill(d_dbRowScale, (T) 1.0);
+		cusp::blas::fill(d_dbColScale, (T) 1.0);
 		cusp::blas::fill(scaleMap, (T) 1.0);
 	}
 
@@ -487,11 +487,11 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 #else
 		cusp::offsets_to_indices(m_matrix.row_offsets, row_indices);
 #endif
-		k_mc64 = thrust::inner_product(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), 0, thrust::maximum<int>(), Difference());
+		k_db = thrust::inner_product(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), 0, thrust::maximum<int>(), Difference());
 	}
 
-	if (testMC64)
-		return k_mc64;
+	if (testDB)
+		return k_db;
 
 	// Apply reverse Cuthill-McKee algorithm.
 	int bandwidth;
@@ -500,7 +500,7 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 	else if (doSloan)
 		bandwidth = sloan(m_matrix, optReordering, optPerm);
 	else {
-		bandwidth = k_mc64;
+		bandwidth = k_db;
 		optReordering.resize(m_n);
 		optPerm.resize(m_n);
 		thrust::sequence(optReordering.begin(), optReordering.end());
@@ -1140,25 +1140,25 @@ Graph<T>::assembleBandedMatrix(int         bandwidth,
 
 
 // ----------------------------------------------------------------------------
-// Graph::MC64()
+// Graph::DB()
 //
-// This function performs the mc64 reordering algorithm...
+// This function performs the DB reordering algorithm...
 // ----------------------------------------------------------------------------
 template <typename T>
 bool
-Graph<T>::MC64(const MatrixCsr& Acsr,
-			   bool             scale,
-			   bool             mc64FirstStageOnly,
-               IntVectorD&      d_mc64RowPerm,
-               DoubleVectorD&   d_mc64RowScale,
-               DoubleVectorD&   d_mc64ColScale,
-               MatrixMapF&      scaleMap)
+Graph<T>::DB(const MatrixCsr& Acsr,
+			 bool             scale,
+			 bool             dbFirstStageOnly,
+             IntVectorD&      d_dbRowPerm,
+             DoubleVectorD&   d_dbRowScale,
+             DoubleVectorD&   d_dbColScale,
+             MatrixMapF&      scaleMap)
 {
 	CPUTimer loc_timer;
 
 	loc_timer.Start();
 	// Allocate space for the output vectors.
-	d_mc64RowPerm.resize(m_n);
+	d_dbRowPerm.resize(m_n);
 
 	if (m_trackReordering)
 		m_ori_indices.resize(m_nnz);
@@ -1169,20 +1169,20 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 
 	BoolVector     matched(m_n, 0);
 	BoolVector     rev_matched(m_n, 0);
-	IntVector      mc64RowReordering(m_n, 0);
+	IntVector      dbRowReordering(m_n, 0);
 	IntVector      rev_match_nodes(m_nnz);
 
 	get_csc_matrix(Acsr, d_c_val, d_max_val_in_col);
 	loc_timer.Stop();
-	m_timeMC64_pre = loc_timer.getElapsed();
+	m_timeDB_pre = loc_timer.getElapsed();
 
 	loc_timer.Start();
 	DoubleVector c_val           = d_c_val;
-	DoubleVector mc64RowScale(m_n);
-	DoubleVector mc64ColScale(m_n);
-	init_reduced_cval(mc64FirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, mc64ColScale, mc64RowScale, mc64RowReordering, rev_match_nodes, matched, rev_matched);
+	DoubleVector dbRowScale(m_n);
+	DoubleVector dbColScale(m_n);
+	init_reduced_cval(dbFirstStageOnly, Acsr.row_offsets, Acsr.column_indices, c_val, dbColScale, dbRowScale, dbRowReordering, rev_match_nodes, matched, rev_matched);
 	loc_timer.Stop();
-	m_timeMC64_first = loc_timer.getElapsed();
+	m_timeDB_first = loc_timer.getElapsed();
 
 	loc_timer.Start();
 
@@ -1191,7 +1191,7 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 		IntVector  prev(m_n);
 		for(int i=0; i<m_n; i++) {
 			if(rev_matched[i]) continue;
-			find_shortest_aug_path(i, matched, rev_matched, mc64RowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, mc64ColScale, mc64RowScale, c_val, irn);
+			find_shortest_aug_path(i, matched, rev_matched, dbRowReordering, rev_match_nodes, Acsr.row_offsets, Acsr.column_indices, prev, dbColScale, dbRowScale, c_val, irn);
 		}
 
 		{
@@ -1201,22 +1201,22 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 		}
 
 		DoubleVector max_val_in_col = d_max_val_in_col;
-		thrust::transform(mc64ColScale.begin(), mc64ColScale.end(), mc64ColScale.begin(), Exponential());
-		thrust::transform(thrust::make_transform_iterator(mc64RowScale.begin(), Exponential()),
-				thrust::make_transform_iterator(mc64RowScale.end(), Exponential()),
+		thrust::transform(dbColScale.begin(), dbColScale.end(), dbColScale.begin(), Exponential());
+		thrust::transform(thrust::make_transform_iterator(dbRowScale.begin(), Exponential()),
+				thrust::make_transform_iterator(dbRowScale.end(), Exponential()),
 				max_val_in_col.begin(),
-				mc64RowScale.begin(),
+				dbRowScale.begin(),
 				thrust::divides<double>());
 
 
-		d_mc64RowScale = mc64RowScale;
-		d_mc64ColScale = mc64ColScale;
+		d_dbRowScale = dbRowScale;
+		d_dbColScale = dbColScale;
 	}
 	loc_timer.Stop();
-	m_timeMC64_second = loc_timer.getElapsed();
+	m_timeDB_second = loc_timer.getElapsed();
 
-	IntVectorD d_mc64RowReordering   =  mc64RowReordering;
-	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), d_mc64RowReordering.begin(), d_mc64RowPerm.begin());
+	IntVectorD d_dbRowReordering   =  dbRowReordering;
+	thrust::scatter(thrust::make_counting_iterator(0), thrust::make_counting_iterator(m_n), d_dbRowReordering.begin(), d_dbRowPerm.begin());
 
 
 	loc_timer.Start();
@@ -1225,10 +1225,10 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 		scaleMap.resize(m_nnz, T(1.0));
 
 	// TODO: how to do scale when we apply only the first stage
-	if (mc64FirstStageOnly)
+	if (dbFirstStageOnly)
 		scale = false;
 
-	IntVector mc64RowPerm = d_mc64RowPerm;
+	IntVector dbRowPerm = d_dbRowPerm;
 	IntVector row_indices(m_nnz);
 	// m_matrix  = Acsr;
 	m_matrix.resize(m_n, m_n, m_nnz);
@@ -1236,11 +1236,11 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 	if (scale) {
 		for (int i = 0; i < m_n; i++) {
 			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
-			int new_row = mc64RowPerm[i];
+			int new_row = dbRowPerm[i];
 			for (int l = start_idx; l < end_idx; l++) {
 				row_indices[l] = new_row;
 				int to   = (Acsr.column_indices[l]);
-				T scaleFact = (T)(mc64RowScale[i] * mc64ColScale[to]);
+				T scaleFact = (T)(dbRowScale[i] * dbColScale[to]);
 				m_matrix.values[l] = scaleFact * Acsr.values[l];
 
 				if (m_trackReordering)
@@ -1250,7 +1250,7 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 	} else {
 		for (int i = 0; i < m_n; i++) {
 			int start_idx = Acsr.row_offsets[i], end_idx = Acsr.row_offsets[i+1];
-			int new_row = mc64RowPerm[i];
+			int new_row = dbRowPerm[i];
 			for (int l = start_idx; l < end_idx; l++) {
 				row_indices[l] = new_row;
 				m_matrix.values[l] = Acsr.values[l];
@@ -1288,7 +1288,7 @@ Graph<T>::MC64(const MatrixCsr& Acsr,
 		m_matrix.values         = values;
 	}
 	loc_timer.Stop();
-	m_timeMC64_post = loc_timer.getElapsed();
+	m_timeDB_post = loc_timer.getElapsed();
 
 	return true;
 }
@@ -1746,16 +1746,16 @@ Graph<T>::buildTopology(EdgeIterator&      begin,
 // Graph::init_reduced_cval
 // Graph::find_shortest_aug_path
 //
-// These are the worker functions for the MC64 algorithm.
+// These are the worker functions for the DB algorithm.
 // ----------------------------------------------------------------------------
 
 
 // ----------------------------------------------------------------------------
 // Graph::get_csc_matrix()
 //
-// This function initializes the bipartite graph used in MC64. By specially
-// assigning weights on edges, MC64 can vary (this version is option 5 in intel's
-// MC64).
+// This function initializes the bipartite graph used in DB. By specially
+// assigning weights on edges, DB can vary (this version is option 5 in intel's
+// DB).
 // ----------------------------------------------------------------------------
 template<typename T>
 void
@@ -1802,7 +1802,7 @@ Graph<T>::get_csr_matrix(MatrixCsr&       Acsr, int numPartitions)
 // ----------------------------------------------------------------------------
 // Graph::init_reduced_cval()
 //
-// This function assigns a (partial) match for speeding up MC64. If this function
+// This function assigns a (partial) match for speeding up DB. If this function
 // were not to be called, we should start from zero: no match found at the beginning.
 // ----------------------------------------------------------------------------
 template <typename T>
@@ -2013,7 +2013,7 @@ Graph<T>::find_shortest_aug_path(int            init_node,
 			if(c_val[i] > LOC_INFINITY / 2.0) continue;
 			double reduced_cval = c_val[i] - u_val[cur_row] - v_val[cur_node];
 			if (reduced_cval + 1e-10 < 0)
-				throw system_error(system_error::Negative_MC64_weight, "Negative reduced weight in MC64.");
+				throw system_error(system_error::Negative_DB_weight, "Negative reduced weight in DB.");
 			double d_new = lsp + reduced_cval;
 			if(d_new < lsap) {
 				if(!matched[cur_row]) {
