@@ -9,6 +9,8 @@
 #include <vector>
 #include <string>
 
+#include <spike/common.h>
+
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
 #ifdef   USE_OLD_CUSP
@@ -28,7 +30,6 @@
 #include <thrust/functional.h>
 #include <thrust/logical.h>
 
-#include <spike/common.h>
 #include <spike/monitor.h>
 #include <spike/precond.h>
 #include <spike/bicgstab2.h>
