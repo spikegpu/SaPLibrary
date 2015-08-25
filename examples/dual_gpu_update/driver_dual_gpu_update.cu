@@ -3,6 +3,9 @@
 // -----------------------------------------------------------------------------
 #include <algorithm>
 
+#include <spike/solver.h>
+#include <spike/timer.h>
+
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
 #include <cusp/multiply.h>
@@ -12,11 +15,7 @@
 #include <cusp/blas/blas.h>
 #endif
 
-#include <spike/solver.h>
-#include <spike/timer.h>
-
 #include <omp.h>
-
 
 // -----------------------------------------------------------------------------
 // Typedefs

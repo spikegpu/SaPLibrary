@@ -17,6 +17,9 @@
 // -----------------------------------------------------------------------------
 #include <cstdlib>
 
+#include <spike/solver.h>
+#include <spike/spmv.h>
+
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
 #ifdef   USE_OLD_CUSP
@@ -24,10 +27,6 @@
 #else
 #include <cusp/blas/blas.h>
 #endif
-
-#include <spike/solver.h>
-#include <spike/spmv.h>
-
 
 // -----------------------------------------------------------------------------
 // Typedefs

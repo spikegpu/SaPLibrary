@@ -9,7 +9,7 @@
 typedef long long int64_t;
 #endif
 
-
+#include <cusp/version.h>
 
 // ----------------------------------------------------------------------------
 // If ALWAYS_ASSERT is defined, we make sure that  assertions are triggered 
@@ -43,7 +43,13 @@ typedef long long int64_t;
 #define BURST_VALUE (1e-7)
 #define BURST_NEW_VALUE (1e-4)
 
-#define USE_OLD_CUSP
+#if CUSP_VERSION < 500
+#  define USE_OLD_CUSP
+#else
+#  ifdef USE_OLD_CUSP
+#    undef USE_OLD_CUSP
+#  endif
+#endif
 
 
 namespace spike {

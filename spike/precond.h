@@ -5,19 +5,6 @@
 #ifndef SPIKE_PRECOND_CUH
 #define SPIKE_PRECOND_CUH
 
-#ifdef   USE_OLD_CUSP
-#include <cusp/blas.h>
-#include <cusp/detail/format_utils.h>
-#else
-#include <cusp/blas/blas.h>
-#include <cusp/format_utils.h>
-#endif
-
-#include <cusp/print.h>
-
-#include <thrust/logical.h>
-#include <thrust/functional.h>
-
 #include <spike/common.h>
 #include <spike/graph.h>
 #include <spike/timer.h>
@@ -30,6 +17,19 @@
 #include <spike/device/inner_product.cuh>
 #include <spike/device/shuffle.cuh>
 #include <spike/device/data_transfer.cuh>
+
+#ifdef   USE_OLD_CUSP
+#include <cusp/blas.h>
+#include <cusp/detail/format_utils.h>
+#else
+#include <cusp/blas/blas.h>
+#include <cusp/format_utils.h>
+#endif
+
+#include <cusp/print.h>
+
+#include <thrust/logical.h>
+#include <thrust/functional.h>
 
 #include <omp.h>
 #include <queue>
@@ -139,7 +139,7 @@ public:
 	void   solve(PrecVector& v, PrecVector& z);
 
 	template <typename SolverVector>
-	void   operator()(SolverVector& v, SolverVector& z);
+	void   operator()(const SolverVector& v, SolverVector& z);
 
 private:
 	int                  m_numPartitions;
@@ -928,7 +928,7 @@ Precond<PrecVector>::setup(const Matrix&  A)
 template <typename PrecVector>
 template <typename SolverVector>
 void
-Precond<PrecVector>::operator()(SolverVector& v,
+Precond<PrecVector>::operator()(const SolverVector& v,
                                 SolverVector& z)
 {
 	// If no preconditioner, copy RHS vector v into solution vector z and return.

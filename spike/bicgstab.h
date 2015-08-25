@@ -74,15 +74,15 @@ void bicgstab(LinearOperator&  A,
 	cusp::multiply(A, x, y);
 
 	// r <- b - A*x
-	blas::axpby(b, y, r, ValueType(1), ValueType(-1));
+	cusp::blas::axpby(b, y, r, ValueType(1), ValueType(-1));
 
 	// p <- r
-	blas::copy(r, p);
+	cusp::blas::copy(r, p);
 
 	// r_star <- r
-	blas::copy(r, r_star);
+	cusp::blas::copy(r, r_star);
 
-	ValueType r_r_star_old = blas::dotc(r_star, r);
+	ValueType r_r_star_old = cusp::blas::dotc(r_star, r);
 
 	while (!monitor.finished(r)) {
 		// Prevent divison by zero at this iteration.
@@ -98,7 +98,7 @@ void bicgstab(LinearOperator&  A,
 		cusp::multiply(A, Mp, AMp);
 
 		// alpha = (r_j, r_star) / (A*M*p, r_star)
-		ValueType tmp1 = blas::dotc(r_star, AMp);
+		ValueType tmp1 = cusp::blas::dotc(r_star, AMp);
 		if (tmp1 == 0) {
 			monitor.stop(-11, "r_star * AMp is zero");
 			break;
@@ -106,11 +106,11 @@ void bicgstab(LinearOperator&  A,
 		ValueType alpha = r_r_star_old / tmp1;
 
 		// s_j = r_j - alpha * AMp
-		blas::axpby(r, AMp, s, ValueType(1), ValueType(-alpha));
+		cusp::blas::axpby(r, AMp, s, ValueType(1), ValueType(-alpha));
 
 		if (monitor.finished(s)){
 			// x += alpha*M*p_j
-			blas::axpby(x, Mp, x, ValueType(1), ValueType(alpha));
+			cusp::blas::axpby(x, Mp, x, ValueType(1), ValueType(alpha));
 			break;
 		}
 
@@ -121,27 +121,27 @@ void bicgstab(LinearOperator&  A,
 		cusp::multiply(A, Ms, AMs);
 
 		// omega = (AMs, s) / (AMs, AMs)
-		ValueType tmp2 = blas::dotc(AMs, AMs);
+		ValueType tmp2 = cusp::blas::dotc(AMs, AMs);
 		if (tmp2 == 0) {
 			monitor.stop(-12, "AMs * AMs is zero");
 			break;
 		}
-		ValueType omega = blas::dotc(AMs, s) / tmp2;
+		ValueType omega = cusp::blas::dotc(AMs, s) / tmp2;
 
 		// x_{j+1} = x_j + alpha*M*p_j + omega*M*s_j
-		blas::axpbypcz(x, Mp, Ms, x, ValueType(1), alpha, omega);
+		cusp::blas::axpbypcz(x, Mp, Ms, x, ValueType(1), alpha, omega);
 
 		// r_{j+1} = s_j - omega*A*M*s
-		blas::axpby(s, AMs, r, ValueType(1), -omega);
+		cusp::blas::axpby(s, AMs, r, ValueType(1), -omega);
 
 		// beta_j = (r_{j+1}, r_star) / (r_j, r_star) * (alpha/omega)
-		ValueType r_r_star_new = blas::dotc(r_star, r);
+		ValueType r_r_star_new = cusp::blas::dotc(r_star, r);
 
 		ValueType beta = (r_r_star_new / r_r_star_old) * (alpha / omega);
 		r_r_star_old = r_r_star_new;
 
 		// p_{j+1} = r_{j+1} + beta*(p_j - omega*A*M*p)
-		blas::axpbypcz(r, p, AMp, p, ValueType(1), beta, -beta*omega);
+		cusp::blas::axpbypcz(r, p, AMp, p, ValueType(1), beta, -beta*omega);
 
 		++monitor;
 	}

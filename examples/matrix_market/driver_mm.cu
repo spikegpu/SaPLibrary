@@ -1,6 +1,10 @@
 #include <algorithm>
 #include <fstream>
 
+#include <spike/solver.h>
+#include <spike/spmv.h>
+#include <spike/exception.h>
+
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
 #include <cusp/multiply.h>
@@ -9,11 +13,6 @@
 #else
 #include <cusp/blas/blas.h>
 #endif
-
-#include <spike/solver.h>
-#include <spike/spmv.h>
-#include <spike/exception.h>
-
 
 // -----------------------------------------------------------------------------
 // Typedefs

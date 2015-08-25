@@ -2,6 +2,9 @@
 #include <fstream>
 #include <cmath>
 
+#include <spike/solver.h>
+#include <spike/spmv.h>
+
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
 #include <cusp/multiply.h>
@@ -10,10 +13,6 @@
 #else
 #include <cusp/blas/blas.h>
 #endif
-
-#include <spike/solver.h>
-#include <spike/spmv.h>
-
 
 // -----------------------------------------------------------------------------
 // Macro to obtain a random number between two specified values

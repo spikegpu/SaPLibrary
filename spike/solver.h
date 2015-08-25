@@ -10,6 +10,12 @@
 #include <string>
 
 #include <spike/common.h>
+#include <spike/monitor.h>
+#include <spike/precond.h>
+#include <spike/bicgstab2.h>
+#include <spike/bicgstab.h>
+#include <spike/minres.h>
+#include <spike/timer.h>
 
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
@@ -29,13 +35,6 @@
 #include <thrust/scan.h>
 #include <thrust/functional.h>
 #include <thrust/logical.h>
-
-#include <spike/monitor.h>
-#include <spike/precond.h>
-#include <spike/bicgstab2.h>
-#include <spike/bicgstab.h>
-#include <spike/minres.h>
-#include <spike/timer.h>
 
 
 /** \namespace spike
