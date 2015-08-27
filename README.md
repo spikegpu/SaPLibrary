@@ -1,11 +1,11 @@
-SpikeGPU Library version 1.0.0
+SaPGPU Library version 1.0.0
 ==============================
 
-SpikeGPU is a C++ template library which provides a SPIKE-based preconditioner for the solution of large-scale sparse linear solvers using Krylov-space iterative solvers on CUDA architecture GPUs. 
+SaPGPU is a C++ template library which provides a SPIKE-based preconditioner for the solution of large-scale sparse linear solvers using Krylov-space iterative solvers on CUDA architecture GPUs. 
 
-The SpikeGPU library is built on top of CUSP and Thrust. 
+The SaPGPU library is built on top of CUSP and Thrust. 
 
-Additional information available at http://spikegpu.sbel.org.
+Additional information available at http://sapgpu.sbel.org.
 
 Directory structure
 -------------------
@@ -14,12 +14,12 @@ There are two top-level directories:
   <dt>spike/</dt>     
     <dd>contains the library's header files.</dd>
   <dt>examples/</dt>
-    <dd>provides several example programs using the SpikeGPU solver. <dd>
+    <dd>provides several example programs using the SaPGPU solver. <dd>
 </dl>
 
 Dependencies
 ------------
-SpikeGPU requires CUDA and the CUSP library, available from https://github.com/cusplibrary.
+SaPGPU requires CUDA and the CUSP library, available from https://github.com/cusplibrary.
 
 Example Usage
 -------------
@@ -44,18 +44,18 @@ int main(int argc, char** argv)
   // Create the Spike solver object and the SPMV functor. In the solver constructor,
   // specify the number of partitions and a structure with optional inputs.
   spike::Options               options;
-  spike::Solver<Vector, float> spikeGPU(10, options);
+  spike::Solver<Vector, float> sapGPU(10, options);
   spike::SpmvCusp<Matrix>      spmv(A);
   
   // Set the solution initial guess to zero.
   Vector x(A.num_rows, 0.0);
   
   // Solve the problem.
-  spikeGPU.setup(A);
-  bool success = spikeGPU.solve(spmv, b, x);
+  sapGPU.setup(A);
+  bool success = sapGPU.solve(spmv, b, x);
   
   // Extract solver statistics.
-  spike::Stats stats = spikeGPU.getStats();
+  spike::Stats stats = sapGPU.getStats();
   
   // ...
 }
@@ -64,10 +64,10 @@ int main(int argc, char** argv)
 Building and running the example drivers
 ----------------------------------------
 Use CMake to configure the provided example drivers:
-* driver_mm  - sample program for using SpikeGPU with a matrix read from a Matrix Market file.
-* driver_seq - sample program illustrating the use of SpikeGPU on a sequence of matrices with the same sparsity pattern.
-* driver_views - sample program illustrating the use of SpikeGPU with CUSP array views.
-* driver_banded - sample program illustrating the use of SpikeGPU to solve banded systems.
+* driver_mm  - sample program for using SaPGPU with a matrix read from a Matrix Market file.
+* driver_seq - sample program illustrating the use of SaPGPU on a sequence of matrices with the same sparsity pattern.
+* driver_views - sample program illustrating the use of SaPGPU with CUSP array views.
+* driver_banded - sample program illustrating the use of SaPGPU to solve banded systems.
 
 To see a full list of the arguments for driver_mm as an example, use
 `driver_mm -h`
