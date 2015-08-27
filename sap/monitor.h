@@ -1,5 +1,5 @@
-#ifndef SPIKE_MONITOR_H
-#define SPIKE_MONITOR_H
+#ifndef SAP_MONITOR_H
+#define SAP_MONITOR_H
 
 #include <limits>
 #include <string>
@@ -12,7 +12,7 @@
 #endif
 
 
-namespace spike {
+namespace sap {
 
 
 // ----------------------------------------------------------------------------
@@ -146,7 +146,7 @@ Monitor<SolverVector>::finished(SolverValueType rNorm)
 }
 
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

@@ -1,21 +1,21 @@
 /** \file solver.h
- *  \brief Definition of the main Spike solver class.
+ *  \brief Definition of the main SaP solver class.
  */
 
-#ifndef SPIKE_SOLVER_H
-#define SPIKE_SOLVER_H
+#ifndef SAP_SOLVER_H
+#define SAP_SOLVER_H
 
 #include <limits>
 #include <vector>
 #include <string>
 
-#include <spike/common.h>
-#include <spike/monitor.h>
-#include <spike/precond.h>
-#include <spike/bicgstab2.h>
-#include <spike/bicgstab.h>
-#include <spike/minres.h>
-#include <spike/timer.h>
+#include <sap/common.h>
+#include <sap/monitor.h>
+#include <sap/precond.h>
+#include <sap/bicgstab2.h>
+#include <sap/bicgstab.h>
+#include <sap/minres.h>
+#include <sap/timer.h>
 
 #include <cusp/csr_matrix.h>
 #include <cusp/array1d.h>
@@ -37,12 +37,12 @@
 #include <thrust/logical.h>
 
 
-/** \namespace spike
- * \brief spike is the top-level namespace which contains all Spike functions and types.
+/** \namespace sap
+ * \brief sap is the top-level namespace which contains all SaP functions and types.
  */
 
 
-namespace spike {
+namespace sap {
 
 /// Input solver options.
 /**
@@ -115,7 +115,7 @@ struct Stats
 	double      nuKf;                   /**< Non-uniform K factor. Indicates whether the K changes a lot from row to row. */
 	double      flops_LU;               /**< FLOPs of LU*/
 
-	int         numPartitions;          /**< Actual number of partitions used in the Spike factorization */
+	int         numPartitions;          /**< Actual number of partitions used in the SaP factorization */
 	double      actualDropOff;          /**< Actual fraction of the element-wise matrix 1-norm dropped off. */
 
 	float       numIterations;          /**< Number of iterations required for iterative solver to converge. */
@@ -127,7 +127,7 @@ struct Stats
 };
 
 
-/// Main SPIKE::GPU solver.
+/// Main SaP::GPU solver.
 /** 
  * This class is the public interface to the Spike-preconditioned
  * Krylov iterative solver.
@@ -258,7 +258,7 @@ Stats::Stats()
 }
 
 
-/// Spike solver constructor.
+/// SaP solver constructor.
 /**
  * This is the constructor for the Solver class. It specifies the requested number
  * of partitions and the set of solver options.
@@ -279,7 +279,7 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
 
 /// Preconditioner setup.
 /**
- * This function performs the initial setup for the Spike solver. It prepares
+ * This function performs the initial setup for the SaP solver. It prepares
  * the preconditioner based on the specified matrix A (which may be the system
  * matrix, or some approximation to it).
  *
@@ -416,7 +416,7 @@ Solver<Array, PrecValueType>::update(const Array1& entries)
  * Solver::setup().
  *
  * \tparam SpmvOperator is a functor class which implements the operator()
- *         to calculate sparse matrix-vector product. See spike::SpmvCusp
+ *         to calculate sparse matrix-vector product. See sap::SpmvCusp
  *         for an example.
  */
 template <typename Array, typename PrecValueType>
@@ -457,18 +457,18 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 			cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 
-		// SPIKE Krylov solvers
+		// SaP Krylov solvers
 		case BiCGStab1:
-			spike::bicgstab1(spmv, x_vector, b_vector, m_monitor, m_precond);
+			sap::bicgstab1(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 		case BiCGStab2:
-			spike::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
+			sap::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 		case BiCGStab:
-			spike::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+			sap::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 		case MINRES:
-			spike::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
+			sap::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
 			break;
 	}
 
@@ -487,7 +487,7 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 }
 
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

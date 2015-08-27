@@ -7,10 +7,10 @@
 #define FACTOR_BAND_CONST_H
 
 #include <cuda.h>
-#include <spike/common.h>
+#include <sap/common.h>
 
 
-namespace spike {
+namespace sap {
 namespace device {
 
 template <typename T>
@@ -1909,7 +1909,7 @@ boostLastPivot(T *dA, int start_row, int k, int partition_size, int rest_num)
 
 
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif

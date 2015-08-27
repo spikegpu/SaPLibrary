@@ -8,8 +8,8 @@
 // ============================================================================
 
 
-#ifndef SPIKE_STRIDED_RANGE
-#define SPIKE_STRIDED_RANGE
+#ifndef SAP_STRIDED_RANGE
+#define SAP_STRIDED_RANGE
 
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
@@ -17,7 +17,7 @@
 #include <thrust/functional.h>
 
 
-namespace spike {
+namespace sap {
 
 template <typename Iterator>
 class strided_range
@@ -62,7 +62,7 @@ protected:
 	difference_type m_stride;
 };
 
-} // namespace spike
+} // namespace sap
 
 
 

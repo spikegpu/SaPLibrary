@@ -15,7 +15,7 @@
 #endif
 
 
-namespace spike {
+namespace sap {
 
 
 /// Base timer class.
@@ -120,7 +120,7 @@ public:
 
 #endif // WIN32
 
-} // namespace spike
+} // namespace sap 
 
 
 #endif

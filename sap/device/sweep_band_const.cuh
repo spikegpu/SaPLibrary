@@ -9,7 +9,7 @@
 #include <cuda.h>
 
 
-namespace spike {
+namespace sap {
 namespace device {
 
 
@@ -1305,7 +1305,7 @@ backwardElimU_LU_UL(int N, int k, T *dA, T *dB, int partition_size, int rest_num
 
 
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif

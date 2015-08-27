@@ -3,7 +3,7 @@
 
 
 
-namespace spike {
+namespace sap {
 namespace device {
 
 
@@ -38,7 +38,7 @@ columnPermute(int  N,
 
 
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif

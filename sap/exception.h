@@ -1,14 +1,14 @@
 /** \file exception.h
- *  \brief Definition of the Spike system_error exception class.
+ *  \brief Definition of the SaP system_error exception class.
  */
 
-#ifndef SPIKE_EXCEPTION_H
-#define SPIKE_EXCEPTION_H
+#ifndef SAP_EXCEPTION_H
+#define SAP_EXCEPTION_H
 
 #include <stdexcept>
 #include <string>
 
-namespace spike {
+namespace sap {
 
 class system_error : public std::runtime_error
 {
@@ -42,7 +42,7 @@ private:
 	Reason        m_reason;
 };
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

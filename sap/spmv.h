@@ -2,18 +2,18 @@
  *  \brief Definition of the default Spike SPMV functor class.
  */
 
-#ifndef SPIKE_SPMV_H
-#define SPIKE_SPMV_H
+#ifndef SAP_SPMV_H
+#define SAP_SPMV_H
 
 
 #include <cusp/multiply.h>
 
-#include <spike/timer.h>
+#include <sap/timer.h>
 
 #include "cusparse.h"
 
 
-namespace spike {
+namespace sap {
 
 
 /// Default SPMV functor class.
@@ -206,7 +206,7 @@ private:
 	}
 };
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

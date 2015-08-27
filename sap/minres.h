@@ -2,8 +2,8 @@
  *  \brief MINRES preconditioned iterative solver.
  */
 
-#ifndef SPIKE_MINRES_H
-#define SPIKE_MINRES_H
+#ifndef SAP_MINRES_H
+#define SAP_MINRES_H
 
 #include <vector>
 
@@ -15,11 +15,11 @@
 #include <cusp/multiply.h>
 #include <cusp/array1d.h>
 
-#include <spike/monitor.h>
-#include <spike/precond.h>
+#include <sap/monitor.h>
+#include <sap/precond.h>
 
 
-namespace spike {
+namespace sap {
 
 // Additional stopping conditions, specific to MINRES:
 //   code =  10     beta2 = 0.  If M = I, b and x are eigenvectors
@@ -182,7 +182,7 @@ void minres(LinearOperator&  A,
 
 
 
-} // namespace spike
+} // namespace sap
 
 
 

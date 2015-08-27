@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 # Set the name of your project
-project(spike_examples)
+project(sap_examples)
 
 # Include macros from the SBEL utils library
 include(SBELUtils.cmake)
@@ -41,31 +41,31 @@ include_directories(.)
 include_directories(..)
 
 
-SET(SPIKE_HEADERS
-	../../spike/bicgstab2.h
-	../../spike/bicgstab.h
-	../../spike/minres.h
-	../../spike/common.h
-	../../spike/exception.h
-	../../spike/graph.h
-	../../spike/monitor.h
-	../../spike/precond.h
-	../../spike/solver.h
-	../../spike/spmv.h
-	../../spike/strided_range.h
-	../../spike/timer.h
+SET(SAP_HEADERS
+	../../sap/bicgstab2.h
+	../../sap/bicgstab.h
+	../../sap/minres.h
+	../../sap/common.h
+	../../sap/exception.h
+	../../sap/graph.h
+	../../sap/monitor.h
+	../../sap/precond.h
+	../../sap/solver.h
+	../../sap/spmv.h
+	../../sap/strided_range.h
+	../../sap/timer.h
 )
 
-SET(SPIKE_CUHEADERS
-	../../spike/device/data_transfer.cuh
-	../../spike/device/factor_band_const.cuh
-	../../spike/device/factor_band_var.cuh
-	../../spike/device/inner_product.cuh
-	../../spike/device/shuffle.cuh
-	../../spike/device/sweep_band_const.cuh
-	../../spike/device/sweep_band_var.cuh
-	../../spike/device/sweep_band_sparse.cuh
-	../../spike/device/db.cuh
+SET(SAP_CUHEADERS
+	../../sap/device/data_transfer.cuh
+	../../sap/device/factor_band_const.cuh
+	../../sap/device/factor_band_var.cuh
+	../../sap/device/inner_product.cuh
+	../../sap/device/shuffle.cuh
+	../../sap/device/sweep_band_const.cuh
+	../../sap/device/sweep_band_var.cuh
+	../../sap/device/sweep_band_sparse.cuh
+	../../sap/device/db.cuh
 )
 
 ADD_SUBDIRECTORY(matrix_market)
@@ -78,5 +78,4 @@ ADD_SUBDIRECTORY(test_db)
 ADD_SUBDIRECTORY(synthetic_banded)
 ADD_SUBDIRECTORY(multi_gpu)
 ADD_SUBDIRECTORY(dual_gpu_update)
-ADD_SUBDIRECTORY(unit_test)
 #ADD_SUBDIRECTORY(synthetic_sparse)

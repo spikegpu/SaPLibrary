@@ -3,8 +3,8 @@
 // -----------------------------------------------------------------------------
 #include <algorithm>
 
-#include <spike/solver.h>
-#include <spike/timer.h>
+#include <sap/solver.h>
+#include <sap/timer.h>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -26,7 +26,7 @@ typedef float  PREC_REAL;
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
+typedef typename sap::Solver<Vector, PREC_REAL>                 SaPSolver;
 
 
 // -----------------------------------------------------------------------------
@@ -110,10 +110,10 @@ bool GetProblemSpecs(int             argc,
                      string&         fileMat,
                      int&            numPart,
 					 int&            systemCount,
-                     spike::Options& opts);
+                     sap::Options& opts);
 
 void PrintStats(bool                success,
-                const spike::Stats& stats);
+                const sap::Stats&   stats);
 
 
 
@@ -126,7 +126,7 @@ int main(int argc, char** argv)
 	string         fileMat;
 	int            numPart;
 	int            systems_to_solve = 20;
-	spike::Options opts;
+	sap::Options   opts;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, numPart, systems_to_solve, opts))
 		return 1;
@@ -137,27 +137,27 @@ int main(int argc, char** argv)
 	
 	// Get matrix and rhs.
 	Matrix A[2];
-	SpikeSolver *mySolver[2];
+	SaPSolver *mySolver[2];
 	CustomSpmv  *mySpmv[2];
 	Vector      b[2];
 	Vector      x[2];
 	cudaSetDevice(0);
 	cusp::io::read_matrix_market_file(A[0], fileMat);
 
-	// Create the SPIKE Solver object and the custom SPMV functor.
-	mySolver[0] = new SpikeSolver(numPart, opts);
+	// Create the SAP Solver object and the custom SPMV functor.
+	mySolver[0] = new SaPSolver(numPart, opts);
 	mySpmv[0]   = new CustomSpmv(A[0]);
 	b[0].resize(A[0].num_rows, 1.0);
 	x[0].resize(A[0].num_rows);
 
 	cudaSetDevice(1);
 	cusp::io::read_matrix_market_file(A[1], fileMat);
-	mySolver[1] = new SpikeSolver(numPart, opts);
+	mySolver[1] = new SaPSolver(numPart, opts);
 	mySpmv[1]   = new CustomSpmv(A[1]);
 	b[1].resize(A[1].num_rows, 1.0);
 	x[1].resize(A[1].num_rows);
 
-	spike::CPUTimer loc_timer;
+	sap::CPUTimer loc_timer;
 	double elapsed;
 	omp_set_num_threads(2);
 
@@ -216,7 +216,7 @@ int main(int argc, char** argv)
 				// or an update.
 				try {
 					updateSuccess = mySolver[tid] -> update(A[tid].values);
-				} catch (const spike::system_error &e) {
+				} catch (const sap::system_error &e) {
 					updateSuccess = false;
 				}
 
@@ -248,7 +248,7 @@ int main(int argc, char** argv)
 					delete mySolver[tid];
 					delete mySpmv[tid];
 					cusp::io::read_matrix_market_file(A[tid], "/home/ali/CUDA_project/reordering/matrices/88950-lhs.mtx");
-					mySolver[tid] = new SpikeSolver(numPart, opts);
+					mySolver[tid] = new SaPSolver(numPart, opts);
 					mySpmv[tid]   = new CustomSpmv(A[tid]);
 					b[tid].resize(A[tid].num_rows);
 					cusp::blas::fill(b[tid], 1.0);
@@ -301,11 +301,11 @@ GetProblemSpecs(int             argc,
                 string&         fileMat,
                 int&            numPart,
 				int&            systemCount,
-                spike::Options& opts)
+                sap::Options& opts)
 {
-	opts.solverType = spike::BiCGStab2;
-	opts.precondType = spike::Spike;
-	opts.factMethod = spike::LU_only;
+	opts.solverType = sap::BiCGStab2;
+	opts.precondType = sap::Spike;
+	opts.factMethod = sap::LU_only;
 	opts.performReorder = true;
 	opts.applyScaling = true;
 	opts.dropOffFraction = 0.0;
@@ -432,7 +432,7 @@ void ShowUsage()
 // This function prints solver statistics.
 // -----------------------------------------------------------------------------
 void PrintStats(bool                success,
-                const spike::Stats& stats)
+                const sap::Stats& stats)
 {
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;

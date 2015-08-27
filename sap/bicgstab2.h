@@ -2,8 +2,8 @@
  *  \brief BiCGStab(L) preconditioned iterative Krylov solver.
  */
 
-#ifndef SPIKE_BICGSTAB_2_H
-#define SPIKE_BICGSTAB_2_H
+#ifndef SAP_BICGSTAB_2_H
+#define SAP_BICGSTAB_2_H
 
 #include <vector>
 
@@ -15,10 +15,10 @@
 #include <cusp/multiply.h>
 #include <cusp/array1d.h>
 
-#include <spike/monitor.h>
+#include <sap/monitor.h>
 
 
-namespace spike {
+namespace sap {
 
 /// Preconditioned BiCGStab(L) Krylov method
 /**
@@ -205,7 +205,7 @@ void bicgstabl(LinearOperator&  A,
 	}
 }
 
-/// Specializations of the generic spike::bicgstabl function for L=1
+/// Specializations of the generic sap::bicgstabl function for L=1
 template <typename LinearOperator, typename Vector, typename Monitor, typename Preconditioner>
 void bicgstab1(LinearOperator&  A,
                Vector&          x,
@@ -216,7 +216,7 @@ void bicgstab1(LinearOperator&  A,
 	bicgstabl<LinearOperator, Vector, Monitor, Preconditioner, 1>(A, x, b, monitor, P);
 }
 
-/// Specializations of the generic spike::bicgstabl function for L=2
+/// Specializations of the generic sap::bicgstabl function for L=2
 template <typename LinearOperator, typename Vector, typename Monitor, typename Preconditioner>
 void bicgstab2(LinearOperator&  A,
                Vector&          x,
@@ -229,7 +229,7 @@ void bicgstab2(LinearOperator&  A,
 
 
 
-} // namespace spike
+} // namespace sap
 
 
 

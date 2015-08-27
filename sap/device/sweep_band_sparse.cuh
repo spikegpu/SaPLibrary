@@ -9,7 +9,7 @@
 #include <cuda.h>
 
 
-namespace spike {
+namespace sap {
 namespace device {
 namespace sparse {
 
@@ -323,6 +323,6 @@ preBck_offDiag_divide_partial(int N, int K, int numPartitions, int width, int ri
 
 } // namespace sparse
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 #endif

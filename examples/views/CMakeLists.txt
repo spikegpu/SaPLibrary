@@ -1,8 +1,8 @@
 #cuda_include_directories(../)
 #cuda_include_directories(../..)
 
-SOURCE_GROUP("Spike Headers" FILES ${SPIKE_HEADERS})
-SOURCE_GROUP("Spike CUDA Headers" FILES ${SPIKE_CUHEADERS})
+SOURCE_GROUP("SaP Headers" FILES ${SAP_HEADERS})
+SOURCE_GROUP("SaP CUDA Headers" FILES ${SAP_CUHEADERS})
 
-cuda_add_executable(driver_views driver_views.cu ${SPIKE_HEADERS} ${SPIKE_CUHEADERS})
+cuda_add_executable(driver_views driver_views.cu ${SAP_HEADERS} ${SAP_CUHEADERS})
 target_link_libraries(driver_views cusparse)

@@ -3,8 +3,8 @@
 // -----------------------------------------------------------------------------
 #include <algorithm>
 
-#include <spike/solver.h>
-#include <spike/timer.h>
+#include <sap/solver.h>
+#include <sap/timer.h>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -26,7 +26,7 @@ typedef float  PREC_REAL;
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
+typedef typename sap::Solver<Vector, PREC_REAL>                   SaPSolver;
 
 
 // -----------------------------------------------------------------------------
@@ -105,17 +105,17 @@ private:
 // -----------------------------------------------------------------------------
 void ShowUsage();
 
-void spikeSetDevice();
+void sapSetDevice();
 
 bool GetProblemSpecs(int             argc, 
                      char**          argv,
                      string&         fileMat,
                      string&         fileMatNew,
                      int&            numPart,
-                     spike::Options& opts);
+                     sap::Options& opts);
 
 void PrintStats(bool                success,
-                const spike::Stats& stats);
+                const sap::Stats& stats);
 
 
 
@@ -128,13 +128,13 @@ int main(int argc, char** argv)
 	string         fileMat;
 	string         fileMatNew;
 	int            numPart;
-	spike::Options opts;
+	sap::Options opts;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileMatNew, numPart, opts))
 		return 1;
 	
 	// Get the device with most available memory.
-	//// spikeSetDevice();
+	//// sapSetDevice();
 
 	// Get matrix and rhs.
 	Matrix A;
@@ -142,17 +142,17 @@ int main(int argc, char** argv)
 	cusp::io::read_matrix_market_file(A, fileMat);
 
 
-	// Create the SPIKE Solver object and the custom SPMV functor.
-	SpikeSolver mySolver(numPart, opts);
+	// Create the SAP Solver object and the custom SPMV functor.
+	SaPSolver mySolver(numPart, opts);
 	CustomSpmv  mySpmv(A);
 
 	cudaSetDevice(1);
 	Matrix A2;
 	cusp::io::read_matrix_market_file(A2, fileMatNew);
 	CustomSpmv  mySpmv2(A2);
-	SpikeSolver mySolver2(numPart, opts);
+	SaPSolver mySolver2(numPart, opts);
 
-	spike::CPUTimer loc_timer;
+	sap::CPUTimer loc_timer;
 	double elapsed;
 	omp_set_num_threads(2);
 	
@@ -177,7 +177,7 @@ int main(int argc, char** argv)
 			converged = mySolver.solve(mySpmv, b, x);
 			cout << "System 1:" << (converged ? "Converged" : "Not Converged") << endl;
 			if (converged) {
-				const spike::Stats &stats = mySolver.getStats();
+				const sap::Stats &stats = mySolver.getStats();
 				cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
 			}
 			////cusp::io::write_matrix_market_file(x, "x1.mtx");
@@ -193,7 +193,7 @@ int main(int argc, char** argv)
 			converged = mySolver2.solve(mySpmv2, b, x);
 			cout << "System 2:" << (converged ? "Converged" : "Not Converged") << endl;
 			if (converged) {
-				const spike::Stats &stats = mySolver2.getStats();
+				const sap::Stats &stats = mySolver2.getStats();
 				cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
 			}
 			////cusp::io::write_matrix_market_file(x, "y1.mtx");
@@ -207,12 +207,12 @@ int main(int argc, char** argv)
 }
 
 // -----------------------------------------------------------------------------
-// spikeSetDevice()
+// sapSetDevice()
 //
 // This function sets the active device to be the one with maximum available
 // space.
 // -----------------------------------------------------------------------------
-void spikeSetDevice() {
+void sapSetDevice() {
 	int deviceCount = 0;
 	
 	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount <= 0) {
@@ -249,11 +249,11 @@ GetProblemSpecs(int             argc,
                 string&         fileMat,
                 string&         fileMatNew,
                 int&            numPart,
-                spike::Options& opts)
+                sap::Options& opts)
 {
-	opts.solverType = spike::BiCGStab2;
-	opts.precondType = spike::Spike;
-	opts.factMethod = spike::LU_only;
+	opts.solverType = sap::BiCGStab2;
+	opts.precondType = sap::Spike;
+	opts.factMethod = sap::LU_only;
 	opts.performReorder = true;
 	opts.applyScaling = true;
 	opts.dropOffFraction = 0.0;
@@ -384,7 +384,7 @@ void ShowUsage()
 // This function prints solver statistics.
 // -----------------------------------------------------------------------------
 void PrintStats(bool                success,
-                const spike::Stats& stats)
+                const sap::Stats&   stats)
 {
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;

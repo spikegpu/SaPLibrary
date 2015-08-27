@@ -2,7 +2,7 @@
 #define INNER_PRODUCT_CUH
 
 
-namespace spike {
+namespace sap {
 namespace device {
 
 
@@ -600,7 +600,7 @@ innerProductBCX_var_bandwidth(T*   d_spike,
 
 
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif

@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 #include <algorithm>
 
-#include <spike/solver.h>
+#include <sap/solver.h>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -23,7 +23,7 @@ typedef float  PREC_REAL;
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
+typedef typename sap::Solver<Vector, PREC_REAL>                 SaPSolver;
 
 
 // -----------------------------------------------------------------------------
@@ -102,17 +102,17 @@ private:
 // -----------------------------------------------------------------------------
 void ShowUsage();
 
-void spikeSetDevice();
+void sapSetDevice();
 
 bool GetProblemSpecs(int             argc, 
                      char**          argv,
                      string&         fileMat,
                      string&         fileMatNew,
                      int&            numPart,
-                     spike::Options& opts);
+                     sap::Options& opts);
 
 void PrintStats(bool                success,
-                const spike::Stats& stats);
+                const sap::Stats& stats);
 
 
 
@@ -125,20 +125,20 @@ int main(int argc, char** argv)
 	string         fileMat;
 	string         fileMatNew;
 	int            numPart;
-	spike::Options opts;
+	sap::Options opts;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileMatNew, numPart, opts))
 		return 1;
 	
 	// Get the device with most available memory.
-	//// spikeSetDevice();
+	//// sapSetDevice();
 
 	// Get matrix and rhs.
 	Matrix A, A2;
 	cusp::io::read_matrix_market_file(A, fileMat);
 
-	// Create the SPIKE Solver object and the custom SPMV functor.
-	SpikeSolver *mySolverPointer = new SpikeSolver(numPart, opts);
+	// Create the SAP Solver object and the custom SPMV functor.
+	SaPSolver *mySolverPointer = new SaPSolver(numPart, opts);
 	CustomSpmv  mySpmv(A);
 
 	// Perform the solver setup.
@@ -154,7 +154,7 @@ int main(int argc, char** argv)
 		converged = mySolverPointer -> solve(mySpmv, b, x);
 		cout << (converged ? "Converged" : "Not Converged") << endl;
 		if (converged) {
-			const spike::Stats &stats = mySolverPointer -> getStats();
+			const sap::Stats &stats = mySolverPointer -> getStats();
 			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
 		}
 		////cusp::io::write_matrix_market_file(x, "x1.mtx");
@@ -166,7 +166,7 @@ int main(int argc, char** argv)
 		converged = mySolverPointer -> solve(mySpmv, b, x);
 		cout << (converged ? "Converged" : "Not Converged") << endl;
 		if (converged) {
-			const spike::Stats &stats = mySolverPointer -> getStats();
+			const sap::Stats &stats = mySolverPointer -> getStats();
 			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
 		}
 		////cusp::io::write_matrix_market_file(x, "x2.mtx");
@@ -183,7 +183,7 @@ int main(int argc, char** argv)
 		cerr << A.num_rows << " " << A.num_entries << endl;
 		cerr << A2.num_rows << " " << A2.num_entries << endl;
 		delete mySolverPointer;
-		mySolverPointer = new SpikeSolver(numPart, opts);
+		mySolverPointer = new SaPSolver(numPart, opts);
 		mySolverPointer -> setup(A2);
 	}
 
@@ -193,7 +193,7 @@ int main(int argc, char** argv)
 		converged = mySolverPointer -> solve(mySpmv2, b, x);
 		cout << (converged ? "Converged" : "Not Converged") << endl;
 		if (converged) {
-			const spike::Stats &stats = mySolverPointer -> getStats();
+			const sap::Stats &stats = mySolverPointer -> getStats();
 			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
 		}
 		////cusp::io::write_matrix_market_file(x, "y1.mtx");
@@ -205,7 +205,7 @@ int main(int argc, char** argv)
 		converged = mySolverPointer -> solve(mySpmv2, b, x);
 		cout << (converged ? "Converged" : "Not Converged") << endl;
 		if (converged) {
-			const spike::Stats &stats = mySolverPointer -> getStats();
+			const sap::Stats &stats = mySolverPointer -> getStats();
 			cout <<  "Converged in " << stats.numIterations << " iteration(s)" << endl;
 		}
 		////cusp::io::write_matrix_market_file(x, "y2.mtx");
@@ -218,12 +218,12 @@ int main(int argc, char** argv)
 }
 
 // -----------------------------------------------------------------------------
-// spikeSetDevice()
+// sapSetDevice()
 //
 // This function sets the active device to be the one with maximum available
 // space.
 // -----------------------------------------------------------------------------
-void spikeSetDevice() {
+void sapSetDevice() {
 	int deviceCount = 0;
 	
 	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount <= 0) {
@@ -260,11 +260,11 @@ GetProblemSpecs(int             argc,
                 string&         fileMat,
                 string&         fileMatNew,
                 int&            numPart,
-                spike::Options& opts)
+                sap::Options& opts)
 {
-	opts.solverType = spike::BiCGStab2;
-	opts.precondType = spike::Spike;
-	opts.factMethod = spike::LU_only;
+	opts.solverType = sap::BiCGStab2;
+	opts.precondType = sap::Spike;
+	opts.factMethod = sap::LU_only;
 	opts.performReorder = true;
 	opts.applyScaling = true;
 	opts.dropOffFraction = 0.0;
@@ -395,7 +395,7 @@ void ShowUsage()
 // This function prints solver statistics.
 // -----------------------------------------------------------------------------
 void PrintStats(bool                success,
-                const spike::Stats& stats)
+                const sap::Stats& stats)
 {
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;

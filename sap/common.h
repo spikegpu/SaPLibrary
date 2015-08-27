@@ -1,5 +1,5 @@
-#ifndef SPIKE_COMMON_H
-#define SPIKE_COMMON_H
+#ifndef SAP_COMMON_H
+#define SAP_COMMON_H
 
 
 
@@ -52,7 +52,7 @@ typedef long long int64_t;
 #endif
 
 
-namespace spike {
+namespace sap {
 
 const unsigned int BLOCK_SIZE = 512;
 
@@ -66,7 +66,7 @@ enum KrylovSolverType {
 	GMRES_C,
 	CG_C,
 	CR_C,
-	// SPIKE solvers
+	// SAP solvers
 	BiCGStab1,
 	BiCGStab2,
 	BiCGStab,
@@ -102,7 +102,7 @@ void kernelConfigAdjust(int &numThreads, int &numBlockX, int &numBlockY, const i
 }
 
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

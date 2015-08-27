@@ -23,8 +23,8 @@
  * (Radu Serban, 2014)
  */
 
-#ifndef SPIKE_BICGSTAB_H
-#define SPIKE_BICGSTAB_H
+#ifndef SAP_BICGSTAB_H
+#define SAP_BICGSTAB_H
 
 #include <cusp/array1d.h>
 #ifdef   USE_OLD_CUSP
@@ -34,10 +34,10 @@
 #endif
 #include <cusp/multiply.h>
 
-#include <spike/monitor.h>
+#include <sap/monitor.h>
 
 
-namespace spike {
+namespace sap {
 
 /// Preconditioned BiCGStab Krylov method
 /**
@@ -148,7 +148,7 @@ void bicgstab(LinearOperator&  A,
 }
 
 
-} // end namespace spike
+} // end namespace sap
 
 
 

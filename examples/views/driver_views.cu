@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------------
 // This example shows how to use views to a CUSP array in conjunctin with the
-// SPIKE solver.
+// SAP solver.
 //
 // As an illustration, we solve a system of the form
 //
@@ -17,8 +17,8 @@
 // -----------------------------------------------------------------------------
 #include <cstdlib>
 
-#include <spike/solver.h>
-#include <spike/spmv.h>
+#include <sap/solver.h>
+#include <sap/spmv.h>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -38,8 +38,8 @@ typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 typedef typename Vector::view                                     VectorView;
 
-typedef typename spike::Solver<VectorView, PREC_REAL>             SpikeSolver;
-typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
+typedef typename sap::Solver<VectorView, PREC_REAL>             SaPSolver;
+typedef typename sap::SpmvCusp<Matrix>                          SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
@@ -77,11 +77,11 @@ int main(int argc, char** argv)
 	VectorView  x1(x.begin(), x.begin() + n);
 	VectorView  x2(x.begin() + n, x.end());
 
-	// Create the SPIKE Solver object and the SPMV functor and perform the
+	// Create the SAP Solver object and the SPMV functor and perform the
 	// solver setup.
-	spike::Options  opts;
-	SpikeSolver     mySolver(num_part, opts);
-	SpmvFunctor     mySpmv(A);
+	sap::Options  opts;
+	SaPSolver     mySolver(num_part, opts);
+	SpmvFunctor   mySpmv(A);
 
 	mySolver.setup(A);
 

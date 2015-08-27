@@ -1,22 +1,22 @@
 /** \file precond.h
- *  \brief Definition of the Spike preconditioner class.
+ *  \brief Definition of the SaP preconditioner class.
  */
 
-#ifndef SPIKE_PRECOND_CUH
-#define SPIKE_PRECOND_CUH
+#ifndef SAP_PRECOND_CUH
+#define SAP_PRECOND_CUH
 
-#include <spike/common.h>
-#include <spike/graph.h>
-#include <spike/timer.h>
-#include <spike/strided_range.h>
-#include <spike/device/factor_band_const.cuh>
-#include <spike/device/factor_band_var.cuh>
-#include <spike/device/sweep_band_const.cuh>
-#include <spike/device/sweep_band_var.cuh>
-#include <spike/device/sweep_band_sparse.cuh>
-#include <spike/device/inner_product.cuh>
-#include <spike/device/shuffle.cuh>
-#include <spike/device/data_transfer.cuh>
+#include <sap/common.h>
+#include <sap/graph.h>
+#include <sap/timer.h>
+#include <sap/strided_range.h>
+#include <sap/device/factor_band_const.cuh>
+#include <sap/device/factor_band_var.cuh>
+#include <sap/device/sweep_band_const.cuh>
+#include <sap/device/sweep_band_var.cuh>
+#include <sap/device/sweep_band_sparse.cuh>
+#include <sap/device/inner_product.cuh>
+#include <sap/device/shuffle.cuh>
+#include <sap/device/data_transfer.cuh>
 
 #ifdef   USE_OLD_CUSP
 #include <cusp/blas.h>
@@ -37,11 +37,11 @@
 #include <functional>
 #include <stdlib.h>
 
-namespace spike {
+namespace sap {
 
-/// Spike preconditioner.
+/// SaP preconditioner.
 /**
- * This class implements the Spike preconditioner.
+ * This class implements the SaP preconditioner.
  *
  * \tparam PrecVector is the vector type used in the preconditioner.
  *         (its underlying type defines the precision of the preconditioner).
@@ -5169,7 +5169,7 @@ Precond<PrecVector>::findPthMax(const IntHIterator&          ibegin,
 
 
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

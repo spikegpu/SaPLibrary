@@ -1,9 +1,9 @@
 #include <algorithm>
 #include <fstream>
 
-#include <spike/solver.h>
-#include <spike/spmv.h>
-#include <spike/exception.h>
+#include <sap/solver.h>
+#include <sap/spmv.h>
+#include <sap/exception.h>
 
 #include <cusp/io/matrix_market.h>
 #include <cusp/csr_matrix.h>
@@ -23,8 +23,8 @@ typedef float  PREC_REAL;
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
 
-typedef typename spike::Solver<Vector, PREC_REAL>                 SpikeSolver;
-typedef typename spike::SpmvCusp<Matrix>                          SpmvFunctor;
+typedef typename sap::Solver<Vector, PREC_REAL>                 SaPSolver;
+typedef typename sap::SpmvCusp<Matrix>                          SpmvFunctor;
 
 
 // -----------------------------------------------------------------------------
@@ -97,16 +97,16 @@ CSimpleOptA::SOption g_options[] = {
 // Forward declarations.
 // -----------------------------------------------------------------------------
 void ShowUsage();
-void spikeSetDevice();
+void sapSetDevice();
 bool GetProblemSpecs(int             argc, 
                      char**          argv,
                      string&         fileMat,
                      string&         fileRhs,
                      string&         fileSol,
                      int&            numPart,
-                     spike::Options& opts);
+                     sap::Options& opts);
 void PrintStats(bool               success,
-                const SpikeSolver& mySolver,
+                const SaPSolver& mySolver,
                 const SpmvFunctor& mySpmv);
 
 
@@ -120,13 +120,13 @@ int main(int argc, char** argv)
 	string         fileRhs;
 	string         fileSol;
 	int            numPart;
-	spike::Options opts;
+	sap::Options opts;
 
 	if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, opts))
 		return 1;
 
 	// Get the device with most available memory.
-	spikeSetDevice();
+	sapSetDevice();
 
 	// Get matrix and rhs.
 	Matrix A;
@@ -139,10 +139,10 @@ int main(int argc, char** argv)
 	else
 		b.resize(A.num_rows, 1);
 
-	// Create the SPIKE Solver object and the SPMV functor. Perform the solver
+	// Create the SAP Solver object and the SPMV functor. Perform the solver
 	// setup, then solve the linear system using a 0 initial guess.
 	// Set the initial guess to the zero vector.
-	SpikeSolver  mySolver(numPart, opts);
+	SaPSolver  mySolver(numPart, opts);
 	SpmvFunctor  mySpmv(A);
 	Vector x(A.num_rows, 0);
 	bool   success;
@@ -153,7 +153,7 @@ int main(int argc, char** argv)
 	} catch (const std::bad_alloc& e) {
 		std::cout << "Exception (bad_alloc): " << e.what() << std::endl;
 		return 1;
-	} catch (const spike::system_error& e) {
+	} catch (const sap::system_error& e) {
 		std::cout << "Exception (system_error): " << e.what() << " Error code: " << e.reason() << std::endl;
 		return 1;
 	}
@@ -170,12 +170,12 @@ int main(int argc, char** argv)
 
 
 // -----------------------------------------------------------------------------
-// spikeSetDevice()
+// sapSetDevice()
 //
 // This function sets the active device to be the one with maximum available
 // space.
 // -----------------------------------------------------------------------------
-void spikeSetDevice() {
+void sapSetDevice() {
 	int deviceCount = 0;
 	
 	if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount <= 0) {
@@ -213,7 +213,7 @@ GetProblemSpecs(int             argc,
                 string&         fileRhs,
                 string&         fileSol,
                 int&            numPart,
-                spike::Options& opts)
+                sap::Options& opts)
 {
 	numPart = -1;
 
@@ -279,9 +279,9 @@ GetProblemSpecs(int             argc,
 					string fact = args.OptionArg();
 					std::transform(fact.begin(), fact.end(), fact.begin(), ::toupper);
 					if (fact == "0" || fact == "LU_UL")
-						opts.factMethod = spike::LU_UL;
+						opts.factMethod = sap::LU_UL;
 					else if (fact == "1" || fact == "LU_LU")
-						opts.factMethod = spike::LU_only;
+						opts.factMethod = sap::LU_only;
 					else
 						return false;
 				}
@@ -291,11 +291,11 @@ GetProblemSpecs(int             argc,
 					string precond = args.OptionArg();
 					std::transform(precond.begin(), precond.end(), precond.begin(), ::toupper);
 					if (precond == "0" || precond == "SPIKE")
-						opts.precondType = spike::Spike;
+						opts.precondType = sap::Spike;
 					else if(precond == "1" || precond == "BLOCK")
-						opts.precondType = spike::Block;
+						opts.precondType = sap::Block;
 					else if(precond == "2" || precond == "NONE")
-						opts.precondType = spike::None;
+						opts.precondType = sap::None;
 					else
 						return false;
 				}
@@ -305,21 +305,21 @@ GetProblemSpecs(int             argc,
 					string kry = args.OptionArg();
 					std::transform(kry.begin(), kry.end(), kry.begin(), ::toupper);
 					if (kry == "0" || kry == "BICGSTAB_C")
-						opts.solverType = spike::BiCGStab_C;
+						opts.solverType = sap::BiCGStab_C;
 					else if (kry == "1" || kry == "GMRES_C")
-						opts.solverType = spike::GMRES_C;
+						opts.solverType = sap::GMRES_C;
 					else if (kry == "2" || kry == "CG_C")
-						opts.solverType = spike::CG_C;
+						opts.solverType = sap::CG_C;
 					else if (kry == "3" || kry == "CR_C")
-						opts.solverType = spike::CR_C;
+						opts.solverType = sap::CR_C;
 					else if (kry == "4" || kry == "BICGSTAB1")
-						opts.solverType = spike::BiCGStab1;
+						opts.solverType = sap::BiCGStab1;
 					else if (kry == "5" || kry == "BICGSTAB2")
-						opts.solverType = spike::BiCGStab2;
+						opts.solverType = sap::BiCGStab2;
 					else if (kry == "6" || kry == "BICGSTAB")
-						opts.solverType = spike::BiCGStab;
+						opts.solverType = sap::BiCGStab;
 					else if (kry == "7" || kry == "MINRES")
-						opts.solverType = spike::MINRES;
+						opts.solverType = sap::MINRES;
 					else
 						return false;
 				}
@@ -363,7 +363,7 @@ GetProblemSpecs(int             argc,
 
 	// If using variable bandwidth, force using LU factorization.
 	if (opts.variableBandwidth)
-		opts.factMethod = spike::LU_only;
+		opts.factMethod = sap::LU_only;
 
 	// Print out the problem specifications.
 	cout << endl;
@@ -374,38 +374,38 @@ GetProblemSpecs(int             argc,
 		cout << "Sol file:    " << fileSol << endl;
 	cout << "Iterative solver: ";
 	switch (opts.solverType) {
-		case spike::BiCGStab_C:
+		case sap::BiCGStab_C:
 			cout << "BiCGStab (Cusp)" << endl; break;
-		case spike::GMRES_C:
+		case sap::GMRES_C:
 			cout << "GMRES (Cusp)" << endl; break;
-		case spike::CG_C:
+		case sap::CG_C:
 			cout << "CG (Cusp)" << endl; break;
-		case spike::CR_C:
+		case sap::CR_C:
 			cout << "CR (Cusp)" << endl; break;
-		case spike::BiCGStab1:
-			cout << "BiCGStab1 (Spike::GPU)" << endl; break;
-		case spike::BiCGStab2:
-			cout << "BiCGStab2 (Spike::GPU)" << endl; break;
-		case spike::BiCGStab:
-			cout << "BiCGStab (Spike::GPU)" << endl; break;
-		case spike::MINRES:
-			cout << "MINRES (Spike::GPU)" << endl; break;
+		case sap::BiCGStab1:
+			cout << "BiCGStab1 (SaP::GPU)" << endl; break;
+		case sap::BiCGStab2:
+			cout << "BiCGStab2 (SaP::GPU)" << endl; break;
+		case sap::BiCGStab:
+			cout << "BiCGStab (SaP::GPU)" << endl; break;
+		case sap::MINRES:
+			cout << "MINRES (SaP::GPU)" << endl; break;
 	}
 	cout << "Relative tolerance: " << opts.relTol << endl;
 	cout << "Absolute tolerance: " << opts.absTol << endl;
 	cout << "Max. iterations: " << opts.maxNumIterations << endl;
 	cout << "Preconditioner: ";
 	switch (opts.precondType) {
-		case spike::Spike:
+		case sap::Spike:
 			cout << "SPIKE" << endl; break;
-		case spike::Block:
+		case sap::Block:
 			cout << "BLOCK DIAGONAL" << endl; break;
-		case spike::None:
+		case sap::None:
 			cout << "NONE" << endl; break;
 	}
-	if (opts.precondType != spike::None) {
+	if (opts.precondType != sap::None) {
 		cout << "Using " << numPart << (numPart ==1 ? " partition." : " partitions.") << endl;
-		cout << "Factorization method: " << (opts.factMethod == spike::LU_UL ? "LU - UL" : "LU - LU") << endl;
+		cout << "Factorization method: " << (opts.factMethod == sap::LU_UL ? "LU - UL" : "LU - LU") << endl;
 		if (opts.dropOffFraction > 0)
 			cout << "Drop-off fraction: " << opts.dropOffFraction << endl;
 		else
@@ -475,10 +475,10 @@ void ShowUsage()
 	cout << "        METHOD=1 or METHOD=GMRES_C       use GMRES (Cusp)" << endl;
 	cout << "        METHOD=2 or METHOD=CG_C          use CG (Cusp)" << endl;
 	cout << "        METHOD=3 or METHOD=CR_C          use CR (Cusp)" << endl;
-	cout << "        METHOD=4 or METHOD=BICGSTAB1     use BiCGStab(1) (Spike::GPU)" << endl;
-	cout << "        METHOD=5 or METHOD=BICGSTAB2     use BiCGStab(2) (Spike::GPU). This is the default." << endl;
-	cout << "        METHOD=6 or METHOD=BICGSTAB      use BiCGStab (Spike::GPU)" << endl;
-	cout << "        METHOD=7 or METHOD=MINRES        use MINRES (Spike::GPU)" << endl;
+	cout << "        METHOD=4 or METHOD=BICGSTAB1     use BiCGStab(1) (SaP::GPU)" << endl;
+	cout << "        METHOD=5 or METHOD=BICGSTAB2     use BiCGStab(2) (SaP::GPU). This is the default." << endl;
+	cout << "        METHOD=6 or METHOD=BICGSTAB      use BiCGStab (SaP::GPU)" << endl;
+	cout << "        METHOD=7 or METHOD=MINRES        use MINRES (SaP::GPU)" << endl;
 	cout << " --safe-fact" << endl;
 	cout << "        Use safe LU-UL factorization." << endl; 
 	cout << " --const-band" << endl;
@@ -505,10 +505,10 @@ void ShowUsage()
 // This function prints solver statistics.
 // -----------------------------------------------------------------------------
 void PrintStats(bool               success,
-                const SpikeSolver& mySolver,
+                const SaPSolver& mySolver,
                 const SpmvFunctor& mySpmv)
 {
-	spike::Stats stats = mySolver.getStats();
+	sap::Stats stats = mySolver.getStats();
 
 	cout << endl;
 	cout << (success ? "Success" : "Failed") << endl;

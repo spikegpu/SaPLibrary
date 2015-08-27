@@ -7,18 +7,18 @@
 #define FACTOR_BAND_VAR_H
 
 #include <cuda.h>
-#include <spike/common.h>
+#include <sap/common.h>
 
-/** \namespace spike::device
- * \brief spike::device contains all CUDA kernels.
+/** \namespace sap::device
+ * \brief sap::device contains all CUDA kernels.
  */
 
-/** \namespace spike::device::var
- * \brief spike::device::var contains all CUDA kernels for the
+/** \namespace sap::device::var
+ * \brief sap::device::var contains all CUDA kernels for the
           variable bandwidth preconditioner.
  */
 
-namespace spike {
+namespace sap {
 namespace device {
 namespace var {
 
@@ -1109,7 +1109,7 @@ boostLastPivot(T *dA, int start_row, int *ks, int *offsets, int partition_size, 
 
 } // namespace var
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif

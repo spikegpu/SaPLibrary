@@ -1,5 +1,5 @@
-#ifndef SPIKE_GRAPH_H
-#define SPIKE_GRAPH_H
+#ifndef SAP_GRAPH_H
+#define SAP_GRAPH_H
 
 #include <vector>
 #include <queue>
@@ -23,14 +23,14 @@
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/gather.h>
 
-#include <spike/common.h>
-#include <spike/timer.h>
-#include <spike/device/data_transfer.cuh>
-#include <spike/device/db.cuh>
+#include <sap/common.h>
+#include <sap/timer.h>
+#include <sap/device/data_transfer.cuh>
+#include <sap/device/db.cuh>
 
-#include <spike/exception.h>
+#include <sap/exception.h>
 
-namespace spike {
+namespace sap {
 
 template <typename T>
 class Graph
@@ -2641,7 +2641,7 @@ Graph<T>::symbolicFactorization(const MatrixCsr&  Acsr)
 }	
 
 
-} // namespace spike
+} // namespace sap
 
 
 #endif

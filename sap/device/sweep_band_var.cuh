@@ -9,7 +9,7 @@
 #include <cuda.h>
 
 
-namespace spike {
+namespace sap {
 namespace device {
 namespace var {
 
@@ -1595,7 +1595,7 @@ bckElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, T *dA
 
 } // namespace var
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif

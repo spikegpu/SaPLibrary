@@ -7,7 +7,7 @@
 #define DATA_TRANSFER_CUH
 
 
-namespace spike {
+namespace sap {
 namespace device {
 
 
@@ -631,7 +631,7 @@ __global__ void matrixWReordering_perPartition(int  k,
 
 
 } //namespace device
-} //namespace spike
+} //namespace sap
 
 
 #endif

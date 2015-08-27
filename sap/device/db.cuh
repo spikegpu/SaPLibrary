@@ -6,7 +6,7 @@
 #ifndef DB_CUH
 #define DB_CUH
 
-namespace spike {
+namespace sap {
 namespace device {
 
 template<typename T>
@@ -98,7 +98,7 @@ findInitialMatch(int N, int *row_offsets, int *column_indices, T *values, T *u_v
 }
 
 } // namespace device
-} // namespace spike
+} // namespace sap
 
 
 #endif
