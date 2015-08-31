@@ -11,7 +11,7 @@ Directory structure
 -------------------
 There are two top-level directories:
 <dl>
-  <dt>spike/</dt>     
+  <dt>sap/</dt>     
     <dd>contains the library's header files.</dd>
   <dt>examples/</dt>
     <dd>provides several example programs using the SaPGPU solver. <dd>
@@ -24,9 +24,9 @@ SaPGPU requires CUDA and the CUSP library, available from https://github.com/cus
 Example Usage
 -------------
 ```C++
-#include <spike/solver.h>
-#include <spike/spmv.h>
-#include <spike/exception.h>
+#include <sap/solver.h>
+#include <sap/spmv.h>
+#include <sap/exception.h>
 
 typedef typename cusp::csr_matrix<int, double, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<double, cusp::device_memory>         Vector;
@@ -41,11 +41,11 @@ int main(int argc, char** argv)
   cusp::io::read_matrix_market_file(A, "matrix.mtx");
   cusp::io::read_matrix_market_file(b, "rhs.mtx");
   
-  // Create the Spike solver object and the SPMV functor. In the solver constructor,
+  // Create the SaP solver object and the SPMV functor. In the solver constructor,
   // specify the number of partitions and a structure with optional inputs.
-  spike::Options               options;
-  spike::Solver<Vector, float> sapGPU(10, options);
-  spike::SpmvCusp<Matrix>      spmv(A);
+  sap::Options               options;
+  sap::Solver<Vector, float> sapGPU(10, options);
+  sap::SpmvCusp<Matrix>      spmv(A);
   
   // Set the solution initial guess to zero.
   Vector x(A.num_rows, 0.0);
@@ -55,7 +55,7 @@ int main(int argc, char** argv)
   bool success = sapGPU.solve(spmv, b, x);
   
   // Extract solver statistics.
-  spike::Stats stats = sapGPU.getStats();
+  sap::Stats stats = sapGPU.getStats();
   
   // ...
 }
@@ -74,12 +74,12 @@ To see a full list of the arguments for driver_mm as an example, use
 
 Support
 -------
-Submit bug reports and feature requests at https://github.com/spikegpu/SpikeLibrary/issues.
+Submit bug reports and feature requests at https://github.com/spikegpu/SaPLibrary/issues.
 
 Feel free to fork the github repository and submit pull requests.
 
 License
 -------
-The code is available from https://github.com/spikegpu/SpikeLibrary under a BSD-3 license. See the file LICENSE.
+The code is available from https://github.com/spikegpu/SaPLibrary under a BSD-3 license. See the file LICENSE.
 
 
