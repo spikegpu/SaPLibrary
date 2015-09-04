@@ -212,6 +212,14 @@ private:
     PrecVector           m_buffer;
     PrecVector           m_buffer2;
 
+    std::vector<PrecVector>   m_all_Bs;               // For multi-GPU only
+    std::vector<IntVector>    m_all_BOffsets;         // For multi-GPU only
+    std::vector<IntVector>    m_all_ks;               // For multi-GPU only
+    std::vector<IntVectorH>   m_all_BOffsets_host;    // For multi-GPU only
+    std::vector<IntVectorH>   m_all_ks_host;          // For multi-GPU only
+    IntVectorH           m_all_num_rows;              // For multi-GPU only
+    IntVectorH           m_all_num_partitions;        // For multi-GPU only
+
     PrecVector           m_B;                     // banded matrix (LU factors)
     PrecVector           m_B2;                    // banded matrix (LU factors)
     PrecVectorH          m_Bh;                    // FIXME: currently for hacking purpose only, to be removed
@@ -1331,24 +1339,133 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
         if (m_ilu_level >= 0)
             graph.get_csr_matrix(m_Acsrh, m_numPartitions);
         else {
-            PrecMatrixCoo Acoo = Acooh;
-            m_B.resize(m_BOffsets_host[m_numPartitions], 0);
-            int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
-            kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
-            dim3 grids(gridX, gridY);
+            if (m_gpuCount == 1) {
+                PrecMatrixCoo Acoo = Acooh;
+                m_B.resize(m_BOffsets_host[m_numPartitions], 0);
+                int blockX = Acoo.num_entries, gridX = 1, gridY = 1;
+                kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
+                dim3 grids(gridX, gridY);
 
-            int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
-            int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
-            PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
-            PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
+                int*           d_rows = thrust::raw_pointer_cast(&(Acoo.row_indices[0]));
+                int*           d_cols = thrust::raw_pointer_cast(&(Acoo.column_indices[0]));
+                PrecValueType* d_vals = thrust::raw_pointer_cast(&(Acoo.values[0]));
+                PrecValueType* dB     = thrust::raw_pointer_cast(&m_B[0]);
 
-            m_ks = m_ks_host;
-            m_BOffsets = m_BOffsets_host;
+                m_ks = m_ks_host;
+                m_BOffsets = m_BOffsets_host;
 
-            int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
-            int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
+                int*           d_ks   = thrust::raw_pointer_cast(&m_ks[0]);
+                int*       d_offsets  = thrust::raw_pointer_cast(&m_BOffsets[0]);
 
-            device::var::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
+                device::var::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(Acoo.num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_n / m_numPartitions, m_n % m_numPartitions, m_saveMem);
+            } else {
+                int cur_device = 0;
+                cudaGetDevice(&cur_device);
+                int rows_per_partition = m_n / m_numPartitions;
+                int rows_remainder = m_n % m_numPartitions;
+                int partitions_per_device = m_numPartitions / m_gpuCount;
+                int part_remainder = m_numPartitions % m_gpuCount;
+                int coo_idx_begin = 0;
+
+                int partBegin = 0, partEnd;
+                int rowBegin = 0;
+
+                m_all_Bs.resize(m_gpuCount);
+                m_all_BOffsets.resize(m_gpuCount);
+                m_all_ks.resize(m_gpuCount);
+                m_all_BOffsets_host.resize(m_gpuCount);
+                m_all_ks_host.resize(m_gpuCount);
+                m_all_num_rows.resize(m_gpuCount);
+                m_all_num_partitions.resize(m_gpuCount);
+
+                std::vector<PrecMatrixCooH> my_Acoohs(m_gpuCount);
+                std::vector<PrecMatrixCoo>  my_Acoos(m_gpuCount);
+
+                for (int i = 0; i < m_gpuCount; i++) {
+                    cudaSetDevice(i);
+
+                    if (i < part_remainder) {
+                        partEnd = partBegin + (partitions_per_device + 1);
+                    } else {
+                        partEnd = partBegin + partitions_per_device;
+                    }
+
+                    int r_begin = rowBegin;
+                    int rowEnd;
+                    int b_offset_begin = m_BOffsets_host[partBegin];
+                    int coo_idx_end;
+                    size_t nnz = Acooh.row_indices.size();
+
+                    m_all_ks_host[i].resize(partEnd - partBegin);
+                    m_all_BOffsets_host[i].resize(partEnd - partBegin + 1);
+
+                    for (int j = partBegin; j < partEnd; j++) {
+                        if (j < rows_remainder) {
+                            rowEnd = r_begin + (rows_per_partition + 1);
+                        } else {
+                            rowEnd = r_begin + rows_per_partition;
+                        }
+                        m_all_ks_host[i][j - partBegin] = m_ks_host[j];
+                        m_all_BOffsets_host[i][j - partBegin] = m_BOffsets_host[j] - b_offset_begin;
+                        r_begin = rowEnd;
+                    }
+                    m_all_BOffsets_host[i][partEnd - partBegin] = m_BOffsets_host[partEnd] - b_offset_begin;
+
+                    m_all_Bs[i].resize(m_BOffsets_host[partEnd] - b_offset_begin);
+
+                    m_all_ks[i] = m_all_ks_host[i];
+                    m_all_BOffsets[i] = m_all_BOffsets_host[i];
+                    m_all_num_rows[i] = rowEnd - rowBegin;
+                    m_all_num_partitions[i] = partEnd - partBegin;
+
+                    for (coo_idx_end = coo_idx_begin; coo_idx_end < nnz; coo_idx_end++) {
+                        if (Acooh.row_indices[coo_idx_end] >= rowEnd) {
+                            break;
+                        }
+                    }
+
+                    my_Acoohs[i].resize(
+                        rowEnd - rowBegin,
+                        rowEnd - rowBegin,
+                        coo_idx_end - coo_idx_begin
+                    );
+
+                    for (int j = coo_idx_begin; j < coo_idx_end; j++) {
+                        my_Acoohs[i].row_indices[j - coo_idx_begin] = Acooh.row_indices[j] - rowBegin;
+                        my_Acoohs[i].column_indices[j - coo_idx_begin] = Acooh.column_indices[j] - rowBegin;
+                        my_Acoohs[i].values[j - coo_idx_begin] = Acooh.values[j];
+                    }
+                    my_Acoos[i] = my_Acoohs[i];
+
+                    coo_idx_begin = coo_idx_end;
+                    rowBegin  = rowEnd;
+                    partBegin = partEnd;
+                }
+
+                omp_set_num_threads(m_gpuCount);
+
+                int gpu_count = m_gpuCount;
+
+#pragma omp parallel for shared(gpu_count)
+                for (int i = 0; i < gpu_count; i++) {
+                    cudaSetDevice(i);
+                    int blockX = my_Acoos[i].num_entries, gridX = 1, gridY = 1;
+                    kernelConfigAdjust(blockX, gridX, gridY, BLOCK_SIZE, MAX_GRID_DIMENSION);
+                    dim3 grids(gridX, gridY);
+
+                    int*           d_rows = thrust::raw_pointer_cast(&(my_Acoos[i].row_indices[0]));
+                    int*           d_cols = thrust::raw_pointer_cast(&(my_Acoos[i].column_indices[0]));
+                    PrecValueType* d_vals = thrust::raw_pointer_cast(&(my_Acoos[i].values[0]));
+                    PrecValueType* dB     = thrust::raw_pointer_cast(&m_all_Bs[i][0]);
+
+                    int*           d_ks   = thrust::raw_pointer_cast(&m_all_ks[i][0]);
+                    int*       d_offsets  = thrust::raw_pointer_cast(&m_all_BOffsets[i][0]);
+
+                    device::var::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(my_Acoos[i].num_entries, d_ks, d_rows, d_cols, d_vals, dB, d_offsets, m_all_num_rows[i] / m_all_num_partitions[i], m_all_num_rows[i] % m_all_num_partitions[i], m_saveMem);
+                }
+
+                cudaSetDevice(cur_device);
+            }
         }
 
         m_timer.Stop();
