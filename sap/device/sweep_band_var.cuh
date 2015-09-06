@@ -1301,7 +1301,7 @@ bckElim_offDiag_large_tiled(T *dA, T *dB, int idx, int k, int g_k, int r, int fi
 
 template <typename T>
 __global__ void
-fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows, bool isSPD)
+fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows, bool isSPD, int right_count, int left_count, int left_offset)
 {
 	__shared__ T a_elements[1024];
 	////__shared__ T a_elements[2];
@@ -1309,7 +1309,7 @@ fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 	int k, offset, first_row, last_row, idx, bidy = blockIdx.y;
 	int column_width;
 
-	if (bidy < gridDim.y / 2) {
+	if (bidy < right_count) {
 		k = ks[bidy];
 		column_width = k + 1;
 		if (!isSPD)
@@ -1332,7 +1332,7 @@ fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
         }
 		fwdElim_offDiag_large_tiled(dA, dB, idx, k, g_k, right_spike_widths[bidy], first_row, last_row, offset, a_elements, column_width);
 	} else {
-		bidy -= gridDim.y/2 - 1;
+		bidy -= right_count - left_offset;
 		k = ks[bidy];
 		column_width = k + 1;
 		if (!isSPD) 
@@ -1341,8 +1341,8 @@ fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 		offset = offsets[bidy] + (isSPD ? 0 : k);
 		first_row = bidy*partition_size;
 		idx = threadIdx.x + blockDim.x * blockIdx.x;
-		if (idx >= left_spike_widths[bidy-1]) return;
-		idx += g_k - left_spike_widths[bidy-1];
+		if (idx >= left_spike_widths[bidy-left_offset]) return;
+		idx += g_k - left_spike_widths[bidy-left_offset];
 		if (bidy < rest_num) {
 			first_row += bidy;
 			last_row = first_row + partition_size + 1;
@@ -1350,13 +1350,13 @@ fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 			first_row += rest_num;
 			last_row = first_row + partition_size;
 		}
-		fwdElim_offDiag_large_tiled(dA, dB, idx, k, g_k, left_spike_widths[bidy-1], first_row, last_row, offset, a_elements, column_width);
+		fwdElim_offDiag_large_tiled(dA, dB, idx, k, g_k, left_spike_widths[bidy-left_offset], first_row, last_row, offset, a_elements, column_width);
 	}
 }
 
 template <typename T>
 __global__ void
-bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows, bool isSPD)
+bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *dB, int partition_size, int rest_num, int *left_spike_widths, int *right_spike_widths, int *first_rows, bool isSPD, int right_count, int left_count, int left_offset)
 {
 	__shared__ T a_elements[1024];
 	//// __shared__ T a_elements[2];
@@ -1364,7 +1364,7 @@ bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 	int k, offset, first_row, last_row, idx, bidy = blockIdx.y;
 	int column_width, factor;
 
-	if (bidy < gridDim.y / 2) {
+	if (bidy < right_count) {
 		k = ks[bidy];
 		column_width = k + 1;
 		factor = k;
@@ -1390,7 +1390,7 @@ bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
         }
 		bckElim_offDiag_large_tiled(dA, dB, idx, k, g_k, right_spike_widths[bidy], first_row, last_row, offset, a_elements, column_width, factor);
 	} else {
-		bidy -= gridDim.y/2 - 1;
+		bidy -= right_count - left_offset;
 		k = ks[bidy];
 		column_width = k + 1;
 		factor = k;
@@ -1402,8 +1402,8 @@ bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 		offset = offsets[bidy] + (isSPD ? 0 : k);
 		first_row = bidy*partition_size;
 		idx = threadIdx.x + blockDim.x * blockIdx.x;
-		if (idx >= left_spike_widths[bidy-1]) return;
-		idx += g_k - left_spike_widths[bidy-1];
+		if (idx >= left_spike_widths[bidy-left_offset]) return;
+		idx += g_k - left_spike_widths[bidy-left_offset];
 		if (bidy < rest_num) {
 			first_row += bidy;
 			last_row = first_row + partition_size + 1;
@@ -1412,7 +1412,7 @@ bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 			last_row = first_row + partition_size;
 		}
 		offset += column_width * (last_row - 1 - first_row);
-		bckElim_offDiag_large_tiled(dA, dB, idx, k, g_k, left_spike_widths[bidy-1], first_row, last_row, offset, a_elements, column_width, factor);
+		bckElim_offDiag_large_tiled(dA, dB, idx, k, g_k, left_spike_widths[bidy-left_offset], first_row, last_row, offset, a_elements, column_width, factor);
 	}
 
 }

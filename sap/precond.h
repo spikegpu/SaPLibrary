@@ -226,8 +226,6 @@ private:
     std::vector<IntVectorH>   m_all_ks_col_host;      // For multi-GPU only
     IntVectorH           m_all_num_rows;              // For multi-GPU only
     IntVectorH           m_all_num_partitions;        // For multi-GPU only
-    IntVectorH           m_all_num_rows_sweep;        // For multi-GPU only
-    IntVectorH           m_all_num_partitions_sweep;  // For multi-GPU only
     std::vector<IntVectorH>   m_all_first_rows_host;  // For multi-GPU only
     std::vector<IntVector>    m_all_first_rows;       // For multi-GPU only
     std::vector<IntVectorH>   m_all_secondPerm_host;  // For multi-GPU only
@@ -374,7 +372,10 @@ private:
         IntVector&          offdiag_widths_right,
         IntVector&          first_rows,
         IntVectorH&         first_rows_host,
-        IntVectorH&         secondPerm
+        IntVectorH&         secondPerm,
+        int                 right_count,
+        int                 left_count,
+        int                 left_offset
     );
     void calculateSpikes_var_old(PrecVector& WV);
     void calculateSpikes(PrecVector& B2, PrecVector& WV);
@@ -1471,8 +1472,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
                 m_all_ks_host.resize(m_gpuCount);
                 m_all_num_rows.resize(m_gpuCount);
                 m_all_num_partitions.resize(m_gpuCount);
-                m_all_num_rows_sweep.resize(m_gpuCount);
-                m_all_num_partitions_sweep.resize(m_gpuCount);
                 m_all_ks_col_host.resize(m_gpuCount);
 
                 m_all_secondPerm_host.resize(m_gpuCount);
@@ -1498,8 +1497,8 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
                     int coo_idx_end;
                     size_t nnz = Acooh.row_indices.size();
 
-                    m_all_ks_host[i].resize(partEnd - partBegin + (i < m_gpuCount - 1));
-                    m_all_BOffsets_host[i].resize(partEnd - partBegin + 1 + (i < m_gpuCount - 1));
+                    m_all_ks_host[i].resize(partEnd - partBegin);
+                    m_all_BOffsets_host[i].resize(partEnd - partBegin + 1);
 
                     for (int j = partBegin; j < partEnd; j++) {
                         if (j < rows_remainder) {
@@ -1512,10 +1511,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
                         r_begin = rowEnd;
                     }
                     m_all_BOffsets_host[i][partEnd - partBegin] = m_BOffsets_host[partEnd] - b_offset_begin;
-                    if (i < m_gpuCount - 1) {
-                        m_all_ks_host[i][partEnd - partBegin] = m_ks_host[partEnd];
-                        m_all_BOffsets_host[i][partEnd - partBegin + 1] = m_BOffsets_host[partEnd + 1] - b_offset_begin;
-                    }
                     m_all_ks_col_host[i].resize(rowEnd - rowBegin);
                     m_all_secondPerm_host[i].resize(rowEnd - rowBegin);
 
@@ -1526,25 +1521,11 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 
                     thrust::copy(m_ks_col_host.begin() + rowBegin, m_ks_col_host.begin() + rowEnd, m_all_ks_col_host[i].begin());
 
-                    if (i == m_gpuCount - 1) {
-                        m_all_Bs[i].resize(m_BOffsets_host[partEnd] - b_offset_begin);
-                    } else {
-                        m_all_Bs[i].resize(m_BOffsets_host[partEnd + 1] - b_offset_begin);
-                    }
-
+                    m_all_Bs[i].resize(m_BOffsets_host[partEnd] - b_offset_begin);
                     m_all_ks[i] = m_all_ks_host[i];
                     m_all_BOffsets[i] = m_all_BOffsets_host[i];
                     m_all_num_rows[i] = rowEnd - rowBegin;
-                    m_all_num_rows_sweep[i] = rowEnd - rowBegin;
-                    if (i < m_gpuCount - 1) {
-                        if (partEnd < rows_remainder) {
-                            m_all_num_rows_sweep[i] += rows_per_partition + 1;
-                        } else {
-                            m_all_num_rows_sweep[i] += rows_per_partition;
-                        }
-                    }
                     m_all_num_partitions[i] = partEnd - partBegin;
-                    m_all_num_partitions_sweep[i] = partEnd - partBegin + (i < m_gpuCount - 1);
 
                     m_all_first_rows_host[i].resize(m_all_num_partitions[i] - (i == m_gpuCount - 1));
 
@@ -1674,19 +1655,19 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
             saveCurDevice();
             for (int i = 0; i < m_gpuCount; i++) {
                 cudaSetDevice(i);
-                if (i != m_gpuCount - 1) {
-                    m_all_offDiagWidths_left[i].resize(m_all_num_partitions[i]);
-                    m_all_offDiagWidths_right[i].resize(m_all_num_partitions[i]);
-                    thrust::copy(m_offDiagWidths_left_host.begin() + cur_idx, m_offDiagWidths_left_host.begin() + (cur_idx + m_all_num_partitions[i]), m_all_offDiagWidths_left[i].begin());
-                    thrust::copy(m_offDiagWidths_right_host.begin() + cur_idx, m_offDiagWidths_right_host.begin() + (cur_idx + m_all_num_partitions[i]), m_all_offDiagWidths_right[i].begin());
-                    cur_idx += m_all_num_partitions[i];
-                } else {
-                    m_all_offDiagWidths_left[i].resize(m_all_num_partitions[i] - 1);
-                    m_all_offDiagWidths_right[i].resize(m_all_num_partitions[i] - 1);
-                    thrust::copy(m_offDiagWidths_left_host.begin() + cur_idx, m_offDiagWidths_left_host.begin() + (cur_idx + m_all_num_partitions[i] - 1), m_all_offDiagWidths_left[i].begin());
-                    thrust::copy(m_offDiagWidths_right_host.begin() + cur_idx, m_offDiagWidths_right_host.begin() + (cur_idx + m_all_num_partitions[i] - 1), m_all_offDiagWidths_right[i].begin());
-                    cur_idx += m_all_num_partitions[i] - 1;
-                }
+
+                m_all_offDiagWidths_right[i].resize(m_all_num_partitions[i] - (i == m_gpuCount - 1));
+                thrust::copy(m_offDiagWidths_right_host.begin() + cur_idx, m_offDiagWidths_right_host.begin() + (cur_idx + m_all_offDiagWidths_right[i].size()), m_all_offDiagWidths_right[i].begin());
+                cur_idx += m_all_num_partitions[i] - (i == m_gpuCount - 1);
+            }
+
+            cur_idx = 0;
+            for (int i = 0; i < m_gpuCount; i++) {
+                cudaSetDevice(i);
+
+                m_all_offDiagWidths_left[i].resize(m_all_num_partitions[i] - (i == 0));
+                thrust::copy(m_offDiagWidths_left_host.begin() + cur_idx, m_offDiagWidths_left_host.begin() + (cur_idx + m_all_offDiagWidths_left[i].size()), m_all_offDiagWidths_left[i].begin());
+                cur_idx += m_all_num_partitions[i] - (i == 0);
             }
             recoverCurDevice();
         }
@@ -5331,7 +5312,10 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
                 m_offDiagWidths_right,
                 m_first_rows,
                 m_first_rows_host,
-                m_secondPerm_host
+                m_secondPerm_host,
+                numPart_eff - 1,
+                numPart_eff - 1,
+                1
             );
         } else {
             saveCurDevice();
@@ -5340,16 +5324,10 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
 
             std::vector<PrecVector> myWVs(m_gpuCount);
 
-            // Copy B's
-            for (int i = 0; i < m_gpuCount - 1; i++) {
-                cudaSetDevice(i);
-                thrust::copy(m_all_Bs[i+1].begin(), m_all_Bs[i+1].begin() + m_all_BOffsets_host[i+1][1], m_all_Bs[i].begin() + m_all_BOffsets_host[i][m_all_BOffsets_host[i].size() - 2]);
-            }
-
             int cur_idx = 0;
             for (int i = 0; i < m_gpuCount; i++) {
                 cudaSetDevice(i);
-                myWVs[i].resize((size_t)(leftOffDiagWidth + rightOffDiagWidth) * m_all_num_rows_sweep[i], PrecValueType(0));
+                myWVs[i].resize((size_t)(leftOffDiagWidth + rightOffDiagWidth) * m_all_num_rows[i], PrecValueType(0));
                 thrust::copy(buffer.begin() + (size_t)(leftOffDiagWidth + rightOffDiagWidth) * cur_idx, buffer.begin() + (size_t)(leftOffDiagWidth + rightOffDiagWidth) * cur_idx + myWVs[i].size(), myWVs[i].begin());
 
                 cur_idx += m_all_num_rows[i];
@@ -5361,8 +5339,8 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
                 spikeSweeps (
                     leftOffDiagWidth,
                     rightOffDiagWidth,
-                    m_all_num_rows_sweep[i],
-                    m_all_num_partitions_sweep[i],
+                    m_all_num_rows[i],
+                    m_all_num_partitions[i],
                     m_all_Bs[i],
                     myWVs[i],
                     m_all_ks[i],
@@ -5371,7 +5349,10 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
                     m_all_offDiagWidths_right[i],
                     m_all_first_rows[i],
                     m_all_first_rows_host[i],
-                    m_all_secondPerm_host[i]
+                    m_all_secondPerm_host[i],
+                    m_all_num_partitions[i] - (i == m_gpuCount - 1),
+                    m_all_num_partitions[i] - (i == 0),
+                    i == 0
                 );
             }
 
@@ -5384,29 +5365,6 @@ Precond<PrecVector>::calculateSpikes_var(PrecVector&  WV)
             }
 
             recoverCurDevice();
-            cur_idx = 0;
-            for (int i = 0; i < m_gpuCount - 1; i++) {
-                PrecVector my_buffer((size_t)(leftOffDiagWidth + rightOffDiagWidth) * (m_all_num_rows_sweep[i] - m_all_num_rows[i]));
-                thrust::copy(myWVs[i].end() - ((size_t)(leftOffDiagWidth + rightOffDiagWidth) * (m_all_num_rows_sweep[i] - m_all_num_rows[i])), myWVs[i].end(), my_buffer.begin());
-
-                PrecValueType *tmp_pB = thrust::raw_pointer_cast(&my_buffer[0]);
-                PrecValueType *tmp_pA = thrust::raw_pointer_cast(&buffer[(size_t)(leftOffDiagWidth + rightOffDiagWidth) * (cur_idx + m_all_num_rows[i])]);
-
-                int tmp_gridY = m_all_num_rows_sweep[i] - m_all_num_rows[i];
-                int tmp_gridX = 1;
-                int tmp_blockX = leftOffDiagWidth + rightOffDiagWidth;
-                kernelConfigAdjust(tmp_blockX, tmp_gridX, BLOCK_SIZE);
-                dim3 tmp_grids(tmp_gridX, tmp_gridY);
-
-                sap::device::copySeveralColumns<<<tmp_grids, tmp_blockX>>>(
-                    tmp_pA,
-                    tmp_pB,
-                    leftOffDiagWidth + rightOffDiagWidth,
-                    leftOffDiagWidth
-                );
-
-                cur_idx += m_all_num_rows[i];
-            }
             extWV.resize((size_t)(leftOffDiagWidth + rightOffDiagWidth) * n_eff, (PrecValueType) 0);
         }
 
@@ -5442,7 +5400,10 @@ Precond<PrecVector>::spikeSweeps (
     IntVector&          offdiag_widths_right,
     IntVector&          first_rows,
     IntVectorH&         first_rows_host,
-    IntVectorH&         secondPerm
+    IntVectorH&         secondPerm,
+    int                 right_count,
+    int                 left_count,
+    int                 left_offset
 ) {
     const int SWEEP_MAX_NUM_THREADS = 128;
     int *p_offsets = thrust::raw_pointer_cast(&b_offsets[0]);
@@ -5459,10 +5420,11 @@ Precond<PrecVector>::spikeSweeps (
 
     int sweepBlockX = leftOffDiagWidth;
     int sweepGridX = 1;
-    if (sweepBlockX < rightOffDiagWidth)
+    if (sweepBlockX < rightOffDiagWidth) {
         sweepBlockX = rightOffDiagWidth;
+    }
     kernelConfigAdjust(sweepBlockX, sweepGridX, SWEEP_MAX_NUM_THREADS);
-    dim3 sweepGrids(sweepGridX, 2*numPart-2);
+    dim3 sweepGrids(sweepGridX, right_count + left_count);
 
     PrecMatrixCsr Acsr;
     int *row_offsets;   
@@ -5476,8 +5438,9 @@ Precond<PrecVector>::spikeSweeps (
         values         = thrust::raw_pointer_cast(&(Acsr.values[0]));
     }
 
-    if (m_ilu_level < 0)
-        device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+    if (m_ilu_level < 0) {
+        device::var::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem, right_count, left_count, left_offset);
+    }
     else
         device::sparse::fwdElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n, numPart, leftOffDiagWidth + rightOffDiagWidth, row_offsets, column_indices, values, p_buffer, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
 
@@ -5512,7 +5475,7 @@ Precond<PrecVector>::spikeSweeps (
     }
 
     if (m_ilu_level < 0) {
-        device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem);
+        device::var::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n, p_ks, leftOffDiagWidth + rightOffDiagWidth, rightOffDiagWidth, p_offsets, p_B, p_buffer, partSize, remainder, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows, m_saveMem, right_count, left_count, left_offset);
     }
     else {
         device::sparse::bckElim_spike<PrecValueType><<<sweepGrids, sweepBlockX>>>(n, numPart, leftOffDiagWidth + rightOffDiagWidth, row_offsets, column_indices, values, p_buffer, p_offDiagWidths_left, p_offDiagWidths_right, p_first_rows);
