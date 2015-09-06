@@ -1326,8 +1326,10 @@ fwdElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 			first_row += rest_num;
 			last_row = first_row + partition_size;
 		}
-		offset += column_width * (first_rows[bidy] - first_row);
-		first_row = first_rows[bidy];
+        if (first_rows != NULL) {
+            offset += column_width * (first_rows[bidy] - first_row);
+            first_row = first_rows[bidy];
+        }
 		fwdElim_offDiag_large_tiled(dA, dB, idx, k, g_k, right_spike_widths[bidy], first_row, last_row, offset, a_elements, column_width);
 	} else {
 		bidy -= gridDim.y/2 - 1;
@@ -1383,7 +1385,9 @@ bckElim_spike(int N, int *ks, int g_k, int rightWidth, int *offsets, T *dA, T *d
 			last_row = first_row + partition_size;
 		}
 		offset += column_width * (last_row - 1 - first_row);
-		first_row = first_rows[bidy];
+        if (first_rows != NULL) {
+            first_row = first_rows[bidy];
+        }
 		bckElim_offDiag_large_tiled(dA, dB, idx, k, g_k, right_spike_widths[bidy], first_row, last_row, offset, a_elements, column_width, factor);
 	} else {
 		bidy -= gridDim.y/2 - 1;

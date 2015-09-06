@@ -888,11 +888,6 @@ GetProblemSpecs(int             argc,
     if (opts.variableBandwidth)
         opts.factMethod = sap::LU_only;
 
-    // If the preconditioner is not SaP-D, disable multi-GPU option.
-    if (opts.precondType != sap::Block) {
-        opts.gpuCount = 1;
-    }
-
     return true;
 }
 
