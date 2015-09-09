@@ -1,18 +1,24 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 #include <cusp/array1d.h>
+#include <sap/common.h>
+#include <sap/graph.h>
 
-typedef typename cusp::array1d<int, cusp::host_memory>    IntVectorH;
+using ::testing::Return;
 
-bool isEven(int n) {
-    return (n & 1) == 0;
-}
+template <typename T>
+class MockGraph: public sap::Graph<T> {
+public:
+    MOCK_CONST_METHOD0_T(
+        getTimeDB,
+        double());
+};
 
-TEST(IsEvenTest, BlahBlah) {
-    IntVectorH test_v(10, 4);
-    EXPECT_TRUE(isEven(2));
-    EXPECT_FALSE(isEven(3));
+TEST(GraphTest, TestReturn) {
+    MockGraph<double> graph;
 
-    for (int i = 0; i < test_v.size(); i++) {
-        EXPECT_TRUE(isEven(test_v[i]));
-    }
+    ON_CALL(graph, getTimeDB())
+        .WillByDefault(Return(1.0));
+
+    EXPECT_DOUBLE_EQ(1.0, graph.getTimeDB());
 }
