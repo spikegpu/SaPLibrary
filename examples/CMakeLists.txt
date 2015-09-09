@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 2.8)
 project(sap_examples)
 
 # Include macros from the SBEL utils library
-include(SBELUtils.cmake)
+include(cmake/SBELUtils.cmake)
 
 ##########################################################
 # If using Makefiles, be sure to set CMAKE_BUILD_TYPE to # 
@@ -78,4 +78,5 @@ ADD_SUBDIRECTORY(test_db)
 ADD_SUBDIRECTORY(synthetic_banded)
 ADD_SUBDIRECTORY(multi_gpu)
 ADD_SUBDIRECTORY(dual_gpu_update)
+ADD_SUBDIRECTORY(unit_test)
 #ADD_SUBDIRECTORY(synthetic_sparse)
