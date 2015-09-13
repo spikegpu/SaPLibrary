@@ -191,9 +191,6 @@ int main(int argc, char** argv)
     if (!GetProblemSpecs(argc, argv, fileMat, fileRhs, fileSol, numPart, opts))
         return 1;
 
-    // Get the device with most available memory.
-    sapSetDevice();
-
     // Get matrix and rhs.
     Matrix A;
     Vector b;
@@ -764,8 +761,15 @@ GetProblemSpecs(int             argc,
                 opts.maxBandwidth = atoi(args.OptionArg());
                 break;
             case OPT_GPU_COUNT:
+            {
                 opts.gpuCount = atoi(args.OptionArg());
+                int deviceCount = 0;
+                cudaGetDeviceCount(&deviceCount);
+                if (opts.gpuCount > deviceCount) {
+                    opts.gpuCount = deviceCount;
+                }
                 break;
+            }
             case OPT_SPD:
                 opts.isSPD = true;
                 break;
