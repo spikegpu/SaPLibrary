@@ -54,6 +54,7 @@ SET(SAP_HEADERS
 	../../sap/spmv.h
 	../../sap/strided_range.h
 	../../sap/timer.h
+	../../sap/segmented_matrix.h
 )
 
 SET(SAP_CUHEADERS
@@ -61,6 +62,7 @@ SET(SAP_CUHEADERS
 	../../sap/device/factor_band_const.cuh
 	../../sap/device/factor_band_var.cuh
 	../../sap/device/inner_product.cuh
+	../../sap/device/matrix_multiply.cuh
 	../../sap/device/shuffle.cuh
 	../../sap/device/sweep_band_const.cuh
 	../../sap/device/sweep_band_var.cuh

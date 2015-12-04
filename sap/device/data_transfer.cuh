@@ -643,7 +643,84 @@ __global__ void copySeveralColumns(
     dA[gridY * a_num_columns + idx] = dB[gridY * a_num_columns + idx];
 }
 
+template <typename T>
+__global__ void copyBandedMatrixToSegMatrix(
+    T *         dst,
+    const T *   src,
+    int         global_n,
+    int         global_num_partitions,
+    const int * ks,
+    const int * src_offsets,
+    const int * dst_offsets_of_offsets,
+    const int * dst_offsets,
+    bool        upper
+) {
+    int k                = ks[blockIdx.y];
+    int offset           = src_offsets[blockIdx.y];
+    int part_size        = global_n / global_num_partitions;
+    int global_remainder = global_n % global_num_partitions;
 
+    int local_n          = part_size + (blockIdx.y < global_remainder ? 1 : 0);
+    int local_num_partitions = local_n / k;
+    int local_part_size      = local_n / local_num_partitions;
+    int local_remainder      = local_n % local_num_partitions;
+
+    if (upper) {
+        for (int i = blockIdx.x; i < local_num_partitions - 1; i += gridDim.x) {
+            int dst_offset       = dst_offsets[dst_offsets_of_offsets[blockIdx.y] + i];
+            int num_of_rows = local_part_size + (i + 1 < local_remainder ? 1 : 0);
+            // int num_of_rows = k;
+            int num_of_cols = local_part_size + (i < local_remainder ? 1 : 0);
+            // int num_of_cols = k + 1;
+            int num_elements = num_of_rows * num_of_cols;
+            int src_offset;
+            if (i + 1 < local_remainder) {
+                src_offset = offset + (2 * k + 1) * ((local_part_size + 1) * (i + 1));
+            } else {
+                src_offset = offset + (2 * k + 1) * (local_part_size * (i + 1) + local_remainder);
+            }
+
+            for (int j = threadIdx.x; j < num_elements; j += blockDim.x) {
+                int row_idx = j / num_of_cols;
+                int col_idx = j % num_of_cols;
+
+                // src_offset + k + num_of_rows + 2 * k * row_idx + col_idx
+                if (k - num_of_cols - row_idx + col_idx >= 0) {
+                    dst[dst_offset + col_idx * num_of_rows + row_idx] = src[src_offset + k - num_of_cols + 2 * k * row_idx + col_idx];
+                } else {
+                    dst[dst_offset + col_idx * num_of_rows + row_idx] = 0;
+                }
+            }
+        }
+    } else {
+        for (int i = blockIdx.x; i < local_num_partitions - 1; i += gridDim.x) {
+            int dst_offset       = dst_offsets[dst_offsets_of_offsets[blockIdx.y] + i];
+            int num_of_rows = local_part_size + (i < local_remainder ? 1 : 0);
+            // int num_of_rows = k;
+            int num_of_cols = local_part_size + (i + 1 < local_remainder ? 1 : 0);
+            // int num_of_cols = k + 1;
+            int num_elements = num_of_rows * num_of_cols;
+            int src_offset;
+            if (i < local_remainder) {
+                src_offset = offset + (2 * k + 1) * ((local_part_size + 1) * i);
+            } else {
+                src_offset = offset + (2 * k + 1) * (local_part_size * i + local_remainder);
+            }
+
+            for (int j = threadIdx.x; j < num_elements; j += blockDim.x) {
+                int row_idx = j / num_of_cols;
+                int col_idx = j % num_of_cols;
+
+                // src_offset + k + num_of_rows + 2 * k * row_idx + col_idx
+                if (num_of_rows - row_idx + col_idx <= k) {
+                    dst[dst_offset + col_idx * num_of_rows + row_idx] = src[src_offset + k + num_of_rows + 2 * k * row_idx + col_idx];
+                } else {
+                    dst[dst_offset + col_idx * num_of_rows + row_idx] = 0;
+                }
+            }
+        }
+    }
+}
 
 } //namespace device
 } //namespace sap

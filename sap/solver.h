@@ -75,6 +75,8 @@ struct Options
     bool                variableBandwidth;    /**< Allow variable partition bandwidths? default: true */
     bool                trackReordering;      /**< Keep track of the reordering information? default: false */
 
+    bool                useBCR;
+
     int                 ilu_level;            /**< Indicate the level of ILU, a minus value means complete LU is applied; default: -1*/
 };
 
@@ -217,6 +219,7 @@ Options::Options()
     safeFactorization(false),
     variableBandwidth(true),
     trackReordering(false),
+    useBCR(false),
     ilu_level(-1)
 {
 }
@@ -271,7 +274,7 @@ Solver<Array, PrecValueType>::Solver(int             numPartitions,
 :   m_monitor(opts.maxNumIterations, opts.relTol, opts.absTol),
     m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testDB, opts.performDB, opts.dbFirstStageOnly, opts.applyScaling,
               opts.dropOffFraction, opts.maxBandwidth, opts.gpuCount, opts.factMethod, opts.precondType, 
-              opts.safeFactorization, opts.variableBandwidth, opts.trackReordering, opts.ilu_level, opts.relTol),
+              opts.safeFactorization, opts.variableBandwidth, opts.trackReordering, opts.useBCR, opts.ilu_level, opts.relTol),
     m_solver(opts.solverType),
     m_trackReordering(opts.trackReordering),
     m_setupDone(false)

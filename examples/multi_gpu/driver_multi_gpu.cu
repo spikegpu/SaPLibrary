@@ -71,7 +71,9 @@ enum {OPT_HELP, OPT_PART,
       OPT_MATFILE, OPT_RHSFILE, 
       OPT_OUTFILE, OPT_FACTORIZATION, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT,
-      OPT_CONST_BAND, OPT_ILU_LEVEL,
+      OPT_CONST_BAND,
+      OPT_USE_BCR,
+      OPT_ILU_LEVEL,
       OPT_GPU_COUNT,
 };
 
@@ -119,6 +121,7 @@ CSimpleOptA::SOption g_options[] = {
     { OPT_KRYLOV,        "--krylov-method",        SO_REQ_CMB },
     { OPT_SAFE_FACT,     "--safe-fact",            SO_NONE    },
     { OPT_CONST_BAND,    "--const-band",           SO_NONE    },
+    { OPT_USE_BCR,       "--use-bcr",              SO_NONE    },
     { OPT_ILU_LEVEL,     "--ilu-level",            SO_REQ_CMB },
     { OPT_HELP,          "-?",                     SO_NONE    },
     { OPT_HELP,          "-h",                     SO_NONE    },
@@ -849,6 +852,9 @@ GetProblemSpecs(int             argc,
                 break;
             case OPT_CONST_BAND:
                 opts.variableBandwidth = false;
+                break;
+            case OPT_USE_BCR:
+                opts.useBCR = true;
                 break;
             case OPT_ILU_LEVEL:
                 opts.ilu_level = atoi(args.OptionArg());
