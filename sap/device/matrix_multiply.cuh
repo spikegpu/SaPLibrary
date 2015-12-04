@@ -18,8 +18,8 @@ negativeMatrixMulAux(
     int       A_rows,
     int       A_cols,
     int       B_cols,
-    T*        A_shared,
-    T*        B_shared
+    T         A_shared[][MATRIX_MUL_BLOCK_SIZE],
+    T         B_shared[][MATRIX_MUL_BLOCK_SIZE]
 ) {
     int num_block_rows = (A_rows + MATRIX_MUL_BLOCK_SIZE - 1) / MATRIX_MUL_BLOCK_SIZE;
     int num_block_cols = (B_cols + MATRIX_MUL_BLOCK_SIZE - 1) / MATRIX_MUL_BLOCK_SIZE;
@@ -36,21 +36,21 @@ negativeMatrixMulAux(
 
         for (int i = 0; i < num_A_block_cols; i++) {
             if (block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y >= A_rows || i * MATRIX_MUL_BLOCK_SIZE + threadIdx.x >= A_cols) {
-                A_shared[threadIdx.y * blockDim.x + threadIdx.x] = T(0);
+                A_shared[threadIdx.y][threadIdx.x] = T(0);
             } else {
-                A_shared[threadIdx.y * blockDim.x + threadIdx.x] = dA[(block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * A_cols + (i * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)];
+                A_shared[threadIdx.y][threadIdx.x] = dA[(block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * A_cols + (i * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)];
             }
 
             if (i * MATRIX_MUL_BLOCK_SIZE + threadIdx.y >= A_cols || block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x >= B_cols) {
-                B_shared[threadIdx.y * blockDim.x + threadIdx.x] = T(0);
+                B_shared[threadIdx.y][threadIdx.x] = T(0);
             } else {
-                B_shared[threadIdx.y * blockDim.x + threadIdx.x] = dB[(i * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * B_cols + (block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)];
+                B_shared[threadIdx.y][threadIdx.x] = dB[(i * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * B_cols + (block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)];
             }
 
             __syncthreads();
 
             for (int j = 0; j < MATRIX_MUL_BLOCK_SIZE; j++) {
-                sum -= A_shared[threadIdx.y * blockDim.x + j] * B_shared[j * blockDim.x + threadIdx.x];
+                sum -= A_shared[threadIdx.y][j] * B_shared[j][threadIdx.x];
             }
 
             __syncthreads();
@@ -76,8 +76,8 @@ negativeMatrixMul(
     const int*     dst_offsets,
     bool           upper
 ) {
-    __shared__ T A_shared[MATRIX_MUL_BLOCK_SIZE * MATRIX_MUL_BLOCK_SIZE];
-    __shared__ T B_shared[MATRIX_MUL_BLOCK_SIZE * MATRIX_MUL_BLOCK_SIZE];
+    __shared__ T A_shared[MATRIX_MUL_BLOCK_SIZE][MATRIX_MUL_BLOCK_SIZE];
+    __shared__ T B_shared[MATRIX_MUL_BLOCK_SIZE][MATRIX_MUL_BLOCK_SIZE];
 
     int n = src_ns_scan[blockIdx.z + 1] - src_ns_scan[blockIdx.z];
     int k = src_ks[blockIdx.z];
