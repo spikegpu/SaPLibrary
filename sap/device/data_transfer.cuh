@@ -662,6 +662,11 @@ __global__ void copyBandedMatrixToSegMatrix(
 
     int local_n          = part_size + (blockIdx.y < global_remainder ? 1 : 0);
     int local_num_partitions = local_n / k;
+
+    if (local_num_partitions == 0) {
+        return;
+    }
+
     int local_part_size      = local_n / local_num_partitions;
     int local_remainder      = local_n % local_num_partitions;
 

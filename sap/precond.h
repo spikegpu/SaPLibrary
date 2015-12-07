@@ -1056,6 +1056,53 @@ Precond<PrecVector>::setup(const Matrix&  A)
     // m_Bh = m_B;
     m_actual_nnz = (2 * m_k + 1) * m_n - thrust::count(m_B.begin(), m_B.end(), 0.0);
 
+    if (m_use_bcr) {
+        if (m_isSPD) {
+            fprintf(stderr, "BCR currently does not support SPD matrix\n");
+            exit(-1);
+        }
+
+        if (m_ks_host.size() == 0) {
+            m_ks_host.resize(m_numPartitions);
+            for (int i = 0; i < m_numPartitions; i++)
+                m_ks_host[i] = m_k;
+            m_ks = m_ks_host;
+
+            m_BOffsets_host.resize(m_numPartitions + 1);
+
+            m_BOffsets_host[0] = 0;
+
+            int part_size = m_n / m_numPartitions;
+            int remainder = m_n % m_numPartitions;
+
+            for (int i = 1; i <= m_numPartitions; i++) {
+                m_BOffsets_host[i] = m_BOffsets_host[i-1] +
+                    (2 * m_k + 1) * (part_size + (i - 1 < remainder ? (i * (part_size + 1)) : (i * part_size + remainder)));
+            }
+            m_BOffsets = m_BOffsets_host;
+        }
+
+        m_lower_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+        m_upper_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+        m_lower_matrices[0].init(m_n, m_numPartitions, m_ks_host, false);
+        m_upper_matrices[0].init(m_n, m_numPartitions, m_ks_host, true);
+        m_lower_matrices[0].copy(m_B, m_BOffsets);
+        m_upper_matrices[0].copy(m_B, m_BOffsets);
+
+        for (int idx = 0; ; idx++)  {
+            m_lower_matrices[idx].sweepStride(m_B, m_k);
+            m_upper_matrices[idx].sweepStride(m_B, m_k);
+
+            m_lower_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+            m_upper_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+            bool has_next_step = m_lower_matrices[idx].multiply_stride(m_lower_matrices[idx+1]);
+            has_next_step &= m_upper_matrices[idx].multiply_stride(m_upper_matrices[idx+1]);
+            if (! has_next_step) {
+                break;
+            }
+        }
+    }
+
     ////cusp::io::write_matrix_market_file(m_B, "B_factorized.mtx");
     ////cusp::io::write_matrix_market_file(mat_WV, "WV.mtx");
     ////cusp::io::write_matrix_market_file(m_R, "R.mtx");
@@ -4285,6 +4332,11 @@ template <typename PrecVector>
 void 
 Precond<PrecVector>::partBandedFwdSweep(PrecVector&  v)
 {
+    if (m_use_bcr) {
+        updateRHS(v, false);
+        return;
+    }
+
     if (!m_variableBandwidth)
         partBandedFwdSweep_const(v);
     else {
@@ -4341,11 +4393,6 @@ template <typename PrecVector>
 void 
 Precond<PrecVector>::partBandedFwdSweep_const(PrecVector&  v)
 {
-    if (m_use_bcr) {
-        updateRHS(v, false);
-        return;
-    }
-
     PrecValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
     PrecValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
@@ -4578,6 +4625,11 @@ Precond<PrecVector>::partBandedBckSweep_var(
     kernelConfigAdjust(blockX, gridX, BLOCK_SIZE);
     dim3 grids(gridX, num_partitions);
     device::var::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(n, p_ks, p_BOffsets, p_B, p_v, partSize, remainder, m_saveMem);
+
+    if (m_use_bcr) {
+        updateRHS(v, true);
+        return;
+    }
 
     if (m_saveMem) {
         if (tmp_k > 1024)
@@ -5850,26 +5902,25 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
     const PrecValueType* p_B       = thrust::raw_pointer_cast(&m_B[0]);
     PrecValueType*       p_rhs     = thrust::raw_pointer_cast(&rhs[0]);
     const int*           p_ks      = thrust::raw_pointer_cast(&m_ks[0]);
-    const int*           p_offsets = thrust::raw_pointer_cast(&m_BOffsets[0]);
+    const int*           p_src_offsets = thrust::raw_pointer_cast(&m_BOffsets[0]);
 
     for (int level = 0; level < depth; level++) {
         int stride = 1 << (level + 1);
 
         const int *    p_ns_scan;
-        const int *    p_ks;
         const int *    p_offsets_of_offsets;
         const int *    p_offsets;
         const PrecValueType * p_mat;
 
         if (upper) {
             p_ns_scan    = thrust::raw_pointer_cast(&m_upper_matrices[level].m_ns_scan[0]);
-            p_ks         = thrust::raw_pointer_cast(&m_upper_matrices[level].m_ks_per_partition[0]);
+            //// p_ks         = thrust::raw_pointer_cast(&m_upper_matrices[level].m_ks_per_partition[0]);
             p_offsets_of_offsets = thrust::raw_pointer_cast(&m_upper_matrices[level].m_A_offsets_of_offsets[0]);
             p_offsets    = thrust::raw_pointer_cast(&m_upper_matrices[level].m_A_offsets[0]);
             p_mat = thrust::raw_pointer_cast(&m_upper_matrices[level].m_A[0]);
         } else {
             p_ns_scan    = thrust::raw_pointer_cast(&m_lower_matrices[level].m_ns_scan[0]);
-            p_ks         = thrust::raw_pointer_cast(&m_lower_matrices[level].m_ks_per_partition[0]);
+            ///// p_ks         = thrust::raw_pointer_cast(&m_lower_matrices[level].m_ks_per_partition[0]);
             p_offsets_of_offsets = thrust::raw_pointer_cast(&m_lower_matrices[level].m_A_offsets_of_offsets[0]);
             p_offsets    = thrust::raw_pointer_cast(&m_lower_matrices[level].m_A_offsets[0]);
             p_mat = thrust::raw_pointer_cast(&m_lower_matrices[level].m_A[0]);
@@ -5885,7 +5936,7 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
                     m_n,
                     m_numPartitions,
                     p_ks,
-                    p_offsets,
+                    p_src_offsets,
                     stride
                 );
             } else {
@@ -5895,7 +5946,7 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
                     m_n,
                     m_numPartitions,
                     p_ks,
-                    p_offsets,
+                    p_src_offsets,
                     stride
                 );
             }

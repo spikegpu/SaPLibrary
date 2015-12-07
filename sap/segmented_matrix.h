@@ -100,6 +100,7 @@ SegmentedMatrix<Array, MemorySpace>::init(
     m_src_offsets_of_offsets_host.push_back(0);
 
     m_ns_scan_host.push_back(0);
+
     for (int i = 0; i < num_partitions; i++) {
         int local_n = global_partition_size + (i < global_remainder ? 1 : 0);
         int local_k = m_ks_per_partition_host[i];
@@ -107,22 +108,27 @@ SegmentedMatrix<Array, MemorySpace>::init(
         m_ns_scan_host.push_back(m_ns_scan_host.back() + local_n);
 
         int local_num_partitions = local_n / local_k;
-        int local_part_size = local_n / local_num_partitions;
-        int local_remainder = local_n % local_num_partitions;
-        IntVectorH tmp_ks(local_num_partitions - 1);
 
-        for (int j = 0; j < local_num_partitions - 1; j++) {
-            tmp_ks[j] = (local_part_size + (j + 1 < local_remainder ? 1 : 0)) * (local_part_size + (j < local_remainder ? 1 : 0));
-            m_src_offsets_host.push_back(m_src_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (2 * local_k + 1));
+        if (local_num_partitions > 1) {
+            int local_part_size = local_n / local_num_partitions;
+            int local_remainder = local_n % local_num_partitions;
+
+            IntVectorH tmp_ks(local_num_partitions - 1);
+
+            for (int j = 0; j < local_num_partitions - 1; j++) {
+                tmp_ks[j] = (local_part_size + (j + 1 < local_remainder ? 1 : 0)) * (local_part_size + (j < local_remainder ? 1 : 0));
+                m_src_offsets_host.push_back(m_src_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (2 * local_k + 1));
+            }
+            m_src_offsets_host.push_back(m_src_offsets_host.back() + local_part_size * (2 * local_k + 1));
+
+            tmp_ks[0] += m_A_offsets_host.back();
+            for (int j = 0; j < local_num_partitions - 2; j++) {
+                tmp_ks[j + 1] += tmp_ks[j];
+            }
+
+            m_A_offsets_host.insert(m_A_offsets_host.end(), tmp_ks.begin(), tmp_ks.end());
         }
-        m_src_offsets_host.push_back(m_src_offsets_host.back() + local_part_size * (2 * local_k + 1));
 
-        tmp_ks[0] += m_A_offsets_host.back();
-        for (int j = 0; j < local_num_partitions - 2; j++) {
-            tmp_ks[j + 1] += tmp_ks[j];
-        }
-
-        m_A_offsets_host.insert(m_A_offsets_host.end(), tmp_ks.begin(), tmp_ks.end());
         m_A_offsets_of_offsets_host.push_back(m_A_offsets_host.size() - 1);
         m_src_offsets_of_offsets_host.push_back(m_src_offsets_host.size() - 1);
     }
@@ -209,27 +215,31 @@ SegmentedMatrix<Array, MemorySpace>::multiply_stride(
         int local_k = m_ks_per_partition_host[i];
 
         int local_num_partitions = local_n / local_k;
-        int local_part_size = local_n / local_num_partitions;
-        int local_remainder = local_n % local_num_partitions;
 
-        for (int j = 1; j < local_num_partitions; j += 2) {
-            new_n += local_part_size + (j < local_remainder ? 1 : 0);
-            result_matrix.m_src_offsets_host.push_back(m_src_offsets_host[m_src_offsets_of_offsets_host[i] + j]);
+        if (local_num_partitions > 1) {
+            int local_part_size = local_n / local_num_partitions;
+            int local_remainder = local_n % local_num_partitions;
 
-            if (m_upper) {
-                if (j + 2 < local_num_partitions) {
-                    result_matrix.m_A_offsets_host.push_back(result_matrix.m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j + 2 < local_remainder ? 1 : 0)));
-                    non_trivial = true;
-                }
-            } else {
-                if (j > 1) {
-                    result_matrix.m_A_offsets_host.push_back(result_matrix.m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j - 2 < local_remainder ? 1 : 0)));
-                    non_trivial = true;
+            for (int j = 1; j < local_num_partitions; j += 2) {
+                new_n += local_part_size + (j < local_remainder ? 1 : 0);
+                result_matrix.m_src_offsets_host.push_back(m_src_offsets_host[m_src_offsets_of_offsets_host[i] + j]);
+
+                if (m_upper) {
+                    if (j + 2 < local_num_partitions) {
+                        result_matrix.m_A_offsets_host.push_back(result_matrix.m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j + 2 < local_remainder ? 1 : 0)));
+                        non_trivial = true;
+                    }
+                } else {
+                    if (j > 1) {
+                        result_matrix.m_A_offsets_host.push_back(result_matrix.m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j - 2 < local_remainder ? 1 : 0)));
+                        non_trivial = true;
+                    }
                 }
             }
         }
-        result_matrix.m_ns_scan_host.push_back(result_matrix.m_ns_scan_host.back() + new_n);
-        result_matrix.m_src_offsets_of_offsets_host.push_back(result_matrix.m_src_offsets_host.size() - 1);
+
+        result_matrix.m_ns_scan_host.push_back(new_n);
+        result_matrix.m_src_offsets_of_offsets_host.push_back(result_matrix.m_src_offsets_host.size());
         result_matrix.m_A_offsets_of_offsets_host.push_back(result_matrix.m_A_offsets_host.size() - 1);
     }
 
@@ -257,7 +267,7 @@ SegmentedMatrix<Array, MemorySpace>::multiply_stride(
 
     int max_k = cusp::blas::nrmmax(m_ks_per_partition_host);
     dim3 blocks(MATRIX_MUL_BLOCK_SIZE, MATRIX_MUL_BLOCK_SIZE, 1);
-    dim3 grids(max_k * max_k / MATRIX_MUL_BLOCK_SIZE / MATRIX_MUL_BLOCK_SIZE + 1, ((m_ns_scan_host[1] - m_ns_scan_host[0])/ m_ks_per_partition_host[0] + 1) / 2 + 1, m_global_num_partitions);
+    dim3 grids(max_k * max_k / MATRIX_MUL_BLOCK_SIZE / MATRIX_MUL_BLOCK_SIZE + 1, ((m_ns_scan_host[1] - m_ns_scan_host[0]) / m_ks_per_partition_host[0] + 1) / 2 + 1, m_global_num_partitions);
 
 
     device::negativeMatrixMul<<<grids, blocks>>>(p_srcA, p_src_ns_scan, p_src_ks, p_src_offsets_of_offsets, p_src_offsets, p_dstA, p_dst_offsets_of_offsets, p_dst_offsets, m_upper);

@@ -1604,6 +1604,11 @@ fwdSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int
     int k                    = ks[blockIdx.z];
     int local_n              = ns_scan[blockIdx.z + 1] - ns_scan[blockIdx.z];
     int local_num_partitions = local_n / k;
+
+    if (local_num_partitions <= 2) {
+        return;
+    }
+
     int local_part_size      = local_n / local_num_partitions;
     int local_remainder      = local_n % local_num_partitions;
     int column_width         = 1 + k + (isSPD ? 0 : k);
@@ -1649,6 +1654,11 @@ bckSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int
     int k                    = ks[blockIdx.z];
     int local_n              = ns_scan[blockIdx.z + 1] - ns_scan[blockIdx.z];
     int local_num_partitions = local_n / k;
+
+    if (local_num_partitions < 2) {
+        return;
+    }
+
     int local_part_size      = local_n / local_num_partitions;
     int local_remainder      = local_n % local_num_partitions;
     int column_width         = 1 + k + (isSPD ? 0 : k);
@@ -1698,6 +1708,11 @@ fwdSweepRHS_stride(
     int k       = ks[blockIdx.y];
 
     int local_num_partitions = local_n / k;
+
+    if (local_num_partitions == 0) {
+        return;
+    }
+
     int local_part_size      = local_n / local_num_partitions;
     int local_remainder      = local_n % local_num_partitions;
 
@@ -1752,6 +1767,11 @@ bckSweepRHS_stride(
     int k       = ks[blockIdx.y];
 
     int local_num_partitions = local_n / k;
+
+    if (local_num_partitions == 0) {
+        return;
+    }
+
     int local_part_size      = local_n / local_num_partitions;
     int local_remainder      = local_n % local_num_partitions;
 
