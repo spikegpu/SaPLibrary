@@ -5904,6 +5904,10 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
     const int*           p_ks      = thrust::raw_pointer_cast(&m_ks[0]);
     const int*           p_src_offsets = thrust::raw_pointer_cast(&m_BOffsets[0]);
 
+    double sweep_time = 0.0, matrix_mul_time = 0.0;
+
+    GPUTimer local_timer;
+
     for (int level = 0; level < depth; level++) {
         int stride = 1 << (level + 1);
 
@@ -5926,6 +5930,7 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
             p_mat = thrust::raw_pointer_cast(&m_lower_matrices[level].m_A[0]);
         }
 
+        local_timer.Start();
         {
             dim3 grids((m_n / m_numPartitions / m_ks_host[0] + stride - 1) / stride + 1, m_numPartitions, 1);
             int threadsPerBlock = std::min(m_k, 512);
@@ -5951,7 +5956,10 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
                 );
             }
         }
+        local_timer.Stop();
+        sweep_time += local_timer.getElapsed();
 
+        local_timer.Start();
         {
             dim3 grids(m_k, (m_n / m_numPartitions / m_ks_host[0] + stride - 1) / stride + 1, m_numPartitions);
             int threadsPerBlock = MAT_VEC_MUL_BLOCK_SIZE;
@@ -5971,6 +5979,8 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
                 upper
             ); 
         }
+        local_timer.Stop();
+        matrix_mul_time += local_timer.getElapsed();
     }
 
     for (int level = depth - 2; level >= 0; level--) {
@@ -5996,6 +6006,7 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
             p_mat = thrust::raw_pointer_cast(&m_lower_matrices[level].m_A[0]);
         }
 
+        local_timer.Start();
         {
             dim3 grids(m_k, (m_n / m_numPartitions / m_ks_host[0] + stride - 1) / stride + 1, m_numPartitions);
             int threadsPerBlock = MAT_VEC_MUL_BLOCK_SIZE;
@@ -6015,7 +6026,11 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs, bool upper) const {
                 upper
             ); 
         }
+        local_timer.Stop();
+        matrix_mul_time += local_timer.getElapsed();
     }
+
+    fprintf(stderr, "Sweep time: %g, Matrix mul time: %g\n", sweep_time, matrix_mul_time);
 }
 
 } // namespace sap
