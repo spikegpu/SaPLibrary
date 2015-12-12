@@ -43,7 +43,7 @@ typedef long long int64_t;
 #define BURST_VALUE (1e-7)
 #define BURST_NEW_VALUE (1e-4)
 #define MATRIX_MUL_BLOCK_SIZE (16)
-#define MAT_VEC_MUL_BLOCK_SIZE (32)
+#define MAT_VEC_MUL_BLOCK_SIZE (16)
 
 
 #if CUSP_VERSION < 500

@@ -124,27 +124,35 @@ matrixVecMulAux(
     T*           vec2,
     int          mat_rows,
     int          mat_cols,
-    volatile T*  shared
+    T            shared[][MAT_VEC_MUL_BLOCK_SIZE]
 ) {
     int num_blocks = (mat_cols + MAT_VEC_MUL_BLOCK_SIZE - 1) / MAT_VEC_MUL_BLOCK_SIZE;
-    for (int i = blockIdx.x; i < mat_rows; i += gridDim.x) {
-        shared[threadIdx.x] = T(0);
+    for (int i = blockIdx.x * MAT_VEC_MUL_BLOCK_SIZE; i < mat_rows; i += gridDim.x * MAT_VEC_MUL_BLOCK_SIZE) {
+        if (i + threadIdx.y >= mat_rows) {
+            return;
+        }
+
+        shared[threadIdx.y][threadIdx.x] = T(0);
 
         for (int j = 0; j < num_blocks; j++) {
             int offset = MAT_VEC_MUL_BLOCK_SIZE * j + threadIdx.x;
-            shared[threadIdx.x] += ((offset < mat_cols) ? (mat[mat_cols * i + offset] * vec1[offset]) : T(0));
+            shared[threadIdx.y][threadIdx.x] += ((offset < mat_cols) ? (mat[mat_cols * (i + threadIdx.y) + offset] * vec1[offset]) : T(0));
         }
 
         __syncthreads();
 
-        shared[threadIdx.x] += shared[threadIdx.x + 16];
-        shared[threadIdx.x] += shared[threadIdx.x + 8];
-        shared[threadIdx.x] += shared[threadIdx.x + 4];
+        if (threadIdx.x < 8) {
+            shared[threadIdx.y][threadIdx.x] += shared[threadIdx.y][threadIdx.x + 8];
+        }
+        __syncthreads();
 
+        if (threadIdx.x < 4) {
+            shared[threadIdx.y][threadIdx.x] += shared[threadIdx.y][threadIdx.x + 4];
+        }
         __syncthreads();
 
         if (threadIdx.x == 0) {
-            vec2[i] -= (shared[0] + shared[1]) + (shared[2] + shared[3]);
+            vec2[i + threadIdx.y] -= (shared[threadIdx.y][0] + shared[threadIdx.y][1]) + (shared[threadIdx.y][2] + shared[threadIdx.y][3]);
         }
         __syncthreads();
     }
@@ -166,9 +174,7 @@ matrixVecMul(
     bool          backward,
     bool          upper
 ) {
-    __shared__ T shared[MAT_VEC_MUL_BLOCK_SIZE << 1];
-
-    shared[threadIdx.x + MAT_VEC_MUL_BLOCK_SIZE] = T(0);
+    __shared__ T shared[MAT_VEC_MUL_BLOCK_SIZE][MAT_VEC_MUL_BLOCK_SIZE];
 
     int k      = ks[blockIdx.z];
     int part_size = n / num_partitions;
