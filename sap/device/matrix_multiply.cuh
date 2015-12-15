@@ -25,26 +25,23 @@ negativeMatrixMulAux(
     int num_block_cols = (B_cols + MATRIX_MUL_BLOCK_SIZE - 1) / MATRIX_MUL_BLOCK_SIZE;
     int num_blocks = num_block_rows * num_block_cols;
 
-
-    int num_A_block_cols = (A_cols + MATRIX_MUL_BLOCK_SIZE - 1) / MATRIX_MUL_BLOCK_SIZE;
-
     for (int bidx = blockIdx.x; bidx < num_blocks; bidx += gridDim.x) {
-        int block_row_idx = bidx / num_block_cols;
-        int block_col_idx = bidx % num_block_cols;
+        int row_idx = bidx / num_block_cols * MATRIX_MUL_BLOCK_SIZE + threadIdx.y;
+        int col_idx = bidx % num_block_cols * MATRIX_MUL_BLOCK_SIZE + threadIdx.x;
 
         T sum = T(0);
 
-        for (int i = 0; i < num_A_block_cols; i++) {
-            if (block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y >= A_rows || i * MATRIX_MUL_BLOCK_SIZE + threadIdx.x >= A_cols) {
+        for (int i = 0; i < A_cols; i += MATRIX_MUL_BLOCK_SIZE) {
+            if (row_idx  >= A_rows || i + threadIdx.x >= A_cols) {
                 A_shared[threadIdx.y][threadIdx.x] = T(0);
             } else {
-                A_shared[threadIdx.y][threadIdx.x] = dA[(block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * A_cols + (i * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)];
+                A_shared[threadIdx.y][threadIdx.x] = dA[row_idx * A_cols + (i + threadIdx.x)];
             }
 
-            if (i * MATRIX_MUL_BLOCK_SIZE + threadIdx.y >= A_cols || block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x >= B_cols) {
+            if (i + threadIdx.y >= A_cols || col_idx >= B_cols) {
                 B_shared[threadIdx.y][threadIdx.x] = T(0);
             } else {
-                B_shared[threadIdx.y][threadIdx.x] = dB[(i * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * B_cols + (block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)];
+                B_shared[threadIdx.y][threadIdx.x] = dB[(i + threadIdx.y) * B_cols + col_idx];
             }
 
             __syncthreads();
@@ -56,8 +53,8 @@ negativeMatrixMulAux(
             __syncthreads();
         }
 
-        if (block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y < A_rows && block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x < B_cols) {
-            dC[(block_row_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.y) * B_cols + (block_col_idx * MATRIX_MUL_BLOCK_SIZE + threadIdx.x)] = sum;
+        if (row_idx < A_rows && col_idx < B_cols) {
+            dC[row_idx * B_cols + col_idx] = sum;
         }
 
     }

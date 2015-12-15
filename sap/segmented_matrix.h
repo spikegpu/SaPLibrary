@@ -269,7 +269,6 @@ SegmentedMatrix<Array, MemorySpace>::multiply_stride(
     dim3 blocks(MATRIX_MUL_BLOCK_SIZE, MATRIX_MUL_BLOCK_SIZE, 1);
     dim3 grids(max_k * max_k / MATRIX_MUL_BLOCK_SIZE / MATRIX_MUL_BLOCK_SIZE + 1, ((m_ns_scan_host[1] - m_ns_scan_host[0]) / m_ks_per_partition_host[0] + 1) / 2 + 1, m_global_num_partitions);
 
-
     device::negativeMatrixMul<<<grids, blocks>>>(p_srcA, p_src_ns_scan, p_src_ks, p_src_offsets_of_offsets, p_src_offsets, p_dstA, p_dst_offsets_of_offsets, p_dst_offsets, m_upper);
 
     return true;
