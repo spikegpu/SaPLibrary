@@ -112,6 +112,12 @@ struct Stats
 
     double      time_shuffle;           /**< Total time to do vector reordering and scaling. */
 
+    double      time_bcr_lu;
+    double      time_bcr_sweep_deflation;
+    double      time_bcr_mat_mul_deflation;
+    double      time_bcr_sweep_inflation;
+    double      time_bcr_mv_inflation;
+
     int         bandwidthReorder;       /**< Half-bandwidth after reordering. */
     int         bandwidthDB;            /**< Half-bandwidth after DB. */
     int         bandwidth;              /**< Half-bandwidth after reordering and drop-off. */
@@ -487,6 +493,12 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
     m_stats.numIterations = m_monitor.getNumIterations();
 
     m_stats.time_shuffle = m_precond.getTimeShuffle();
+
+    m_stats.time_bcr_lu = m_precond.getTimeBCRLU();
+    m_stats.time_bcr_sweep_deflation = m_precond.getTimeBCRSweepDeflation();
+    m_stats.time_bcr_mat_mul_deflation = m_precond.getTimeBCRMatMulDeflation();
+    m_stats.time_bcr_sweep_inflation = m_precond.getTimeBCRSweepInflation();
+    m_stats.time_bcr_mv_inflation = m_precond.getTimeBCRMVInflation();
 
     return m_monitor.converged();
 }

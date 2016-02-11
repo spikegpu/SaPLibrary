@@ -24,7 +24,7 @@
 // Typedefs
 // -----------------------------------------------------------------------------
 typedef double REAL;
-typedef float  PREC_REAL;
+typedef double PREC_REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
@@ -53,7 +53,7 @@ using std::vector;
 enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_RTOL, OPT_ATOL, OPT_MAXIT,
       OPT_DROPOFF_FRAC, 
-      OPT_BAND,
+      OPT_BAND, OPT_USE_BCR,
       OPT_OUTFILE, OPT_PRECOND,
       OPT_KRYLOV, OPT_SAFE_FACT};
 
@@ -81,6 +81,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
+    { OPT_USE_BCR,       "--use-bcr",            SO_NONE    },
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
 	{ OPT_VERBOSE,       "--verbose",            SO_NONE    },
 	{ OPT_HELP,          "-?",                   SO_NONE    },
@@ -118,7 +119,7 @@ void PrintStats(bool               success,
 class OutputItem
 {
 public:
-	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(4) {}
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(10) {}
 
 	int           m_additional_item_count;
 
@@ -220,12 +221,31 @@ int main(int argc, char** argv)
 	else
 		outputItem ( "NConv", COLOR_RED);
 
+    if (opts.useBCR) {
+        outputItem( stats.time_bcr_lu);
+        outputItem( stats.time_bcr_sweep_deflation);
+        outputItem( stats.time_bcr_mat_mul_deflation);
+    } else {
+        outputItem( stats.time_bandLU + stats.time_bandUL);
+        outputItem( "");
+        outputItem( "");
+    }
 	// Total time for setup
 	outputItem( stats.timeSetup);
 	// Number of iterations to converge
 	outputItem( stats.numIterations);
-	// Total time for Krylov solve
+
+    if (opts.useBCR) {
+        outputItem(stats.time_bcr_sweep_inflation);
+        outputItem(stats.time_bcr_mv_inflation);
+    } else {
+        outputItem("");
+        outputItem("");
+    }
+    // Total time for Krylov solve
 	outputItem( stats.timeSolve);
+    // Total time for Krylov solve per iteration
+    outputItem( stats.timeSolve / std::max(1.0f, stats.numIterations));
 	// Total amount of time
 	outputItem( stats.timeSetup + stats.timeSolve);
 
@@ -389,6 +409,9 @@ GetProblemSpecs(int             argc,
 
 					break;
 				}
+            case OPT_USE_BCR:
+                opts.useBCR = true;
+                break;
 			case OPT_OUTFILE:
 				fileSol = args.OptionArg();
 				break;

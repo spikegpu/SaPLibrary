@@ -114,6 +114,65 @@ negativeMatrixMul(
 }
 
 template <typename T>
+__global__ void
+negativeMatrixMul(
+    const T*       srcA_mat,
+    const T*       srcB_mat,
+    const int*     src_ns_scan,
+    const int*     src_ks,
+    const int*     srcA_offsets_of_offsets,
+    const int*     srcA_offsets,
+    const int*     srcB_offsets_of_offsets,
+    const int*     srcB_offsets,
+    T*             dst_mat,
+    const int*     dst_offsets_of_offsets,
+    const int*     dst_offsets,
+    bool           upper
+) {
+    __shared__ T A_shared[MATRIX_MUL_BLOCK_SIZE][MATRIX_MUL_BLOCK_SIZE];
+    __shared__ T B_shared[MATRIX_MUL_BLOCK_SIZE][MATRIX_MUL_BLOCK_SIZE];
+
+    int n = src_ns_scan[blockIdx.z + 1] - src_ns_scan[blockIdx.z];
+    int k = src_ks[blockIdx.z];
+
+    int local_num_partitions = n / k;
+
+    if (local_num_partitions < 2) {
+        return;
+    }
+
+    if (local_num_partitions == 2 && upper) {
+        return;
+    }
+
+    int local_part_size      = n / local_num_partitions;
+    int local_remainder      = n % local_num_partitions;
+
+    int it_last = local_num_partitions - 1;
+
+    for (int i = (upper ? 1 : 0) + (blockIdx.y << 1); i < it_last; i += (gridDim.y << 1) ) {
+        const T*  A = srcA_mat + srcA_offsets[srcA_offsets_of_offsets[blockIdx.z] + i];
+        const T*  B = srcB_mat + srcB_offsets[srcB_offsets_of_offsets[blockIdx.z] + i];
+        T*        C = dst_mat + dst_offsets[dst_offsets_of_offsets[blockIdx.z] + (i >> 1)];
+
+        int A_rows;
+        int A_cols;
+        int B_cols;
+
+        if (upper) {
+            A_rows = local_part_size + (i < local_remainder ? 1 : 0);
+            A_cols = local_part_size + (i + 1 < local_remainder ? 1 : 0);
+        } else {
+            A_rows = local_part_size + (i + 1 < local_remainder ? 1 : 0);
+            A_cols = local_part_size + (i < local_remainder ? 1 : 0);
+        }
+        B_cols = A_rows;
+
+        negativeMatrixMulAux(A, B, C, A_rows, A_cols, B_cols, A_shared, B_shared);
+    }
+}
+
+template <typename T>
 __device__ void
 matrixVecMulAux(
     const T*     mat,
@@ -236,6 +295,50 @@ matrixVecMul(
             mat_cols,
             shared
         );
+    }
+}
+
+template <typename T>
+__global__ void
+update_banded_matrix(
+    T*           p_src,
+    const T*     p_dst,
+    const int*   ns_scan,
+    const int*   ks,
+    const int*   p_src_offsets_of_offsets,
+    const int*   p_src_offsets,
+    const int*   p_dst_offsets_of_offsets,
+    const int*   p_dst_offsets
+) {
+    int k = ks[blockIdx.z];
+    int local_n = ns_scan[blockIdx.z + 1] - ns_scan[blockIdx.z];
+
+    int local_num_partitions = local_n / k;
+
+    if (local_num_partitions == 0) {
+        return;
+    }
+
+    int local_part_size = local_n / local_num_partitions;
+    int local_remainder = local_n % local_num_partitions;
+
+    for (int local_part_id = blockIdx.y; local_part_id < local_num_partitions; local_part_id += gridDim.y) {
+        int src_offset = p_src_offsets[p_src_offsets_of_offsets[blockIdx.z] + local_part_id];
+        int dst_offset = p_dst_offsets[p_dst_offsets_of_offsets[blockIdx.z] + local_part_id];
+        int num_rows = local_part_size + (local_part_id < local_remainder ? 1 : 0);
+
+        for (int row = blockIdx.x; row < num_rows; row += gridDim.x) {
+            int i_start = 0, i_end = num_rows;
+            if (row - i_start > k) {
+                i_start = row - k;
+            }
+            if (i_end > row + k + 1) {
+                i_end = row + k + 1;
+            }
+            for (int i = i_start + threadIdx.x; i < i_end; i += blockDim.x) {
+                p_src[src_offset + k + row + i * 2 * k] += p_dst[dst_offset + i + row * num_rows];
+            }
+        }
     }
 }
 

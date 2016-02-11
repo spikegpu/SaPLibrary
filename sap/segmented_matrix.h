@@ -72,6 +72,16 @@ public:
     bool multiply_stride(
         SegmentedMatrix<Array, MemorySpace>& result_matrix
     ) const;
+
+    bool multiply_stride(
+        const SegmentedMatrix<Array, MemorySpace>& mat_a, 
+        const SegmentedMatrix<Array, MemorySpace>& mat_b
+    );
+
+    void update_banded(
+        Array&  A,
+        int     k
+    ) const;
 };
 
 template <typename Array, typename MemorySpace>
@@ -180,14 +190,18 @@ SegmentedMatrix<Array, MemorySpace>::sweepStride(
 
     dim3 grids(1, ((m_ns_scan_host[1] - m_ns_scan_host[0]) / m_ks_per_partition_host[0] + 1) / 2 + 1, m_global_num_partitions);
     int gridX = 1;
-    int numThreadsPerBlock = k + 1;
+    int numThreadsPerBlock = k + 1; // FIXME: might be WRONG!!
     kernelConfigAdjust(numThreadsPerBlock, gridX, SWEEP_MAX_NUM_THREADS);
     grids.x = gridX;
 
-    if (m_upper) {
-        device::var::bckSweep_stride<<<grids, numThreadsPerBlock>>>(p_srcA, p_dstA, p_ns_scan, ks, p_src_offsets_of_offsets, p_src_offsets, p_dst_offsets_of_offsets, p_dst_offsets, false);
-    } else {
-        device::var::fwdSweep_stride<<<grids, numThreadsPerBlock>>>(p_srcA, p_dstA, p_ns_scan, ks, p_src_offsets_of_offsets, p_src_offsets, p_dst_offsets_of_offsets, p_dst_offsets, false);
+    {
+        device::var::fwdSweep_stride<<<grids, numThreadsPerBlock>>>(p_srcA, p_dstA, p_ns_scan, ks, p_src_offsets_of_offsets, p_src_offsets, p_dst_offsets_of_offsets, p_dst_offsets, false, m_upper);
+    }
+    {
+        device::var::preBckDivision_stride<<<grids, numThreadsPerBlock>>>(p_srcA, p_dstA, p_ns_scan, ks, p_src_offsets_of_offsets, p_src_offsets, p_dst_offsets_of_offsets, p_dst_offsets, false, m_upper);
+    }
+    {
+        device::var::bckSweep_stride<<<grids, numThreadsPerBlock>>>(p_srcA, p_dstA, p_ns_scan, ks, p_src_offsets_of_offsets, p_src_offsets, p_dst_offsets_of_offsets, p_dst_offsets, false, m_upper);
     }
 }
 
@@ -272,6 +286,129 @@ SegmentedMatrix<Array, MemorySpace>::multiply_stride(
     device::negativeMatrixMul<<<grids, blocks>>>(p_srcA, p_src_ns_scan, p_src_ks, p_src_offsets_of_offsets, p_src_offsets, p_dstA, p_dst_offsets_of_offsets, p_dst_offsets, m_upper);
 
     return true;
+}
+
+template <typename Array, typename MemorySpace>
+bool
+SegmentedMatrix<Array, MemorySpace>::multiply_stride(
+    const SegmentedMatrix<Array, MemorySpace>& mat_a,
+    const SegmentedMatrix<Array, MemorySpace>& mat_b
+) {
+    m_global_num_partitions = mat_a.m_global_num_partitions;
+    m_upper                 = false;
+    m_ks_per_partition      = mat_a.m_ks_per_partition;
+    m_ks_per_partition_host = mat_a.m_ks_per_partition_host;
+
+    int new_n = 0;
+
+    m_ns_scan_host.push_back(0);
+    m_A_offsets_of_offsets_host.push_back(0);
+    m_A_offsets_host.push_back(0);
+    m_src_offsets_of_offsets_host.push_back(0);
+
+    bool non_trivial = false;
+
+    for (int i = 0; i < m_global_num_partitions; i ++) {
+        int local_n = mat_a.m_ns_scan_host[i+1] - mat_a.m_ns_scan_host[i];
+        int local_k = mat_a.m_ks_per_partition_host[i];
+
+        int local_num_partitions = local_n / local_k;
+
+        if (local_num_partitions > 1) {
+            int local_part_size = local_n / local_num_partitions;
+            int local_remainder = local_n % local_num_partitions;
+
+            for (int j = 1; j < local_num_partitions; j += 2) {
+                new_n += local_part_size + (j < local_remainder ? 1 : 0);
+                m_src_offsets_host.push_back(mat_a.m_src_offsets_host[mat_a.m_src_offsets_of_offsets_host[i] + j]);
+
+                m_A_offsets_host.push_back(m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j < local_remainder ? 1 : 0)));
+                non_trivial = true;
+
+                /*
+                if (mat_a.m_upper) {
+                    if (j + 1 < local_num_partitions) {
+                        m_A_offsets_host.push_back(m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j < local_remainder ? 1 : 0)));
+                        non_trivial = true;
+                    }
+                } else {
+                    m_A_offsets_host.push_back(m_A_offsets_host.back() + (local_part_size + (j < local_remainder ? 1 : 0)) * (local_part_size + (j < local_remainder ? 1 : 0)));
+                    non_trivial = true;
+                }
+                */
+            }
+        }
+
+        m_ns_scan_host.push_back(new_n);
+        m_src_offsets_of_offsets_host.push_back(m_src_offsets_host.size());
+        m_A_offsets_of_offsets_host.push_back(m_A_offsets_host.size() - 1);
+    }
+
+    m_ns_scan = m_ns_scan_host;
+    m_src_offsets_of_offsets = m_src_offsets_of_offsets_host;
+    m_src_offsets = m_src_offsets_host;
+    m_A_offsets_of_offsets = m_A_offsets_of_offsets_host;
+    m_A_offsets = m_A_offsets_host;
+    m_global_n = new_n;
+
+    m_A.resize(m_A_offsets_host.back());
+
+    if (!non_trivial) {
+        return false;
+    }
+
+    const T*    p_srcA                    = thrust::raw_pointer_cast(&mat_a.m_A[0]);
+    const T*    p_srcB                    = thrust::raw_pointer_cast(&mat_b.m_A[0]);
+    T*          p_dstA                    = thrust::raw_pointer_cast(&m_A[0]);
+    const int * p_src_ns_scan             = thrust::raw_pointer_cast(&mat_a.m_ns_scan[0]);
+    const int * p_src_ks                  = thrust::raw_pointer_cast(&mat_a.m_ks_per_partition[0]);
+    const int * p_srcA_offsets             = thrust::raw_pointer_cast(&mat_a.m_A_offsets[0]);
+    const int * p_srcA_offsets_of_offsets  = thrust::raw_pointer_cast(&mat_a.m_A_offsets_of_offsets[0]);
+    const int * p_srcB_offsets             = thrust::raw_pointer_cast(&mat_b.m_A_offsets[0]);
+    const int * p_srcB_offsets_of_offsets  = thrust::raw_pointer_cast(&mat_b.m_A_offsets_of_offsets[0]);
+    const int * p_dst_offsets             = thrust::raw_pointer_cast(&m_A_offsets[0]);
+    const int * p_dst_offsets_of_offsets  = thrust::raw_pointer_cast(&m_A_offsets_of_offsets[0]);
+
+    int max_k = cusp::blas::nrmmax(m_ks_per_partition_host);
+    dim3 blocks(MATRIX_MUL_BLOCK_SIZE, MATRIX_MUL_BLOCK_SIZE, 1);
+    dim3 grids(max_k * max_k / MATRIX_MUL_BLOCK_SIZE / MATRIX_MUL_BLOCK_SIZE + 1, ((mat_a.m_ns_scan_host[1] - mat_a.m_ns_scan_host[0]) / mat_a.m_ks_per_partition_host[0] + 1) / 2 + 1, m_global_num_partitions);
+
+    device::negativeMatrixMul<<<grids, blocks>>>(p_srcA, p_srcB, p_src_ns_scan, p_src_ks, p_srcA_offsets_of_offsets, p_srcA_offsets, p_srcB_offsets_of_offsets, p_srcB_offsets, p_dstA, p_dst_offsets_of_offsets, p_dst_offsets, mat_a.m_upper);
+
+    return true;
+}
+
+template <typename Array, typename MemorySpace>
+void
+SegmentedMatrix<Array, MemorySpace>::update_banded(
+    Array&  A,
+    int     k
+) const
+{
+    const int MAX_NUM_THREADS = 512;
+
+    T *p_srcA = thrust::raw_pointer_cast(&A[0]);
+    const T *p_dstA = thrust::raw_pointer_cast(&m_A[0]);
+    const int *ks = thrust::raw_pointer_cast(&m_ks_per_partition[0]);
+    const int *p_dst_offsets_of_offsets = thrust::raw_pointer_cast(&m_A_offsets_of_offsets[0]);
+    const int *p_dst_offsets = thrust::raw_pointer_cast(&m_A_offsets[0]);
+    const int *p_src_offsets_of_offsets = thrust::raw_pointer_cast(&m_src_offsets_of_offsets[0]);
+    const int *p_src_offsets = thrust::raw_pointer_cast(&m_src_offsets[0]);
+
+    const int *p_ns_scan     = thrust::raw_pointer_cast(&m_ns_scan[0]);
+
+    dim3 grids(k, ((m_ns_scan_host[1] - m_ns_scan_host[0]) / m_ks_per_partition_host[0]) + 1, m_global_num_partitions);
+    int numThreadsPerBlock = std::min(k, MAX_NUM_THREADS);
+    device::update_banded_matrix<T><<<grids, numThreadsPerBlock>>>(
+        p_srcA,
+        p_dstA,
+        p_ns_scan,
+        ks,
+        p_src_offsets_of_offsets,
+        p_src_offsets,
+        p_dst_offsets_of_offsets,
+        p_dst_offsets
+    ); 
 }
 
 }

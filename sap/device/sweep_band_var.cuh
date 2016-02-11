@@ -1598,14 +1598,14 @@ bckElim_leftSpike_per_partition(int N, int k, int bid_delta, int pivotIdx, T *dA
 
 template <typename T>
 __global__ void
-fwdSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int *src_offsets_of_offsets, const int *src_offsets, const int *b_offsets_of_offsets, const int *b_offsets, bool isSPD) {
+fwdSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int *src_offsets_of_offsets, const int *src_offsets, const int *b_offsets_of_offsets, const int *b_offsets, bool isSPD, bool upper) {
     __shared__ T a_elements[1024];
 
     int k                    = ks[blockIdx.z];
     int local_n              = ns_scan[blockIdx.z + 1] - ns_scan[blockIdx.z];
     int local_num_partitions = local_n / k;
 
-    if (local_num_partitions <= 2) {
+    if (local_num_partitions < 2) {
         return;
     }
 
@@ -1613,12 +1613,12 @@ fwdSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int
     int local_remainder      = local_n % local_num_partitions;
     int column_width         = 1 + k + (isSPD ? 0 : k);
 
-    for (int i = (blockIdx.y << 1) + 1; i < local_num_partitions - 1; i += (gridDim.y << 1)) {
+    for (int i = (blockIdx.y << 1) + (upper ? 0 : 1); i < local_num_partitions - 1; i += (gridDim.y << 1)) {
         int dst_offset   = b_offsets[b_offsets_of_offsets[blockIdx.z] + i];
 
         int first_row, last_row;
 
-        int src_offset = src_offsets[src_offsets_of_offsets[blockIdx.z] + (i + 1)] + (isSPD ? 0 : k);
+        int src_offset = src_offsets[src_offsets_of_offsets[blockIdx.z] + (i + (upper ? 0 : 1))] + (isSPD ? 0 : k);
         if (i < local_remainder) {
             first_row = ns_scan[blockIdx.z] + (local_part_size + 1) * i;
             /// last_row  = first_row + (local_part_size + 1);
@@ -1627,9 +1627,9 @@ fwdSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int
             /// last_row  = first_row + local_part_size;
         }
 
-        int local_k = local_part_size + (i < local_remainder ? 1 : 0);
+        int local_k = local_part_size + (i + (upper ? 1 : 0) < local_remainder ? 1 : 0);
         
-        if (i + 1 < local_remainder) {
+        if (i + (upper ? 0 : 1) < local_remainder) {
             last_row = first_row + local_part_size + 1;
             //// src_offset = offset + column_width * ((k + 1) * (i + 1));
         } else {
@@ -1648,7 +1648,94 @@ fwdSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int
 
 template <typename T>
 __global__ void
-bckSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int *src_offsets_of_offsets, const int *src_offsets, const int *b_offsets_of_offsets, const int *b_offsets, bool isSPD) {
+preBckDivision_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int *src_offsets_of_offsets, const int *src_offsets, const int *b_offsets_of_offsets, const int *b_offsets, bool isSPD, bool upper) {
+    int k                    = ks[blockIdx.z];
+    int local_n              = ns_scan[blockIdx.z + 1] - ns_scan[blockIdx.z];
+    int local_num_partitions = local_n / k;
+
+    if (local_num_partitions < 2) {
+        return;
+    }
+
+    int local_part_size      = local_n / local_num_partitions;
+    int local_remainder      = local_n % local_num_partitions;
+    int column_width         = 1 + k + (isSPD ? 0 : k);
+
+    for (int i = (blockIdx.y << 1) + (upper ? 0 : 1); i < local_num_partitions - 1; i += (gridDim.y << 1)) {
+        int dst_offset   = b_offsets[b_offsets_of_offsets[blockIdx.z] + i];
+
+        int first_row, last_row;
+
+        int src_offset = src_offsets[src_offsets_of_offsets[blockIdx.z] + (i + (upper ? 0 : 1))] + (isSPD ? 0 : k);
+        if (i < local_remainder) {
+            first_row = ns_scan[blockIdx.z] + (local_part_size + 1) * i;
+            /// last_row  = first_row + (local_part_size + 1);
+        } else {
+            first_row = ns_scan[blockIdx.z] + local_part_size * i + local_remainder;
+            /// last_row  = first_row + local_part_size;
+        }
+
+        int local_k = local_part_size + (i + (upper ? 1 : 0) < local_remainder ? 1 : 0);
+        
+        if (i + (upper ? 0 : 1) < local_remainder) {
+            last_row = first_row + local_part_size + 1;
+            //// src_offset = offset + column_width * ((k + 1) * (i + 1));
+        } else {
+            last_row = first_row + local_part_size;
+            //// src_offset = offset + column_width * (k * (i + 1) + local_remainder);
+        }
+
+        int idx = threadIdx.x + blockDim.x * blockIdx.x;
+		if (idx >= local_k) {
+            return;
+        }
+
+        for (int j = first_row; j < last_row; j++) {
+            dB[local_k * (j - first_row) + idx + dst_offset] /= dA[src_offset + column_width * (j - first_row)];
+        }
+    }
+}
+
+template <typename T>
+__global__ void
+preBckDivisionRHS_stride(const T *dA, T *dB, int n, int num_partitions, const int *ks, const int *src_offsets, int stride, bool isSPD) {
+    int k                    = ks[blockIdx.y];
+    int part_size            = n / num_partitions;
+    int remainder            = n % num_partitions;
+    int local_n              = (blockIdx.y < remainder ? 1 : 0) + part_size;
+    int n_scan               = (blockIdx.y < remainder ? (blockIdx.y * (part_size + 1)) : (blockIdx.y * part_size + remainder));
+    int local_num_partitions = local_n / k;
+
+    if (local_num_partitions < 2) {
+        return;
+    }
+
+    int local_part_size      = local_n / local_num_partitions;
+    int local_remainder      = local_n % local_num_partitions;
+    int column_width         = 1 + k + (isSPD ? 0 : k);
+
+    for (int i = blockIdx.x * stride + stride / 2 - 1; i < local_num_partitions; i += gridDim.x * stride) {
+        int pivotIdx = src_offsets[blockIdx.y] + (isSPD ? 0 : k);
+
+        int first_row, last_row;
+
+        if (i < local_remainder) {
+            first_row = n_scan + (local_part_size + 1) * i;
+            last_row  = first_row + (local_part_size + 1);
+        } else {
+            first_row = n_scan + local_part_size * i + local_remainder;
+            last_row  = first_row + local_part_size;
+        }
+
+        for (int idx = first_row + threadIdx.x; idx < last_row; idx += blockDim.x) {
+            dB[idx] /= dA[pivotIdx + column_width * (idx - n_scan)];
+        }
+    }
+}
+
+template <typename T>
+__global__ void
+bckSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int *src_offsets_of_offsets, const int *src_offsets, const int *b_offsets_of_offsets, const int *b_offsets, bool isSPD, bool upper) {
     __shared__ T a_elements[1024];
 
     int k                    = ks[blockIdx.z];
@@ -1663,21 +1750,25 @@ bckSweep_stride(const T *dA, T *dB, const int *ns_scan, const int *ks, const int
     int local_remainder      = local_n % local_num_partitions;
     int column_width         = 1 + k + (isSPD ? 0 : k);
 
-    for (int i = (blockIdx.y << 1); i < local_num_partitions - 1; i += (gridDim.y << 1)) {
+    for (int i = (blockIdx.y << 1) + (upper ? 0 : 1); i < local_num_partitions - 1; i += (gridDim.y << 1)) {
         int dst_offset   = b_offsets[b_offsets_of_offsets[blockIdx.z] + i];
 
         int first_row, last_row;
 
-        int src_offset = src_offsets[src_offsets_of_offsets[blockIdx.z] + i] + (isSPD ? 0 : k);
+        int src_offset = src_offsets[src_offsets_of_offsets[blockIdx.z] + i + (upper ? 0 : 1)] + (isSPD ? 0 : k);
         if (i < local_remainder) {
             first_row = ns_scan[blockIdx.z] + (local_part_size + 1) * i;
-            last_row  = first_row + (local_part_size + 1);
         } else {
             first_row = ns_scan[blockIdx.z] + local_part_size * i + local_remainder;
+        }
+
+        if (i + (upper ? 0 : 1) < local_remainder) {
+            last_row  = first_row + (local_part_size + 1);
+        } else {
             last_row  = first_row + local_part_size;
         }
 
-        int local_k = local_part_size + (i + 1 < local_remainder ? 1 : 0);
+        int local_k = local_part_size + (i + (upper ? 1 : 0) < local_remainder ? 1 : 0);
 
         int idx = threadIdx.x + blockDim.x * blockIdx.x;
 		if (idx >= local_k) {
