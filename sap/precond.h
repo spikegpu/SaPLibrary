@@ -260,7 +260,10 @@ private:
 
     std::vector<SegmentedMatrix<PrecVector, MemorySpace> > m_lower_matrices;
     std::vector<SegmentedMatrix<PrecVector, MemorySpace> > m_upper_matrices;
+    std::vector<std::vector<SegmentedMatrix<PrecVector, MemorySpace> > > m_all_lower_matrices;     // For multi-GPU only
+    std::vector<std::vector<SegmentedMatrix<PrecVector, MemorySpace> > > m_all_upper_matrices;     // For multi-GPU only
     void updateRHS(PrecVector& rhs);
+    void updateRHS(PrecVector& rhs, int gpu_idx);
     void updateRHS(PrecVector& rhs, bool upper) const;
 
     // Temporary vectors used in preconditioner solve (to support mixed-precision).
@@ -961,61 +964,37 @@ Precond<PrecVector>::setup(const Matrix&  A)
                 m_BOffsets = m_BOffsets_host;
             }
 
-            m_lower_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
-            m_upper_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
-            m_lower_matrices[0].init(m_n, m_numPartitions, m_ks_host, false);
-            m_upper_matrices[0].init(m_n, m_numPartitions, m_ks_host, true);
-            m_lower_matrices[0].copy(m_B, m_BOffsets);
-            m_upper_matrices[0].copy(m_B, m_BOffsets);
-
-            for (int idx = 0; ; idx++)  {
-                bcr_timer.Start();
-                bcrBlockedBandedLU(
-                    m_n,
-                    m_numPartitions,
-                    m_B,
-                    m_lower_matrices[0].m_ns_scan,
-                    m_ks,
-                    m_lower_matrices[0].m_src_offsets,
-                    m_lower_matrices[0].m_src_offsets_of_offsets,
-                    m_ks_col_host,
-                    1 << (idx + 1)
-                );
-                bcr_timer.Stop();
-                m_time_bcr_lu += bcr_timer.getElapsed();
-
-                bcr_timer.Start();
-                m_lower_matrices[idx].sweepStride(m_B, m_k);
-                m_upper_matrices[idx].sweepStride(m_B, m_k);
-                bcr_timer.Stop();
-                m_time_bcr_sweep_deflation += bcr_timer.getElapsed();
-
-                bcr_timer.Start();
-                bool has_next_step;
-                {
-                    SegmentedMatrix<PrecVector, MemorySpace> res;
-                    has_next_step = res.multiply_stride(m_lower_matrices[idx], m_upper_matrices[idx]);
-                    if (has_next_step) {
-                        res.update_banded(m_B, m_k);
-                    }
-                }
-
-                {
-                    SegmentedMatrix<PrecVector, MemorySpace> res;
-                    has_next_step = res.multiply_stride(m_upper_matrices[idx], m_lower_matrices[idx]);
-                    if (has_next_step) {
-                        res.update_banded(m_B, m_k);
-                    }
-                }
-
+            if (m_gpuCount == 1) {
                 m_lower_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
                 m_upper_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
-                has_next_step = m_lower_matrices[idx].multiply_stride(m_lower_matrices[idx+1]);
-                has_next_step &= m_upper_matrices[idx].multiply_stride(m_upper_matrices[idx+1]);
-                bcr_timer.Stop();
-                m_time_bcr_mat_mul_deflation += bcr_timer.getElapsed();
+                m_lower_matrices[0].init(m_n, m_numPartitions, m_ks_host, false);
+                m_upper_matrices[0].init(m_n, m_numPartitions, m_ks_host, true);
+                m_lower_matrices[0].copy(m_B, m_BOffsets);
+                m_upper_matrices[0].copy(m_B, m_BOffsets);
+            } else {
+                saveCurDevice();
+                m_all_lower_matrices.resize(m_gpuCount);
+                m_all_upper_matrices.resize(m_gpuCount);
 
-                if (! has_next_step) {
+                omp_set_num_threads(m_gpuCount);
+
+                int gpu_count = m_gpuCount;
+
+#pragma omp parallel for
+                for (int i = 0; i < gpu_count; i++) {
+                    cudaSetDevice(i);
+                    m_all_lower_matrices[i].push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+                    m_all_upper_matrices[i].push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+                    m_all_lower_matrices[i][0].init(m_all_num_rows[i], m_all_num_partitions[i], m_all_ks_host[i], false);
+                    m_all_upper_matrices[i][0].init(m_all_num_rows[i], m_all_num_partitions[i], m_all_ks_host[i], true);
+                    m_all_lower_matrices[i][0].copy(m_all_Bs[i], m_all_BOffsets[i]);
+                    m_all_upper_matrices[i][0].copy(m_all_Bs[i], m_all_BOffsets[i]);
+                }
+                recoverCurDevice();
+            }
+
+            if (m_gpuCount == 1) {
+                for (int idx = 0; ; idx++)  {
                     bcr_timer.Start();
                     bcrBlockedBandedLU(
                         m_n,
@@ -1026,12 +1005,153 @@ Precond<PrecVector>::setup(const Matrix&  A)
                         m_lower_matrices[0].m_src_offsets,
                         m_lower_matrices[0].m_src_offsets_of_offsets,
                         m_ks_col_host,
-                        1 << (idx + 2)
+                        1 << (idx + 1)
                     );
                     bcr_timer.Stop();
                     m_time_bcr_lu += bcr_timer.getElapsed();
-                    break;
+
+                    bcr_timer.Start();
+                    m_lower_matrices[idx].sweepStride(m_B, m_k);
+                    m_upper_matrices[idx].sweepStride(m_B, m_k);
+                    bcr_timer.Stop();
+                    m_time_bcr_sweep_deflation += bcr_timer.getElapsed();
+
+                    bcr_timer.Start();
+                    bool has_next_step;
+                    {
+                        SegmentedMatrix<PrecVector, MemorySpace> res;
+                        has_next_step = res.multiply_stride(m_lower_matrices[idx], m_upper_matrices[idx]);
+                        if (has_next_step) {
+                            res.update_banded(m_B, m_k);
+                        }
+                    }
+
+                    {
+                        SegmentedMatrix<PrecVector, MemorySpace> res;
+                        has_next_step = res.multiply_stride(m_upper_matrices[idx], m_lower_matrices[idx]);
+                        if (has_next_step) {
+                            res.update_banded(m_B, m_k);
+                        }
+                    }
+
+                    m_lower_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+                    m_upper_matrices.push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+                    has_next_step = m_lower_matrices[idx].multiply_stride(m_lower_matrices[idx+1]);
+                    has_next_step &= m_upper_matrices[idx].multiply_stride(m_upper_matrices[idx+1]);
+                    bcr_timer.Stop();
+                    m_time_bcr_mat_mul_deflation += bcr_timer.getElapsed();
+
+                    if (! has_next_step) {
+                        bcr_timer.Start();
+                        bcrBlockedBandedLU(
+                            m_n,
+                            m_numPartitions,
+                            m_B,
+                            m_lower_matrices[0].m_ns_scan,
+                            m_ks,
+                            m_lower_matrices[0].m_src_offsets,
+                            m_lower_matrices[0].m_src_offsets_of_offsets,
+                            m_ks_col_host,
+                            1 << (idx + 2)
+                        );
+                        bcr_timer.Stop();
+                        m_time_bcr_lu += bcr_timer.getElapsed();
+                        break;
+                    }
                 }
+            } else {
+                saveCurDevice();
+
+                omp_set_num_threads(m_gpuCount);
+
+                int gpu_count = m_gpuCount;
+
+#pragma omp parallel for
+                for (int i = 0; i < gpu_count; i++) {
+                    cudaSetDevice(i);
+
+                    GPUTimer timer_cur_device;
+
+                    for (int idx = 0; ; idx++)  {
+                        if (i == m_cur_device) {
+                            timer_cur_device.Start();
+                        }
+                        bcrBlockedBandedLU(
+                                m_all_num_rows[i],
+                                m_all_num_partitions[i],
+                                m_all_Bs[i],
+                                m_all_lower_matrices[i][0].m_ns_scan,
+                                m_all_ks[i],
+                                m_all_lower_matrices[i][0].m_src_offsets,
+                                m_all_lower_matrices[i][0].m_src_offsets_of_offsets,
+                                m_all_ks_col_host[i],
+                                1 << (idx + 1)
+                                );
+
+                        if (i == m_cur_device) {
+                            timer_cur_device.Stop();
+                            m_time_bcr_lu += timer_cur_device.getElapsed();
+                            timer_cur_device.Start();
+                        }
+
+                        m_all_lower_matrices[i][idx].sweepStride(m_all_Bs[i], m_k);
+                        m_all_upper_matrices[i][idx].sweepStride(m_all_Bs[i], m_k);
+                        if (i == m_cur_device) {
+                            timer_cur_device.Stop();
+                            m_time_bcr_sweep_deflation += timer_cur_device.getElapsed();
+                            timer_cur_device.Start();
+                        }
+
+                        bool has_next_step;
+                        {
+                            SegmentedMatrix<PrecVector, MemorySpace> res;
+                            has_next_step = res.multiply_stride(m_all_lower_matrices[i][idx], m_all_upper_matrices[i][idx]);
+                            if (has_next_step) {
+                                res.update_banded(m_all_Bs[i], m_k);
+                            }
+                        }
+
+                        {
+                            SegmentedMatrix<PrecVector, MemorySpace> res;
+                            has_next_step = res.multiply_stride(m_all_upper_matrices[i][idx], m_all_lower_matrices[i][idx]);
+                            if (has_next_step) {
+                                res.update_banded(m_all_Bs[i], m_k);
+                            }
+                        }
+
+                        m_all_lower_matrices[i].push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+                        m_all_upper_matrices[i].push_back(SegmentedMatrix<PrecVector, MemorySpace>());
+                        has_next_step = m_all_lower_matrices[i][idx].multiply_stride(m_all_lower_matrices[i][idx+1]);
+                        has_next_step &= m_all_upper_matrices[i][idx].multiply_stride(m_all_upper_matrices[i][idx+1]);
+                        if (i == m_cur_device) {
+                            timer_cur_device.Stop();
+                            m_time_bcr_mat_mul_deflation += timer_cur_device.getElapsed();
+                        }
+
+                        if (! has_next_step) {
+                            if (i == m_cur_device) {
+                                timer_cur_device.Start();
+                            }
+                            bcrBlockedBandedLU(
+                                    m_all_num_rows[i],
+                                    m_all_num_partitions[i],
+                                    m_all_Bs[i],
+                                    m_all_lower_matrices[i][0].m_ns_scan,
+                                    m_all_ks[i],
+                                    m_all_lower_matrices[i][0].m_src_offsets,
+                                    m_all_lower_matrices[i][0].m_src_offsets_of_offsets,
+                                    m_all_ks_col_host[i],
+                                    1 << (idx + 2)
+                                    );
+                            if (i == m_cur_device) {
+                                timer_cur_device.Stop();
+                                m_time_bcr_lu += timer_cur_device.getElapsed();
+                            }
+                            break;
+                        }
+                    }
+                }
+                recoverCurDevice();
             }
             return;
         }
@@ -1313,7 +1433,39 @@ Precond<PrecVector>::getSRev(PrecVector&  rhs,
 
     // Get purified solution
     if (m_use_bcr) {
-        updateRHS(sol);
+        if (m_gpuCount == 1) {
+            updateRHS(sol);
+        } else {
+            omp_set_num_threads(m_gpuCount);
+            saveCurDevice();
+
+            if (m_buffers.size() != m_gpuCount) {
+                m_buffers.resize(m_gpuCount);
+            }
+
+            copyFromToMultiGPUs (
+                sol,
+                m_buffers,
+                m_n,
+                m_all_num_rows,
+                false
+            );
+
+#pragma omp parallel for
+            for (int i = 0; i < m_gpuCount; i++) {
+                cudaSetDevice(i);
+                updateRHS(m_buffers[i], i);
+            }
+
+            copyFromToMultiGPUs (
+                sol,
+                m_buffers,
+                m_n,
+                m_all_num_rows,
+                true
+            );
+            recoverCurDevice();
+        }
     } else {
         partBandedFwdSweep(sol);
         partBandedBckSweep(sol);
@@ -1571,11 +1723,6 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
     // If there is just one partition, force using constant bandwidth method.
     if (m_numPartitions == 1 || m_k == 0) {
         m_variableBandwidth = false;
-    }
-
-    // Constrain on the number of GPUs.
-    if (m_numPartitions - 1 < m_gpuCount) {
-        m_gpuCount = m_numPartitions - 1;
     }
 
     // Assemble the banded matrix.
@@ -1927,6 +2074,10 @@ Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A)
     if (m_numPartitions == 1)
         m_variableBandwidth = false;
 
+    if (m_gpuCount > m_numPartitions) {
+        m_gpuCount = m_numPartitions;
+    }
+
     // Set the size and load the banded matrix into m_B.
     m_B.resize((2*m_k+1)*n);
 
@@ -1941,6 +2092,77 @@ Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A)
 
     m_timer.Start();
     device::copyFromCOOMatrixToBandedMatrix<<<grids, blockX>>>(nnz, m_k, d_rows, d_cols, d_vals, dB, m_saveMem);
+
+    if (m_gpuCount > 1) {
+        saveCurDevice();
+        int rows_per_partition = m_n / m_numPartitions;
+        int rows_remainder = m_n % m_numPartitions;
+        int partitions_per_device = m_numPartitions / m_gpuCount;
+        int part_remainder = m_numPartitions % m_gpuCount;
+
+        int partBegin = 0, partEnd;
+        int rowBegin = 0;
+        int cur_b_offset = 0;
+
+        m_all_Bs.resize(m_gpuCount);
+        m_all_BOffsets.resize(m_gpuCount);
+        m_all_ks.resize(m_gpuCount);
+        m_all_BOffsets_host.resize(m_gpuCount);
+        m_all_ks_host.resize(m_gpuCount);
+        m_all_num_rows.resize(m_gpuCount);
+        m_all_num_partitions.resize(m_gpuCount);
+        m_all_ks_col_host.resize(m_gpuCount);
+
+        for (int i = 0; i < m_gpuCount; i++) {
+            cudaSetDevice(i);
+
+            int total_b_offset = 0;
+
+            if (i < part_remainder) {
+                partEnd = partBegin + (partitions_per_device + 1);
+            } else {
+                partEnd = partBegin + partitions_per_device;
+            }
+
+            int r_begin = rowBegin;
+            int rowEnd;
+
+            m_all_ks_host[i].resize(partEnd - partBegin);
+            m_all_BOffsets_host[i].resize(partEnd - partBegin + 1);
+            m_all_BOffsets_host[i][0] = 0;
+
+            for (int j = partBegin; j < partEnd; j++) {
+                if (j < rows_remainder) {
+                    rowEnd = r_begin + (rows_per_partition + 1);
+                    total_b_offset += (rows_per_partition + 1) * (2 * m_k + 1);
+                    m_all_BOffsets_host[i][j - partBegin + 1] = m_all_BOffsets_host[i][j - partBegin] + (rows_per_partition + 1) * (2 * m_k + 1);
+                } else {
+                    rowEnd = r_begin + rows_per_partition;
+                    total_b_offset += (rows_per_partition) * (2 * m_k + 1);
+                    m_all_BOffsets_host[i][j - partBegin + 1] = m_all_BOffsets_host[i][j - partBegin] + (rows_per_partition) * (2 * m_k + 1);
+                }
+                m_all_ks_host[i][j - partBegin] = m_k;
+
+                r_begin = rowEnd;
+            }
+            m_all_ks_col_host[i].resize(rowEnd - rowBegin, m_k);
+
+            m_all_Bs[i].resize(m_all_BOffsets_host[i][partEnd - partBegin]);
+            thrust::copy(m_B.begin() + cur_b_offset, m_B.begin() + (cur_b_offset + total_b_offset), m_all_Bs[i].begin());
+            cur_b_offset += total_b_offset;
+
+            m_all_ks[i] = m_all_ks_host[i];
+            m_all_BOffsets[i] = m_all_BOffsets_host[i];
+            m_all_num_rows[i] = rowEnd - rowBegin;
+            m_all_num_partitions[i] = partEnd - partBegin;
+
+            rowBegin = rowEnd;
+            partBegin = partEnd;
+        }
+
+        recoverCurDevice();
+        m_B.clear();
+    }
     m_timer.Stop();
     m_time_toBanded = m_timer.getElapsed();
 }
@@ -6315,6 +6537,207 @@ Precond<PrecVector>::updateRHS(PrecVector& rhs) {
         }
         bcr_timer.Stop();
         m_time_bcr_mv_inflation += bcr_timer.getElapsed();
+    }
+}
+
+template <typename PrecVector>
+void
+Precond<PrecVector>::updateRHS(PrecVector& rhs, int gpu_idx) {
+    size_t depth = m_all_lower_matrices[gpu_idx].size();
+
+    const PrecValueType* p_B       = thrust::raw_pointer_cast(&m_all_Bs[gpu_idx][0]);
+    PrecValueType*       p_rhs     = thrust::raw_pointer_cast(&rhs[0]);
+    const int*           p_ks      = thrust::raw_pointer_cast(&m_all_ks[gpu_idx][0]);
+    const int*           p_src_offsets = thrust::raw_pointer_cast(&m_all_BOffsets[gpu_idx][0]);
+
+    GPUTimer bcr_timer;
+    for (int level = 0; level < depth; level++) {
+        int stride = 1 << (level + 1);
+
+        const int *    p_ns_scan_lower;
+        const int *    p_offsets_of_offsets_lower;
+        const int *    p_offsets_lower;
+        const PrecValueType * p_mat_lower;
+
+        const int *    p_ns_scan_upper;
+        const int *    p_offsets_of_offsets_upper;
+        const int *    p_offsets_upper;
+        const PrecValueType * p_mat_upper;
+
+        {
+            p_ns_scan_upper    = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_ns_scan[0]);
+            p_offsets_of_offsets_upper = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_A_offsets_of_offsets[0]);
+            p_offsets_upper    = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_A_offsets[0]);
+            p_mat_upper = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_A[0]);
+        }
+        
+        {
+            p_ns_scan_lower    = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_ns_scan[0]);
+            p_offsets_of_offsets_lower = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_A_offsets_of_offsets[0]);
+            p_offsets_lower    = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_A_offsets[0]);
+            p_mat_lower = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_A[0]);
+        }
+
+        {
+            dim3 grids((m_all_num_rows[gpu_idx] / m_all_num_partitions[gpu_idx] / m_all_ks_host[gpu_idx][0] + stride - 1) / stride + 1, m_all_num_partitions[gpu_idx], 1);
+            int threadsPerBlock = std::min(m_k, 512);
+
+            if (gpu_idx == m_cur_device) {
+                bcr_timer.Start();
+            }
+            {
+                device::var::fwdSweepRHS_stride<<<grids, threadsPerBlock>>>(
+                    p_B,
+                    p_rhs,
+                    m_all_num_rows[gpu_idx],
+                    m_all_num_partitions[gpu_idx],
+                    p_ks,
+                    p_src_offsets,
+                    stride
+                );
+            }
+
+            {
+                device::var::preBckDivisionRHS_stride<<<grids, threadsPerBlock>>>(
+                    p_B, 
+                    p_rhs, 
+                    m_all_num_rows[gpu_idx],
+                    m_all_num_partitions[gpu_idx],
+                    p_ks,
+                    p_src_offsets,
+                    stride,
+                    m_isSPD
+                );
+            }
+
+            {
+                device::var::bckSweepRHS_stride<<<grids, threadsPerBlock>>>(
+                    p_B,
+                    p_rhs,
+                    m_all_num_rows[gpu_idx],
+                    m_all_num_partitions[gpu_idx],
+                    p_ks,
+                    p_src_offsets,
+                    stride
+                );
+            }
+            if (gpu_idx == m_cur_device) {
+                bcr_timer.Stop();
+                m_time_bcr_sweep_inflation += bcr_timer.getElapsed();
+            }
+        }
+
+        {
+            dim3 grids((m_k + MAT_VEC_MUL_BLOCK_SIZE - 1) / MAT_VEC_MUL_BLOCK_SIZE, (m_all_num_rows[gpu_idx] / m_all_num_partitions[gpu_idx] / m_all_ks_host[gpu_idx][0] + stride - 1) / stride + 1, m_all_num_partitions[gpu_idx]);
+            //// int threadsPerBlock = MAT_VEC_MUL_BLOCK_SIZE;
+            if (gpu_idx == m_cur_device) {
+                bcr_timer.Start();
+            }
+
+            device::matrixVecMul<<<grids, dim3(MAT_VEC_MUL_BLOCK_SIZE, MAT_VEC_MUL_BLOCK_SIZE)>>>(
+                p_mat_lower,
+                p_rhs,
+                p_rhs,
+                m_all_num_rows[gpu_idx],
+                m_all_num_partitions[gpu_idx],
+                p_ns_scan_lower,
+                p_ks,
+                p_offsets_of_offsets_lower,
+                p_offsets_lower,
+                stride,
+                false,
+                false
+            ); 
+
+            device::matrixVecMul<<<grids, dim3(MAT_VEC_MUL_BLOCK_SIZE, MAT_VEC_MUL_BLOCK_SIZE)>>>(
+                p_mat_upper,
+                p_rhs,
+                p_rhs,
+                m_all_num_rows[gpu_idx],
+                m_all_num_partitions[gpu_idx],
+                p_ns_scan_upper,
+                p_ks,
+                p_offsets_of_offsets_upper,
+                p_offsets_upper,
+                stride,
+                false,
+                true
+            ); 
+            if (gpu_idx == m_cur_device) {
+                bcr_timer.Stop();
+                m_time_bcr_mv_inflation += bcr_timer.getElapsed();
+            }
+        }
+    }
+
+    for (int level = depth - 2; level >= 0; level--) {
+        int stride = 1 << (level + 1);
+
+        const int *    p_ns_scan_lower;
+        const int *    p_offsets_of_offsets_lower;
+        const int *    p_offsets_lower;
+        const PrecValueType * p_mat_lower;
+
+        const int *    p_ns_scan_upper;
+        const int *    p_offsets_of_offsets_upper;
+        const int *    p_offsets_upper;
+        const PrecValueType * p_mat_upper;
+
+        {
+            p_ns_scan_upper    = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_ns_scan[0]);
+            p_offsets_of_offsets_upper = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_A_offsets_of_offsets[0]);
+            p_offsets_upper    = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_A_offsets[0]);
+            p_mat_upper = thrust::raw_pointer_cast(&m_all_upper_matrices[gpu_idx][level].m_A[0]);
+        }
+        
+        {
+            p_ns_scan_lower    = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_ns_scan[0]);
+            p_offsets_of_offsets_lower = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_A_offsets_of_offsets[0]);
+            p_offsets_lower    = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_A_offsets[0]);
+            p_mat_lower = thrust::raw_pointer_cast(&m_all_lower_matrices[gpu_idx][level].m_A[0]);
+        }
+
+        if (gpu_idx == m_cur_device) {
+            bcr_timer.Start();
+        }
+        {
+            dim3 grids((m_k + MAT_VEC_MUL_BLOCK_SIZE - 1) / MAT_VEC_MUL_BLOCK_SIZE, (m_all_num_rows[gpu_idx] / m_all_num_partitions[gpu_idx] / m_ks_host[0] + stride - 1) / stride + 1, m_all_num_partitions[gpu_idx]);
+            //// int threadsPerBlock = MAT_VEC_MUL_BLOCK_SIZE;
+
+            device::matrixVecMul<<<grids, dim3(MAT_VEC_MUL_BLOCK_SIZE, MAT_VEC_MUL_BLOCK_SIZE)>>>(
+                p_mat_lower,
+                p_rhs,
+                p_rhs,
+                m_all_num_rows[gpu_idx],
+                m_all_num_partitions[gpu_idx],
+                p_ns_scan_lower,
+                p_ks,
+                p_offsets_of_offsets_lower,
+                p_offsets_lower,
+                stride,
+                true,
+                false 
+            ); 
+
+            device::matrixVecMul<<<grids, dim3(MAT_VEC_MUL_BLOCK_SIZE, MAT_VEC_MUL_BLOCK_SIZE)>>>(
+                p_mat_upper,
+                p_rhs,
+                p_rhs,
+                m_all_num_rows[gpu_idx],
+                m_all_num_partitions[gpu_idx],
+                p_ns_scan_upper,
+                p_ks,
+                p_offsets_of_offsets_upper,
+                p_offsets_upper,
+                stride,
+                true,
+                true
+            ); 
+        }
+        if (gpu_idx == m_cur_device) {
+            bcr_timer.Stop();
+            m_time_bcr_mv_inflation += bcr_timer.getElapsed();
+        }
     }
 }
 

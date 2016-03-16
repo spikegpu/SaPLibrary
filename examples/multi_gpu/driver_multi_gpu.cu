@@ -869,6 +869,11 @@ GetProblemSpecs(int             argc,
         return false;
     }
 
+    // If the GPU count was not set correctly, set to to 1.
+    if (opts.gpuCount < 1) {
+        opts.gpuCount = 1;
+    }
+
     // If no problem was defined, show usage and exit.
     if (fileMat.length() == 0) {
         cout << "The matrix filename is required." << endl << endl;

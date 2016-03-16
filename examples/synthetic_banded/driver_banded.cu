@@ -55,7 +55,8 @@ enum {OPT_HELP, OPT_VERBOSE, OPT_PART,
       OPT_DROPOFF_FRAC, 
       OPT_BAND, OPT_USE_BCR,
       OPT_OUTFILE, OPT_PRECOND,
-      OPT_KRYLOV, OPT_SAFE_FACT};
+      OPT_KRYLOV, OPT_SAFE_FACT,
+      OPT_GPU_COUNT};
 
 // Table of CSimpleOpt::Soption structures. Each entry specifies:
 // - the ID for the option (returned from OptionId() during processing)
@@ -80,6 +81,7 @@ CSimpleOptA::SOption g_options[] = {
 	{ OPT_PRECOND,       "--precond-method",     SO_REQ_CMB },
 	{ OPT_KRYLOV,        "-k",                   SO_REQ_CMB },
 	{ OPT_KRYLOV,        "--krylov-method",      SO_REQ_CMB },
+	{ OPT_GPU_COUNT,     "--gpu-count",          SO_REQ_CMB },
 	{ OPT_SAFE_FACT,     "--safe-fact",          SO_NONE    },
     { OPT_USE_BCR,       "--use-bcr",            SO_NONE    },
 	{ OPT_VERBOSE,       "-v",                   SO_NONE    },
@@ -216,10 +218,20 @@ int main(int argc, char** argv)
 	sap::Stats stats = mySolver.getStats();
 
 	// Reason why cannot solve (for unsuccessful solving only)
-	if (success)
+	if (success) {
 		outputItem ( "OK");
-	else
+    } else {
 		outputItem ( "NConv", COLOR_RED);
+    }
+
+	// Calculate the actual residual and its norm.
+    {
+		Vector r(A.num_rows);
+		mySpmv(x, r);
+		cusp::blas::axpby(b, r, r, REAL(1.0), REAL(-1.0));
+
+        outputItem( cusp::blas::nrm2(r) / cusp::blas::nrm2(b));
+    }
 
     if (opts.useBCR) {
         outputItem( stats.time_bcr_lu);
@@ -230,6 +242,7 @@ int main(int argc, char** argv)
         outputItem( "");
         outputItem( "");
     }
+
 	// Total time for setup
 	outputItem( stats.timeSetup);
 	// Number of iterations to converge
@@ -255,7 +268,6 @@ int main(int argc, char** argv)
 	if (fileSol.length() > 0)
 		cusp::io::write_matrix_market_file(x, fileSol);
 
-	// Calculate the actual residual and its norm.
 	/*
 	if (verbose) {
 		PrintStats(success, mySolver, mySpmv);
@@ -455,6 +467,9 @@ GetProblemSpecs(int             argc,
 					else
 						return false;
 				}
+				break;
+			case OPT_GPU_COUNT:
+                opts.gpuCount = atoi(args.OptionArg());
 				break;
 			case OPT_SAFE_FACT:
 				opts.safeFactorization = true;

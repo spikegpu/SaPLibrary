@@ -41,6 +41,8 @@ void bicgstabl(LinearOperator&  A,
 	// Allocate workspace
 	int  n = b.size();
 
+    const ValueType eps = 1e-20;
+
 	ValueType rho0  = ValueType(1);
 	ValueType alpha = ValueType(0);
 	ValueType omega = ValueType(1);
@@ -80,7 +82,13 @@ void bicgstabl(LinearOperator&  A,
 	             thrust::make_zip_iterator(thrust::make_tuple(u.end(), x.end(), r.end())), 
 	             thrust::make_zip_iterator(thrust::make_tuple(uu[0].begin(), xx.begin(), rr[0].begin())));
 
-	while(!monitor.finished(r)) {
+    ValueType r_norm_min = cusp::blas::nrm2(r);
+    ValueType r_norm = r_norm_min;
+    ValueType r_norm_act = r_norm;
+
+	cusp::array1d<ValueType,MemorySpace>  x_min(n, ValueType(0));
+
+	while(true) {
 
 		rho0 = -omega * rho0;
 
@@ -89,10 +97,10 @@ void bicgstabl(LinearOperator&  A,
 		for(int j = 0; j < L; j++) {
 			rho1 = cusp::blas::dotc(rr[j], r0);
 
-			// return with failure
+			// failure
 			if(rho0 == 0) {
 				monitor.stop(-10, "rho0 is zero");
-				return;
+                break;
 			}
 
 			ValueType beta = alpha * rho1 / rho0;
@@ -112,7 +120,7 @@ void bicgstabl(LinearOperator&  A,
 
 			if(gamma == 0) {
 				monitor.stop(-11, "gamma is zero");
-				return;
+                break;
 			}
 
 			alpha = rho0 / gamma;
@@ -122,18 +130,52 @@ void bicgstabl(LinearOperator&  A,
 				cusp::blas::axpy(uu[i+1], rr[i], ValueType(-alpha));
 			}
 
+            r_norm_act = r_norm = cusp::blas::nrm2(rr[0]);
+
 			// rr(j+1) = A * P^(-1) * rr(j)
 			cusp::multiply(P, rr[j], Pv);
 			cusp::multiply(A, Pv, rr[j+1]);
-			
+
+            if (std::fabs(alpha) * cusp::blas::nrm2(uu[0]) < eps * cusp::blas::nrm2(xx)) {
+                monitor.incrementStag();
+            } else {
+                monitor.resetStag();
+            }
+
 			// xx <- xx + alpha * uu(0)
 			cusp::blas::axpy(uu[0], xx, alpha);
 
-			if(monitor.finished(rr[0])) {
-				cusp::multiply(P, xx, x);
-				return;
-			}
+            if(monitor.needCheckConvergence(r_norm)) {
+                cusp::array1d<ValueType,MemorySpace>  Pxx(n);
+                cusp::array1d<ValueType,MemorySpace>  APxx(n);
+
+                // APxx <- A * P^{-1} * xx
+				cusp::multiply(P, xx, Pxx);
+				cusp::multiply(A, Pxx, APxx);
+
+                // rr(0) <- b - APxx
+                cusp::blas::axpby(b, APxx, rr[0], ValueType(1), ValueType(-1));
+                r_norm_act = cusp::blas::nrm2(rr[0]);
+
+                if (monitor.finished(r_norm_act)) {
+                    break;
+                }
+            }
+
+            if (r_norm_act < r_norm_min) {
+                r_norm_min = r_norm_act;
+                // x_min <- xx
+                cusp::blas::copy(xx, x_min);
+            }
+
+            if (monitor.finished()) {
+                break;
+            }
 		}
+
+        if (monitor.finished()) {
+            break;
+        }
 
 
 		for(int j = 1; j <= L; j++) {
@@ -144,10 +186,13 @@ void bicgstabl(LinearOperator&  A,
 			sigma[j] = cusp::blas::dotc(rr[j], rr[j]);
 			if(sigma[j] == 0) {
 				monitor.stop(-12, "a sigma value is zero");
-				return;
+                break;
 			}
 			gamma_prime[j] = cusp::blas::dotc(rr[j], rr[0]) / sigma[j];
 		}
+        if (monitor.finished()) {
+            break;
+        }
 
 		gamma[L] = gamma_prime[L];
 		omega = gamma[L];
@@ -164,6 +209,12 @@ void bicgstabl(LinearOperator&  A,
 				gamma_primeprime[j] += tao[j][i] * gamma[i+1];
 		}
 
+        if (std::fabs(gamma[1]) * cusp::blas::nrm2(rr[0]) < eps * cusp::blas::nrm2(xx)) {
+            monitor.incrementStag();
+        } else {
+            monitor.resetStag();
+        }
+
 		// xx    <- xx    + gamma * rr(0)
 		// rr(0) <- rr(0) - gamma'(L) * rr(L)
 		// uu(0) <- uu(0) - gamma(L) * uu(L)
@@ -171,12 +222,36 @@ void bicgstabl(LinearOperator&  A,
 		cusp::blas::axpy(rr[L], rr[0], -gamma_prime[L]);
 		cusp::blas::axpy(uu[L], uu[0], -gamma[L]);
 
+        r_norm_act = r_norm = cusp::blas::nrm2(rr[0]);
+
 		monitor.increment(0.25f);
 
-		if (monitor.finished(rr[0])) {
-			cusp::multiply(P, xx, x);
-			return;
-		}
+        if(monitor.needCheckConvergence(r_norm)) {
+            cusp::array1d<ValueType,MemorySpace>  Pxx(n);
+            cusp::array1d<ValueType,MemorySpace>  APxx(n);
+
+            // APxx <- A * P^{-1} * xx
+            cusp::multiply(P, xx, Pxx);
+            cusp::multiply(A, Pxx, APxx);
+
+            // rr(0) <- b - APxx
+            cusp::blas::axpby(b, APxx, rr[0], ValueType(1), ValueType(-1));
+            r_norm_act = cusp::blas::nrm2(rr[0]);
+
+            if (monitor.finished(r_norm_act)) {
+                break;
+            }
+        }
+
+        if (r_norm_act < r_norm_min) {
+            r_norm_min = r_norm_act;
+            // x_min <- xx
+            cusp::blas::copy(xx, x_min);
+        }
+
+        if (monitor.finished()) {
+            break;
+        }
 
 		monitor.increment(0.25f);
 
@@ -185,14 +260,48 @@ void bicgstabl(LinearOperator&  A,
 		// rr(0) <- rr(0) - sum_j { gamma'(j) * rr(j) }
 		for(int j = 1; j < L; j++) {
 			cusp::blas::axpy(uu[j], uu[0],  -gamma[j]);
+
+            if (std::fabs(gamma_primeprime[j]) * cusp::blas::nrm2(rr[j]) < eps * cusp::blas::nrm2(xx)) {
+                monitor.incrementStag();
+            } else {
+                monitor.resetStag();
+            }
 			cusp::blas::axpy(rr[j], xx,     gamma_primeprime[j]);
 			cusp::blas::axpy(rr[j], rr[0],  -gamma_prime[j]);
 
-			if (monitor.finished(rr[0])) {
-				cusp::multiply(P, xx, x);
-				return;
-			}
+            r_norm_act = r_norm = cusp::blas::nrm2(rr[0]);
+
+            if(monitor.needCheckConvergence(r_norm)) {
+                cusp::array1d<ValueType,MemorySpace>  Pxx(n);
+                cusp::array1d<ValueType,MemorySpace>  APxx(n);
+
+                // APxx <- A * P^{-1} * xx
+				cusp::multiply(P, xx, Pxx);
+				cusp::multiply(A, Pxx, APxx);
+
+                // rr(0) <- b - APxx
+                cusp::blas::axpby(b, APxx, rr[0], ValueType(1), ValueType(-1));
+                r_norm_act = cusp::blas::nrm2(rr[0]);
+
+                if (monitor.finished(r_norm_act)) {
+                    break;
+                }
+            }
+
+            if (r_norm_act < r_norm_min) {
+                r_norm_min = r_norm_act;
+                // x_min <- xx
+                cusp::blas::copy(xx, x_min);
+            }
+
+            if (monitor.finished()) {
+                break;
+            }
 		}
+
+        if (monitor.finished()) {
+            break;
+        }
 
 		// u <- uu(0)
 		// x <- xx
@@ -203,6 +312,45 @@ void bicgstabl(LinearOperator&  A,
 
 		monitor.increment(0.25f);
 	}
+
+    if (monitor.converged()) {
+        // x <- P^{-1} * xx
+        cusp::multiply(P, xx, x);
+    } else {
+        cusp::array1d<ValueType,MemorySpace>  Pxx(n);
+        cusp::array1d<ValueType,MemorySpace>  APxx(n);
+        cusp::array1d<ValueType,MemorySpace>  Pxmin(n);
+        cusp::array1d<ValueType,MemorySpace>  APxmin(n);
+        cusp::array1d<ValueType,MemorySpace>  r_comp(n);
+        cusp::array1d<ValueType,MemorySpace>  r_comp_min(n);
+
+        // APxx <- A * P^{-1} * xx
+        cusp::multiply(P, xx, Pxx);
+        cusp::multiply(A, Pxx, APxx);
+
+        // r_comp <- b - APxx
+        cusp::blas::axpby(b, APxx, r_comp, ValueType(1), ValueType(-1));
+
+        // APxmin <- P^{-1} * x_min
+        cusp::multiply(P, x_min, Pxmin);
+        cusp::multiply(A, Pxmin, APxmin);
+
+        // r_comp_min <- b - APxmin
+        cusp::blas::axpby(b, APxmin, r_comp_min, ValueType(1), ValueType(-1));
+
+        ValueType r_comp_norm = cusp::blas::nrm2(r_comp);
+        ValueType r_comp_min_norm = cusp::blas::nrm2(r_comp_min);
+
+        if (r_comp_norm < r_comp_min_norm) {
+            // x <- Pxx
+            cusp::blas::copy(Pxx, x);
+            monitor.updateResidual(r_comp_norm);
+        } else {
+            // x <- Pxmin
+            cusp::blas::copy(Pxmin, x);
+            monitor.updateResidual(r_comp_min_norm);
+        }
+    }
 }
 
 /// Specializations of the generic sap::bicgstabl function for L=1

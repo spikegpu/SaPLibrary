@@ -36,7 +36,7 @@
 // Typedefs
 // -----------------------------------------------------------------------------
 typedef double REAL;
-typedef float  PREC_REAL;
+typedef double PREC_REAL;
 
 typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
@@ -745,6 +745,11 @@ GetProblemSpecs(int             argc,
         cout << "The number of partitions must be specified." << endl << endl;
         ShowUsage();
         return false;
+    }
+
+    // If the GPU count was not set correctly, set to to 1.
+    if (opts.gpuCount < 1) {
+        opts.gpuCount = 1;
     }
 
     // If no problem was defined, show usage and exit.

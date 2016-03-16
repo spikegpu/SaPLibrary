@@ -152,6 +152,16 @@ class Solver
 public:
     Solver(int             numPartitions,
            const Options&  opts);
+    ~Solver() {
+        if (m_p_monitor != NULL) {
+            delete m_p_monitor;
+            m_p_monitor = NULL;
+        } 
+        if (m_p_bicgstabl_monitor != NULL){
+            delete m_p_bicgstabl_monitor;
+            m_p_bicgstabl_monitor = NULL;
+        }
+    }
 
     template <typename Matrix>
     bool setup(const Matrix& A);
@@ -166,8 +176,18 @@ public:
 
     /// Extract solver statistics.
     const Stats&       getStats() const          {return m_stats;}
-    int                getMonitorCode() const    {return m_monitor.getCode();}
-    const std::string& getMonitorMessage() const {return m_monitor.getMessage();}
+    int                getMonitorCode() const    {
+        if (m_p_monitor != NULL) {
+            return m_p_monitor -> getCode();
+        }
+        return m_p_bicgstabl_monitor->getCode();
+    }
+    const std::string& getMonitorMessage() const {
+        if (m_p_monitor != NULL) {
+            return m_p_monitor -> getMessage();
+        }
+        return m_p_bicgstabl_monitor->getMessage();
+    }
 
 private:
     typedef typename Array::value_type    SolverValueType;
@@ -183,7 +203,8 @@ private:
 
 
     KrylovSolverType                    m_solver;
-    Monitor<SolverVector>               m_monitor;
+    Monitor<SolverVector>*              m_p_monitor;
+    BiCGStabLMonitor<SolverVector>*     m_p_bicgstabl_monitor;
     Precond<PrecVector>                 m_precond;
 
     int                                 m_n;
@@ -277,14 +298,29 @@ Stats::Stats()
 template <typename Array, typename PrecValueType>
 Solver<Array, PrecValueType>::Solver(int             numPartitions,
                                      const Options&  opts)
-:   m_monitor(opts.maxNumIterations, opts.relTol, opts.absTol),
-    m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testDB, opts.performDB, opts.dbFirstStageOnly, opts.applyScaling,
+:   m_precond(numPartitions, opts.isSPD, opts.saveMem, opts.performReorder, opts.testDB, opts.performDB, opts.dbFirstStageOnly, opts.applyScaling,
               opts.dropOffFraction, opts.maxBandwidth, opts.gpuCount, opts.factMethod, opts.precondType, 
               opts.safeFactorization, opts.variableBandwidth, opts.trackReordering, opts.useBCR, opts.ilu_level, opts.relTol),
     m_solver(opts.solverType),
     m_trackReordering(opts.trackReordering),
     m_setupDone(false)
 {
+    if (m_solver == BiCGStab1 || m_solver == BiCGStab2) {
+        m_p_monitor = NULL;
+        m_p_bicgstabl_monitor = new BiCGStabLMonitor<SolverVector>(
+            opts.maxNumIterations,
+            8,
+            opts.relTol,
+            opts.absTol
+        );
+    } else {
+        m_p_bicgstabl_monitor = NULL;
+        m_p_monitor = new Monitor<SolverVector>(
+            opts.maxNumIterations,
+            opts.relTol,
+            opts.absTol
+        );
+    }
 }
 
 
@@ -446,7 +482,11 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
 
 
     // Solve the linear system.
-    m_monitor.init(b_vector);
+    if (m_p_monitor != NULL) {
+        m_p_monitor -> init(b_vector);
+    } else {
+        m_p_bicgstabl_monitor -> init(b_vector);
+    }
 
     CPUTimer timer;
 
@@ -456,30 +496,30 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
     {
         // CUSP Krylov solvers
         case BiCGStab_C:
-            cusp::krylov::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+            cusp::krylov::bicgstab(spmv, x_vector, b_vector, *m_p_monitor, m_precond);
             break;
         case GMRES_C:
-            cusp::krylov::gmres(spmv, x_vector, b_vector, 50, m_monitor, m_precond);
+            cusp::krylov::gmres(spmv, x_vector, b_vector, 50, *m_p_monitor, m_precond);
             break;
         case CG_C:
-            cusp::krylov::cg(spmv, x_vector, b_vector, m_monitor, m_precond);
+            cusp::krylov::cg(spmv, x_vector, b_vector, *m_p_monitor, m_precond);
             break;
         case CR_C:
-            cusp::krylov::cr(spmv, x_vector, b_vector, m_monitor, m_precond);
+            cusp::krylov::cr(spmv, x_vector, b_vector, *m_p_monitor, m_precond);
             break;
 
         // SaP Krylov solvers
         case BiCGStab1:
-            sap::bicgstab1(spmv, x_vector, b_vector, m_monitor, m_precond);
+            sap::bicgstab1(spmv, x_vector, b_vector, *m_p_bicgstabl_monitor, m_precond);
             break;
         case BiCGStab2:
-            sap::bicgstab2(spmv, x_vector, b_vector, m_monitor, m_precond);
+            sap::bicgstab2(spmv, x_vector, b_vector, *m_p_bicgstabl_monitor, m_precond);
             break;
         case BiCGStab:
-            sap::bicgstab(spmv, x_vector, b_vector, m_monitor, m_precond);
+            sap::bicgstab(spmv, x_vector, b_vector, *m_p_monitor, m_precond);
             break;
         case MINRES:
-            sap::minres(spmv, x_vector, b_vector, m_monitor, m_precond);
+            sap::minres(spmv, x_vector, b_vector, *m_p_monitor, m_precond);
             break;
     }
 
@@ -487,10 +527,17 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
     timer.Stop();
 
     m_stats.timeSolve = timer.getElapsed();
-    m_stats.rhsNorm = m_monitor.getRHSNorm();
-    m_stats.residualNorm = m_monitor.getResidualNorm();
-    m_stats.relResidualNorm = m_monitor.getRelResidualNorm();
-    m_stats.numIterations = m_monitor.getNumIterations();
+    if (m_p_monitor != NULL) {
+        m_stats.rhsNorm = m_p_monitor -> getRHSNorm();
+        m_stats.residualNorm = m_p_monitor -> getResidualNorm();
+        m_stats.relResidualNorm = m_p_monitor -> getRelResidualNorm();
+        m_stats.numIterations = m_p_monitor -> getNumIterations();
+    } else {
+        m_stats.rhsNorm = m_p_bicgstabl_monitor -> getRHSNorm();
+        m_stats.residualNorm = m_p_bicgstabl_monitor -> getResidualNorm();
+        m_stats.relResidualNorm = m_p_bicgstabl_monitor -> getRelResidualNorm();
+        m_stats.numIterations = m_p_bicgstabl_monitor -> getNumIterations();
+    }
 
     m_stats.time_shuffle = m_precond.getTimeShuffle();
 
@@ -500,7 +547,10 @@ Solver<Array, PrecValueType>::solve(SpmvOperator&       spmv,
     m_stats.time_bcr_sweep_inflation = m_precond.getTimeBCRSweepInflation();
     m_stats.time_bcr_mv_inflation = m_precond.getTimeBCRMVInflation();
 
-    return m_monitor.converged();
+    if (m_p_monitor != NULL) {
+        return m_p_monitor -> converged();
+    }
+    return m_p_bicgstabl_monitor -> converged();
 }
 
 
