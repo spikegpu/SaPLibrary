@@ -42,6 +42,7 @@ include_directories(..)
 
 
 SET(SAP_HEADERS
+	../../sap/banded_matrix.h
 	../../sap/bicgstab2.h
 	../../sap/bicgstab.h
 	../../sap/minres.h

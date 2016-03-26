@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include <sap/solver.h>
+#include <sap/banded_matrix.h>
 #include <sap/spmv.h>
 
 #include <cusp/io/matrix_market.h>
@@ -26,11 +27,11 @@
 typedef double REAL;
 typedef double PREC_REAL;
 
-typedef typename cusp::csr_matrix<int, REAL, cusp::device_memory> Matrix;
 typedef typename cusp::array1d<REAL, cusp::device_memory>         Vector;
+typedef typename sap::BandedMatrix<Vector>                        Matrix;
 
 typedef typename sap::Solver<Vector, PREC_REAL>                 SaPSolver;
-typedef typename sap::SpmvCusp<Matrix>                          SpmvFunctor;
+typedef typename sap::MVBanded<Matrix>                          SpmvFunctor;
 
 typedef typename cusp::coo_matrix<int, REAL, cusp::host_memory>   MatrixCooH;
 typedef typename cusp::array1d<REAL, cusp::host_memory>           VectorH;
@@ -112,7 +113,6 @@ bool GetProblemSpecs(int             argc,
                      bool&           verbose,
                      sap::Options& opts);
 
-void GetBandedMatrix(int N, int k, REAL d, Matrix& A);
 void GetRhsVector(const Matrix& A, Vector& b, Vector& x_target);
 void PrintStats(bool               success,
                 const SaPSolver& mySolver,
@@ -176,12 +176,11 @@ int main(int argc, char** argv)
 	sapSetDevice();
 
 	// Get matrix and rhs.
-	Matrix A;
+	Matrix A(pN, pk, pd);
 	Vector b;
 	Vector x_target;
 	Vector delta_x_target;
 
-	GetBandedMatrix(pN, pk, pd, A);
 	GetRhsVector(A, b, x_target);
 
 	// Create the SAP Solver object and the SPMV functor. Perform the solver
@@ -599,54 +598,6 @@ void ShowUsage()
 	cout << "        Print this message and exit." << endl;
 	cout << endl;
 }
-
-
-// -------------------------------------------------------------------
-// GetBandedMatrix()
-//
-// This function generates a banded matrix of specified size, half
-// bandwidth, and degree of diagonal dominance. The matrix is first
-// generated on a local COO matrix on the host and is then copied to
-// the output matrix. We use random elements in the range [-10, 10]
-// and adjust the diagonal elements to satisfy the required degree of
-// diagonal dominance.
-// -------------------------------------------------------------------
-void
-GetBandedMatrix(int N, int k, REAL d, Matrix& A)
-{
-	// Generate the banded matrix (in COO format) on the host.
-	int     num_entries = (2 * k + 1) * N - k * (k + 1);
-	MatrixCooH Ah(N, N, num_entries);
-
-	int iiz = 0;
-	for (int ir = 0; ir < N; ir++) {
-		int left = std::max(0, ir - k);
-		int right = std::min(N - 1, ir + k);
-
-		REAL row_sum = 0;
-		int  diag_iiz;
-		for (int ic = left; ic <= right; ic++, iiz++) {
-			REAL val = RAND(-10.0, 10.0);////(ir+1)*(ic+1);
-
-			if (ir == ic)
-				diag_iiz = iiz;
-			else
-				row_sum += abs(val);
-
-			Ah.row_indices[iiz] = ir;
-			Ah.column_indices[iiz] = ic;
-			Ah.values[iiz] = val;
-		}
-		Ah.values[diag_iiz] = d * row_sum;
-	}
-
-	// Copy the matrix from host to device, while also converting it 
-	// from COO to CSR format.
-	A = Ah;
-
-	////cusp::io::write_matrix_market_file(Ah, "A.mtx");
-}
-
 
 // -----------------------------------------------------------------------------
 // PrintStats()

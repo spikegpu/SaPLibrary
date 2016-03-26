@@ -300,6 +300,57 @@ matrixVecMul(
 
 template <typename T>
 __global__ void
+bandedMatrixVecMul(
+    const T*      mat,
+    const T*      vec1,
+    T*            vec2,
+    int           n,
+    int           k
+) {
+    __shared__ T shared[MAT_VEC_MUL_BLOCK_SIZE][MAT_VEC_MUL_BLOCK_SIZE];
+    int bid = gridDim.x * blockIdx.y + blockIdx.x;
+
+    int row = bid * MAT_VEC_MUL_BLOCK_SIZE + threadIdx.y;
+    int start_col = row - k, end_col = row + k + 1;
+
+    if (row >= n) {
+        return;
+    }
+
+    if (start_col < 0) {
+        start_col = 0;
+    }
+
+    if (end_col > n) {
+        end_col = n;
+    }
+
+    shared[threadIdx.y][threadIdx.x] = T(0);
+
+    for (int i = start_col; i < end_col; i += MAT_VEC_MUL_BLOCK_SIZE) {
+        if (i + threadIdx.x < end_col) {
+            shared[threadIdx.y][threadIdx.x] += mat[2 * k * row + k + i + threadIdx.x] * vec1[i + threadIdx.x];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x < 8) {
+        shared[threadIdx.y][threadIdx.x] += shared[threadIdx.y][threadIdx.x + 8];
+    }
+    __syncthreads();
+
+    if (threadIdx.x < 4) {
+        shared[threadIdx.y][threadIdx.x] += shared[threadIdx.y][threadIdx.x + 4];
+    }
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        vec2[row] = (shared[threadIdx.y][0] + shared[threadIdx.y][1]) + (shared[threadIdx.y][2] + shared[threadIdx.y][3]);
+    }
+}
+
+template <typename T>
+__global__ void
 update_banded_matrix(
     T*           p_src,
     const T*     p_dst,

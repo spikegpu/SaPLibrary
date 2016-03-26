@@ -5,11 +5,12 @@
 #ifndef SAP_PRECOND_CUH
 #define SAP_PRECOND_CUH
 
+#include <sap/banded_matrix.h>
 #include <sap/common.h>
 #include <sap/graph.h>
-#include <sap/timer.h>
 #include <sap/strided_range.h>
 #include <sap/segmented_matrix.h>
+#include <sap/timer.h>
 #include <sap/device/factor_band_const.cuh>
 #include <sap/device/factor_band_var.cuh>
 #include <sap/device/sweep_band_const.cuh>
@@ -74,6 +75,7 @@ public:
     typedef typename cusp::coo_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCoo;
     typedef typename cusp::coo_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCooH;
     typedef typename cusp::csr_matrix<int, PrecValueType, MemorySpace>        PrecMatrixCsr;
+    typedef typename cusp::csr_matrix<int, double, MemorySpace>               DoubleMatrixCsr;
     typedef typename cusp::csr_matrix<int, PrecValueType, cusp::host_memory>  PrecMatrixCsrH;
 
     Precond();
@@ -295,10 +297,27 @@ private:
     double               m_time_bcr_mv_inflation;
 
     template <typename Matrix>
-    void transformToBandedMatrix(const Matrix&  A);
+    void transformToBandedMatrix(const Matrix&  A) {
+        transformToBandedMatrix(A, A);
+    }
 
     template <typename Matrix>
-    void convertToBandedMatrix(const Matrix&  A);
+    void transformToBandedMatrix(const Matrix&  A, const DoubleMatrixCsr&);
+
+    template <typename Matrix, typename Array>
+    void transformToBandedMatrix(const Matrix&  A, const BandedMatrix<Array>&) {
+    }
+
+    template <typename Matrix>
+    void convertToBandedMatrix(const Matrix&  A) {
+        convertToBandedMatrix(A, A);
+    }
+
+    template <typename Matrix>
+    void convertToBandedMatrix(const Matrix&  A, const DoubleMatrixCsr&);
+
+    template <typename Matrix, typename Array>
+    void convertToBandedMatrix(const Matrix&  A, const BandedMatrix<Array>&);
 
     void extractOffDiagonal(PrecVector& mat_WV);
 
@@ -306,7 +325,13 @@ private:
     void partBandedLU_const();
     void partBandedLU_one();
     void partBlockedBandedLU_one();
-    void partBlockedBandedLU_const();
+    void partBlockedBandedLU_const(
+        int                   n,
+        int                   k,
+        int                   num_partitions,
+        PrecVector&           B
+    );
+
     void partBlockedBandedCholesky_one();
     void partBlockedBandedCholesky_var(
         int                     n,
@@ -347,7 +372,13 @@ private:
     void sparseFactorization();
 
     void partBandedFwdSweep(PrecVector& v);
-    void partBandedFwdSweep_const(PrecVector& v);
+    void partBandedFwdSweep_const(
+        PrecVector&  v,
+        int          n,
+        int          k,
+        int          num_partitions,
+        PrecVector&  B
+    );
     void partBandedFwdSweep_var(
         PrecVector&  v,
         int          n,
@@ -358,7 +389,13 @@ private:
     );
 
     void partBandedBckSweep(PrecVector& v);
-    void partBandedBckSweep_const(PrecVector& v);
+    void partBandedBckSweep_const(
+        PrecVector&  v,
+        int          n,
+        int          k,
+        int          num_partitions,
+        PrecVector&  B
+    );
     void partBandedBckSweep_var(
         PrecVector&  v,
         int          n,
@@ -1603,7 +1640,7 @@ Precond<PrecVector>::combinePermutation(IntVector&  perm,
 template <typename PrecVector>
 template <typename Matrix>
 void
-Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
+Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A, const DoubleMatrixCsr&)
 {
     CPUTimer reorder_timer, assemble_timer, transfer_timer;
 
@@ -2037,6 +2074,123 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
     m_time_transfer += transfer_timer.getElapsed();
 }
 
+template <typename PrecVector>
+template <typename Matrix, typename Array>
+void
+Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A, const BandedMatrix<Array>&) {
+    typedef typename BandedMatrix<Array>::value_type ValueType;
+    m_k = A.m_k;
+
+    // Set the size and load the banded matrix into m_B.
+    m_B.resize((2*m_k+1)*m_n, PrecValueType(0));
+
+    m_timer.Start();
+    {
+        PrecValueType* dB    = thrust::raw_pointer_cast(&m_B[0]);
+        const ValueType* dB2 = thrust::raw_pointer_cast(&((A.getBandedMatrix())[0]));
+        int gridX = m_n, gridY = 1;
+        kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
+
+        device::bandedMatrixTranspose<ValueType, PrecValueType><<<dim3(gridX, gridY), std::min(512, 2 * m_k + 1)>>>(
+            dB2,
+            dB,
+            m_n,
+            m_k
+        );
+    }
+
+    // Verify that the required number of partitions is consistent with the
+    // problem size and half-bandwidth.  If 'n' is the smallest partition size,
+    // the following two conditions must be satisfied:
+    //   (1)  K+1 <= n   (for Spike algorithm)
+    //   (2)  2*K <= n   (for current implementation of UL)
+    // These imply a maximum allowable number of partitions.
+    int  maxNumPartitions = std::max(1, m_n / std::max(m_k + 1, 2 * m_k));
+    m_numPartitions = std::min(m_numPartitions, maxNumPartitions);
+
+    // If there is just one partition, force using constant-bandwidth method.
+    if (m_numPartitions == 1) {
+        m_variableBandwidth = false;
+    }
+
+    if (m_gpuCount > m_numPartitions) {
+        m_gpuCount = m_numPartitions;
+    }
+
+    if (m_gpuCount > 1) {
+        saveCurDevice();
+        int rows_per_partition = m_n / m_numPartitions;
+        int rows_remainder = m_n % m_numPartitions;
+        int partitions_per_device = m_numPartitions / m_gpuCount;
+        int part_remainder = m_numPartitions % m_gpuCount;
+
+        int partBegin = 0, partEnd;
+        int rowBegin = 0;
+        int cur_b_offset = 0;
+
+        m_all_Bs.resize(m_gpuCount);
+        m_all_BOffsets.resize(m_gpuCount);
+        m_all_ks.resize(m_gpuCount);
+        m_all_BOffsets_host.resize(m_gpuCount);
+        m_all_ks_host.resize(m_gpuCount);
+        m_all_num_rows.resize(m_gpuCount);
+        m_all_num_partitions.resize(m_gpuCount);
+        m_all_ks_col_host.resize(m_gpuCount);
+
+        for (int i = 0; i < m_gpuCount; i++) {
+            cudaSetDevice(i);
+
+            int total_b_offset = 0;
+
+            if (i < part_remainder) {
+                partEnd = partBegin + (partitions_per_device + 1);
+            } else {
+                partEnd = partBegin + partitions_per_device;
+            }
+
+            int r_begin = rowBegin;
+            int rowEnd;
+
+            m_all_ks_host[i].resize(partEnd - partBegin);
+            m_all_BOffsets_host[i].resize(partEnd - partBegin + 1);
+            m_all_BOffsets_host[i][0] = 0;
+
+            for (int j = partBegin; j < partEnd; j++) {
+                if (j < rows_remainder) {
+                    rowEnd = r_begin + (rows_per_partition + 1);
+                    total_b_offset += (rows_per_partition + 1) * (2 * m_k + 1);
+                    m_all_BOffsets_host[i][j - partBegin + 1] = m_all_BOffsets_host[i][j - partBegin] + (rows_per_partition + 1) * (2 * m_k + 1);
+                } else {
+                    rowEnd = r_begin + rows_per_partition;
+                    total_b_offset += (rows_per_partition) * (2 * m_k + 1);
+                    m_all_BOffsets_host[i][j - partBegin + 1] = m_all_BOffsets_host[i][j - partBegin] + (rows_per_partition) * (2 * m_k + 1);
+                }
+                m_all_ks_host[i][j - partBegin] = m_k;
+
+                r_begin = rowEnd;
+            }
+            m_all_ks_col_host[i].resize(rowEnd - rowBegin, m_k);
+
+            m_all_Bs[i].resize(m_all_BOffsets_host[i][partEnd - partBegin]);
+            thrust::copy(m_B.begin() + cur_b_offset, m_B.begin() + (cur_b_offset + total_b_offset), m_all_Bs[i].begin());
+            cur_b_offset += total_b_offset;
+
+            m_all_ks[i] = m_all_ks_host[i];
+            m_all_BOffsets[i] = m_all_BOffsets_host[i];
+            m_all_num_rows[i] = rowEnd - rowBegin;
+            m_all_num_partitions[i] = partEnd - partBegin;
+
+            rowBegin = rowEnd;
+            partBegin = partEnd;
+        }
+
+        recoverCurDevice();
+        m_B.clear();
+    }
+    m_timer.Stop();
+    m_time_toBanded = m_timer.getElapsed();
+}
+
 /**
  * This function converts the specified sparse format matrix to a banded matrix
  * m_B which is stored column-wise, band after band, in a contiguous 1-D array.
@@ -2045,7 +2199,7 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A)
 template <typename PrecVector>
 template <typename Matrix>
 void
-Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A)
+Precond<PrecVector>::convertToBandedMatrix(const Matrix&  A, const DoubleMatrixCsr&)
 {
     // Convert matrix to COO format.
     PrecMatrixCoo Acoo = A;
@@ -3754,8 +3908,29 @@ Precond<PrecVector>::partBandedLU()
     } else {
         // Constant bandwidth method.
         if (m_numPartitions > 1) {
-            // partBandedLU_const();
-            partBlockedBandedLU_const();
+            if (m_gpuCount == 1) {
+                partBlockedBandedLU_const(
+                    m_n,
+                    m_k,
+                    m_numPartitions,
+                    m_B
+                );
+            } else {
+                omp_set_num_threads(m_gpuCount);
+                saveCurDevice();
+
+#pragma omp parallel for
+                for (int i = 0; i < m_gpuCount; i++) {
+                    cudaSetDevice(i);
+                    partBlockedBandedLU_const(
+                        m_all_num_rows[i],
+                        m_k,
+                        m_all_num_partitions[i],
+                        m_all_Bs[i]
+                    );
+                }
+                recoverCurDevice();
+            }
         }
         else {
             if (m_saveMem)
@@ -4121,29 +4296,34 @@ Precond<PrecVector>::partBandedLU_const()
 
 template <typename PrecVector>
 void
-Precond<PrecVector>::partBlockedBandedLU_const()
+Precond<PrecVector>::partBlockedBandedLU_const(
+    int                   n,
+    int                   k,
+    int                   num_partitions,
+    PrecVector&           B
+)
 {
     // Note that this function is called only if there are two or more partitions.
     // Moreover, if the factorization method is LU_only, all diagonal blocks in
     // each partition are LU factorized. If the method is LU_UL, then the diagonal
     // block in the last partition is *not* factorized.
 
-    PrecValueType* dB = thrust::raw_pointer_cast(&m_B[0]);
+    PrecValueType* dB = thrust::raw_pointer_cast(&B[0]);
 
-    int n_eff = m_n;
-    int numPart_eff = m_numPartitions;
+    int n_eff = n;
+    int numPart_eff = num_partitions;
 
-    if (m_factMethod == LU_UL && m_numPartitions > 1 && m_precondType != Block) {
-        n_eff -= m_n / m_numPartitions;
+    if (m_factMethod == LU_UL && num_partitions > 1 && m_precondType != Block) {
+        n_eff -= n / num_partitions;
         numPart_eff--;
     }
 
     int partSize  = n_eff / numPart_eff;
     int remainder = n_eff % numPart_eff;
 
-    if(m_k >= CRITICAL_THRESHOLD) {
+    if(k >= CRITICAL_THRESHOLD) {
         int final_partition_size = (remainder == 0 ? partSize : (partSize + 1));
-        int threadsNum = m_k;
+        int threadsNum = k;
         if (threadsNum > 512)
             threadsNum = 512;
 
@@ -4154,47 +4334,47 @@ Precond<PrecVector>::partBlockedBandedLU_const()
                 last_row = final_partition_size;
             int block_num = last_row - st_row;
 
-            device::blockedBandLU_critical_const_phase1_safe<PrecValueType> <<< numPart_eff, threadsNum>>>(dB, st_row, m_k, block_num, partSize, remainder);
+            device::blockedBandLU_critical_const_phase1_safe<PrecValueType> <<< numPart_eff, threadsNum>>>(dB, st_row, k, block_num, partSize, remainder);
 
             if (last_row == final_partition_size)
                 break;
 
-            dim3 grids(m_k, numPart_eff);
+            dim3 grids(k, numPart_eff);
 
-            device::blockedBandLU_critical_const_phase2<PrecValueType> <<<grids, BLOCK_FACTOR, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, m_k, BLOCK_FACTOR, partSize, remainder);
+            device::blockedBandLU_critical_const_phase2<PrecValueType> <<<grids, BLOCK_FACTOR, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, k, BLOCK_FACTOR, partSize, remainder);
 
-            device::blockedBandLU_critical_const_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, m_k, BLOCK_FACTOR, partSize, remainder);
+            device::blockedBandLU_critical_const_phase3<PrecValueType> <<<grids, threadsNum, BLOCK_FACTOR * sizeof(PrecValueType)>>> (dB, st_row, k, BLOCK_FACTOR, partSize, remainder);
         }
-    } else if (m_k > 27) {
+    } else if (k > 27) {
         if (m_safeFactorization)
-            device::bandLU_g32_safe<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder, false);
+            device::bandLU_g32_safe<PrecValueType><<<numPart_eff, 512>>>(dB, k, partSize, remainder, false);
         else
-            device::bandLU_g32<PrecValueType><<<numPart_eff, 512>>>(dB, m_k, partSize, remainder);
+            device::bandLU_g32<PrecValueType><<<numPart_eff, 512>>>(dB, k, partSize, remainder);
     } else {
         if (m_safeFactorization)
-            device::bandLU_safe<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder, false);
+            device::bandLU_safe<PrecValueType><<<numPart_eff,  k * k>>>(dB, k, partSize, remainder, false);
         else
-            device::bandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
-            ////device::swBandLU<PrecValueType><<<numPart_eff,  m_k * m_k>>>(dB, m_k, partSize, remainder);
+            device::bandLU<PrecValueType><<<numPart_eff,  k * k>>>(dB, k, partSize, remainder);
+            ////device::swBandLU<PrecValueType><<<numPart_eff,  k * k>>>(dB, k, partSize, remainder);
     }
 
 
     // If not using safe factorization, check the factorized banded matrix for any
     // zeros on its diagonal (this means a zero pivot). Note that we must only check
     // the diagonal blocks corresponding to the partitions for which LU was applied.
-    if (!m_safeFactorization && hasZeroPivots(m_B.begin(), m_B.begin() + n_eff * (2*m_k+1), m_k, 2 * m_k + 1, (PrecValueType) BURST_VALUE))
+    if (!m_safeFactorization && hasZeroPivots(B.begin(), B.begin() + n_eff * (2*k+1), k, 2 * k + 1, (PrecValueType) BURST_VALUE))
         throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_const).");
 
 
-    if (m_numPartitions == 1) {
-        int  gridX = m_n;
+    if (num_partitions == 1) {
+        int  gridX = n;
         int  gridY = 1;
         kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
         dim3 grids(gridX, gridY);
-        if (m_k > 1024)
-            device::bandLU_post_divide_general<PrecValueType><<<grids, 512>>>(dB, m_k, m_n);
+        if (k > 1024)
+            device::bandLU_post_divide_general<PrecValueType><<<grids, 512>>>(dB, k, n);
         else
-            device::bandLU_post_divide<PrecValueType><<<grids, m_k>>>(dB, m_k, m_n);
+            device::bandLU_post_divide<PrecValueType><<<grids, k>>>(dB, k, n);
     }
 }
 
@@ -4631,9 +4811,7 @@ template <typename PrecVector>
 void 
 Precond<PrecVector>::partBandedFwdSweep(PrecVector&  v)
 {
-    if (!m_variableBandwidth)
-        partBandedFwdSweep_const(v);
-    else {
+    if (m_variableBandwidth) {
         if (m_gpuCount == 1) {
             partBandedFwdSweep_var(
                 v,
@@ -4680,40 +4858,91 @@ Precond<PrecVector>::partBandedFwdSweep(PrecVector&  v)
             );
             recoverCurDevice();
         }
+    } else {
+        if (m_gpuCount == 1) {
+            partBandedFwdSweep_const(
+                v,
+                m_n,
+                m_k,
+                m_numPartitions,
+                m_B
+            );
+        } else {
+            omp_set_num_threads(m_gpuCount);
+            saveCurDevice();
+
+            if (m_buffers.size() != m_gpuCount) {
+                m_buffers.resize(m_gpuCount);
+            }
+
+            copyFromToMultiGPUs (
+                v,
+                m_buffers,
+                m_n,
+                m_all_num_rows,
+                false
+            );
+
+#pragma omp parallel for
+            for (int i = 0; i < m_gpuCount; i++) {
+                partBandedFwdSweep_const(
+                    m_buffers[i],
+                    m_all_num_rows[i],
+                    m_k,
+                    m_all_num_partitions[i],
+                    m_all_Bs[i]
+                );
+            }
+
+            copyFromToMultiGPUs (
+                v,
+                m_buffers,
+                m_n,
+                m_all_num_rows,
+                true
+            );
+            recoverCurDevice();
+        }
     }
 }
 
 template <typename PrecVector>
 void 
-Precond<PrecVector>::partBandedFwdSweep_const(PrecVector&  v)
+Precond<PrecVector>::partBandedFwdSweep_const(
+    PrecVector&  v,
+    int          n,
+    int          k,
+    int          num_partitions,
+    PrecVector&  B
+)
 {
-    PrecValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
+    PrecValueType* p_B = thrust::raw_pointer_cast(&B[0]);
     PrecValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
-    int partSize  = m_n / m_numPartitions;
-    int remainder = m_n % m_numPartitions;
+    int partSize  = n / num_partitions;
+    int remainder = n % num_partitions;
 
-    if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
+    if (m_precondType == Block || m_factMethod == LU_only || num_partitions == 1) {
         if (m_saveMem) {
-            if (m_k > 1024)
-                device::fwdElim_sol_forSPD<PrecValueType> <<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+            if (k > 1024)
+                device::fwdElim_sol_forSPD<PrecValueType> <<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
             else
-                device::fwdElim_sol_medium_forSPD<PrecValueType> <<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                device::fwdElim_sol_medium_forSPD<PrecValueType> <<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
         } else {
-            if (m_k > 1024)
-                device::forwardElimL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-            else if (m_k > 32)
-                device::forwardElimL_g32<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+            if (k > 1024)
+                device::forwardElimL_general<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
+            else if (k > 32)
+                device::forwardElimL_g32<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
             else
-                device::forwardElimL<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                device::forwardElimL<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
         }
     } else {
-        if (m_k > 1024)
-            device::forwardElimL_LU_UL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-        else if (m_k > 32)
-            device::forwardElimL_LU_UL_g32<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+        if (k > 1024)
+            device::forwardElimL_LU_UL_general<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
+        else if (k > 32)
+            device::forwardElimL_LU_UL_g32<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
         else
-            device::forwardElimL_LU_UL<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+            device::forwardElimL_LU_UL<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
     }
 }
 
@@ -4764,9 +4993,7 @@ template <typename PrecVector>
 void 
 Precond<PrecVector>::partBandedBckSweep(PrecVector&  v)
 {
-    if (!m_variableBandwidth)
-        partBandedBckSweep_const(v);
-    else {
+    if (m_variableBandwidth) {
         if (m_gpuCount == 1) {
             partBandedBckSweep_var(
                 v,
@@ -4813,61 +5040,112 @@ Precond<PrecVector>::partBandedBckSweep(PrecVector&  v)
             );
             recoverCurDevice();
         }
+    } else {
+        if (m_gpuCount == 1) {
+            partBandedBckSweep_const(
+                v,
+                m_n,
+                m_k,
+                m_numPartitions,
+                m_B
+            );
+        } else {
+            omp_set_num_threads(m_gpuCount);
+            saveCurDevice();
+
+            if (m_buffers.size() != m_gpuCount) {
+                m_buffers.resize(m_gpuCount);
+            }
+
+            copyFromToMultiGPUs (
+                v,
+                m_buffers,
+                m_n,
+                m_all_num_rows,
+                false
+            );
+
+#pragma omp parallel for
+            for (int i = 0; i < m_gpuCount; i++) {
+                partBandedBckSweep_const(
+                    m_buffers[i],
+                    m_all_num_rows[i],
+                    m_k,
+                    m_all_num_partitions[i],
+                    m_all_Bs[i]
+                );
+            }
+
+            copyFromToMultiGPUs (
+                v,
+                m_buffers,
+                m_n,
+                m_all_num_rows,
+                true
+            );
+            recoverCurDevice();
+        }
     }
 }
 
 template <typename PrecVector>
 void 
-Precond<PrecVector>::partBandedBckSweep_const(PrecVector&  v)
+Precond<PrecVector>::partBandedBckSweep_const(
+    PrecVector&  v,
+    int          n,
+    int          k,
+    int          num_partitions,
+    PrecVector&  B
+)
 {
-    PrecValueType* p_B = thrust::raw_pointer_cast(&m_B[0]);
+    PrecValueType* p_B = thrust::raw_pointer_cast(&B[0]);
     PrecValueType* p_v = thrust::raw_pointer_cast(&v[0]);
 
-    int partSize  = m_n / m_numPartitions;
-    int remainder = m_n % m_numPartitions;
+    int partSize  = n / num_partitions;
+    int remainder = n % num_partitions;
 
-    if (m_precondType == Block || m_factMethod == LU_only || m_numPartitions == 1) {
-        if (m_numPartitions > 1) {
-            if (m_k > 1024)
-                device::backwardElimU_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-            else if (m_k > 32)
-                device::backwardElimU_g32<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+    if (m_precondType == Block || m_factMethod == LU_only || num_partitions == 1) {
+        if (num_partitions > 1) {
+            if (k > 1024)
+                device::backwardElimU_general<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
+            else if (k > 32)
+                device::backwardElimU_g32<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
             else
-                device::backwardElimU<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                device::backwardElimU<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
         } else {
             int gridX = 1;
-            int blockX = m_n;
+            int blockX = n;
             if (blockX > BLOCK_SIZE) {
                 gridX = (blockX + BLOCK_SIZE - 1) / BLOCK_SIZE;
                 blockX = BLOCK_SIZE;
             }
-            dim3 grids(gridX, m_numPartitions);
+            dim3 grids(gridX, num_partitions);
 
-            device::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(m_n, m_k, p_B, p_v, partSize, remainder, m_saveMem);
+            device::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(n, k, p_B, p_v, partSize, remainder, m_saveMem);
 
             if (m_saveMem) {
-                if (m_k > 1024)
-                    device::bckElim_sol_forSPD<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                if (k > 1024)
+                    device::bckElim_sol_forSPD<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
                 else
-                    device::bckElim_sol_medium_forSPD<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                    device::bckElim_sol_medium_forSPD<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
             } else {
-                if (m_k > 1024)
-                    device::bckElim_sol<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-                else if (m_k > 32)
-                    device::bckElim_sol_medium<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                if (k > 1024)
+                    device::bckElim_sol<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
+                else if (k > 32)
+                    device::bckElim_sol_medium<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
                 else
-                    device::bckElim_sol_narrow<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+                    device::bckElim_sol_narrow<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
             }
         }
     } else {
-        strided_range<typename PrecVector::iterator> diag(m_B.begin() + m_k, m_B.end(), 2 * m_k + 1);
+        strided_range<typename PrecVector::iterator> diag(m_B.begin() + k, m_B.end(), 2 * k + 1);
         thrust::transform(v.begin(), v.end(), diag.begin(), v.begin(), thrust::divides<PrecValueType>());
-        if (m_k > 1024)
-            device::backwardElimU_LU_UL_general<PrecValueType><<<m_numPartitions, 512>>>(m_n, m_k, p_B, p_v, partSize, remainder);
-        else if (m_k > 32)
-            device::backwardElimU_LU_UL_g32<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+        if (k > 1024)
+            device::backwardElimU_LU_UL_general<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
+        else if (k > 32)
+            device::backwardElimU_LU_UL_g32<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
         else
-            device::backwardElimU_LU_UL<PrecValueType><<<m_numPartitions, m_k>>>(m_n, m_k, p_B, p_v, partSize, remainder);
+            device::backwardElimU_LU_UL<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
     }
 }
 

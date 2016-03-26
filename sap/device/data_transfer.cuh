@@ -727,6 +727,34 @@ __global__ void copyBandedMatrixToSegMatrix(
     }
 }
 
+template <typename T1, typename T2>
+__global__ void bandedMatrixTranspose(
+    const T1* ori_mat,
+    T2*       transposed_mat,
+    int       n,
+    int       k
+) {
+    int row = gridDim.x * blockIdx.y + blockIdx.x;
+
+    int start_col = row - k, end_col = row + k + 1;
+
+    if (row >= n) {
+        return;
+    }
+
+    if (start_col < 0) {
+        start_col = 0;
+    }
+
+    if (end_col > n) {
+        end_col = n;
+    }
+
+    for (int i = start_col + threadIdx.x; i < end_col; i += blockDim.x) {
+        transposed_mat[2 * k * row + k + i] = ori_mat[2 * k * i + k + row];
+    }
+}
+
 } //namespace device
 } //namespace sap
 

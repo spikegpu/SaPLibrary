@@ -8,13 +8,70 @@
 
 #include <cusp/multiply.h>
 
+#include <sap/common.h>
 #include <sap/timer.h>
+#include <sap/banded_matrix.h>
+#include <sap/device/matrix_multiply.cuh>
 
 #include "cusparse.h"
 
 
 namespace sap {
 
+/**
+ * This class implements the MV functor for banded matrix-vector
+ * product.
+ *
+ * \tparam Matrix is the type of the banded matrix.
+ */
+template <typename Matrix>
+class MVBanded: public cusp::linear_operator<typename Matrix::value_type, typename Matrix::memory_space, typename Matrix::index_type> {
+public:
+	typedef typename cusp::linear_operator<typename Matrix::value_type, typename Matrix::memory_space, typename Matrix::index_type> Parent;
+
+    typedef typename Matrix::value_type ValueType;
+
+	MVBanded(Matrix& A) 
+	:	Parent(A.m_n, A.m_n),
+		m_A(A) {}
+
+	template <typename Array>
+	void operator()(const Array& v,
+	                Array&       Av)
+	{
+        const ValueType* pA     = thrust::raw_pointer_cast(&((m_A.getBandedMatrix()[0])));
+        const ValueType* p_vec1 = thrust::raw_pointer_cast(&v[0]);
+        ValueType* p_vec2       = thrust::raw_pointer_cast(&Av[0]);
+
+        int gridX = (m_A.m_n + MAT_VEC_MUL_BLOCK_SIZE - 1) / MAT_VEC_MUL_BLOCK_SIZE, gridY = 1;
+        kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
+
+        device::bandedMatrixVecMul<ValueType><<<dim3(gridX, gridY), dim3(MAT_VEC_MUL_BLOCK_SIZE, MAT_VEC_MUL_BLOCK_SIZE)>>>(
+            pA,
+            p_vec1,
+            p_vec2,
+            m_A.m_n,
+            m_A.m_k
+        );
+	}
+
+	/// Cummulative time for all SPMV calls (ms).
+	double getTime() const   {return 0.0;}
+
+	/// Total number of calls to the SPMV functor.
+	double getCount() const  {return 0.0;}
+
+	/// Average GFLOP/s over all SPMV calls.
+	double getGFlops() const
+	{
+		// double avgTime = m_time / m_count;
+		// return 2 * m_A.num_entries / (1e6 * avgTime);
+		return 0;
+	}
+
+private:
+	Matrix&      m_A;
+};
 
 /// Default SPMV functor class.
 /**
