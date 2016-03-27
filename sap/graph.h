@@ -85,6 +85,22 @@ public:
 	double     getTimeRCM() const      {return m_timeRCM;}
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
+    double     getD(int pct) const {
+        if (pct >= 99) {
+            return m_d_p99;
+        }
+        if (pct >= 95) {
+            return m_d_p95;
+        }
+        if (pct >= 90) {
+            return m_d_p90;
+        }
+        if (pct >= 80) {
+            return m_d_p80;
+        }
+        return m_d_p50;
+    }
+
 	int        reorder(const MatrixCsr& Acsr,
 	                   bool             testDB,
 	                   bool             doDB,
@@ -196,6 +212,11 @@ private:
 	BoolVector    m_DB_inB;
 	DoubleVector  m_DB_d_vals;
 	BoolVector    m_DB_visited;
+    double        m_d_p99;
+    double        m_d_p95;
+    double        m_d_p90;
+    double        m_d_p80;
+    double        m_d_p50;
 
 	bool       DB(const MatrixCsr& Acsr,
 			      bool             scale,
@@ -490,8 +511,34 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 		k_db = thrust::inner_product(row_indices.begin(), row_indices.end(), m_matrix.column_indices.begin(), 0, thrust::maximum<int>(), Difference());
 	}
 
-	if (testDB)
+	if (testDB) {
+        DoubleVector all_ds(m_n, 0.0);
+        for (int i = 0; i < m_n; i++) {
+            int start_idx = m_matrix.row_offsets[i];
+            int end_idx = m_matrix.row_offsets[i+1];
+
+            double diag_elem = 0.0, all_sums = 0.0;
+            for (int j = start_idx; j < end_idx; j++) {
+                if (m_matrix.column_indices[j] == i) {
+                    diag_elem = std::fabs(m_matrix.values[j]);
+                } else {
+                    all_sums += std::fabs(m_matrix.values[j]);
+                }
+            }
+
+            all_ds[i] = diag_elem / all_sums;
+        }
+
+        std::sort(all_ds.begin(), all_ds.end());
+
+        m_d_p99 = all_ds[m_n / 100];
+        m_d_p95 = all_ds[m_n / 20];
+        m_d_p90 = all_ds[m_n / 10];
+        m_d_p80 = all_ds[m_n / 5];
+        m_d_p50 = all_ds[m_n / 2];
+
 		return k_db;
+    }
 
 	// Apply reverse Cuthill-McKee algorithm.
 	int bandwidth;

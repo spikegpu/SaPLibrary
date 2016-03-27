@@ -142,7 +142,7 @@ void updateFastest(std::map<std::string, double>& fastest_map, string &mat_name,
 class OutputItem
 {
 public:
-	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(5) {}
+	OutputItem(std::ostream &o): m_o(o), m_additional_item_count(9) {}
 
 	int           m_additional_item_count;
 
@@ -249,6 +249,12 @@ int main(int argc, char** argv)
 
 	{
 		sap::Stats stats = mySolver.getStats();
+
+		outputItem( stats.d_p99);
+		outputItem( stats.d_p95);
+		outputItem( stats.d_p90);
+		outputItem( stats.d_p80);
+		outputItem( stats.d_p50);
 
 		// Time for DB reordering (pre-processing)
 		outputItem( stats.time_DB_pre);

@@ -111,6 +111,21 @@ public:
     double getTimeDBFirst() const       {return m_time_DB_first;}
     double getTimeDBSecond() const      {return m_time_DB_second;}
     double getTimeDBPost() const        {return m_time_DB_post;}
+    double getD(int pct) const {
+        if (pct >= 99) {
+            return m_d_p99;
+        }
+        if (pct >= 95) {
+            return m_d_p95;
+        }
+        if (pct >= 90) {
+            return m_d_p90;
+        }
+        if (pct >= 80) {
+            return m_d_p80;
+        }
+        return m_d_p50;
+    }
     double getTimeReorder() const         {return m_time_reorder;}
     double getTimeDropOff() const         {return m_time_dropOff;}
     double getTimeCPUAssemble() const     {return m_time_cpu_assemble;}
@@ -278,6 +293,11 @@ private:
     double               m_time_DB_first;         // CPU time for DB reordering (first stage)
     double               m_time_DB_second;        // CPU time for DB reordering (second stage)
     double               m_time_DB_post;          // CPU time for DB reordering (post-processing)
+    double               m_d_p99;                 // 99-th percentile of d
+    double               m_d_p95;                 // 95-th percentile of d
+    double               m_d_p90;                 // 90-th percentile of d
+    double               m_d_p80;                 // 80-th percentile of d
+    double               m_d_p50;                 // 50-th percentile of d
     double               m_time_reorder;          // CPU time for DB matrix reordering
     double               m_time_dropOff;          // CPU time for drop off
     double               m_time_cpu_assemble;     // Time for acquiring the banded matrix and off-diagonal matrics on CPU
@@ -1730,6 +1750,11 @@ Precond<PrecVector>::transformToBandedMatrix(const Matrix&  A, const DoubleMatri
     m_time_DB_first  = graph.getTimeDBFirst();
     m_time_DB_second = graph.getTimeDBSecond();
     m_time_DB_post   = graph.getTimeDBPost();
+    m_d_p99          = graph.getD(99);
+    m_d_p95          = graph.getD(95);
+    m_d_p90          = graph.getD(90);
+    m_d_p80          = graph.getD(80);
+    m_d_p50          = graph.getD(50);
     m_time_reorder += reorder_timer.getElapsed();
 
     if (m_testDB)
@@ -4366,7 +4391,7 @@ Precond<PrecVector>::partBlockedBandedLU_const(
         throw system_error(system_error::Zero_pivoting, "Found a pivot equal to zero (partBandedLU_const).");
 
 
-    if (num_partitions == 1) {
+    if (num_partitions == 1 || m_precondType == Block) {
         int  gridX = n;
         int  gridY = 1;
         kernelConfigAdjust(gridX, gridY, MAX_GRID_DIMENSION);
@@ -5104,6 +5129,11 @@ Precond<PrecVector>::partBandedBckSweep_const(
     int partSize  = n / num_partitions;
     int remainder = n % num_partitions;
 
+    {
+        strided_range<typename PrecVector::iterator> diag(B.begin() + k, B.end(), 2 * k + 1);
+        thrust::transform(v.begin(), v.end(), diag.begin(), v.begin(), thrust::divides<PrecValueType>());
+    }
+
     if (m_precondType == Block || m_factMethod == LU_only || num_partitions == 1) {
         if (num_partitions > 1) {
             if (k > 1024)
@@ -5113,16 +5143,6 @@ Precond<PrecVector>::partBandedBckSweep_const(
             else
                 device::backwardElimU<PrecValueType><<<num_partitions, k>>>(n, k, p_B, p_v, partSize, remainder);
         } else {
-            int gridX = 1;
-            int blockX = n;
-            if (blockX > BLOCK_SIZE) {
-                gridX = (blockX + BLOCK_SIZE - 1) / BLOCK_SIZE;
-                blockX = BLOCK_SIZE;
-            }
-            dim3 grids(gridX, num_partitions);
-
-            device::preBck_sol_divide<PrecValueType><<<grids, blockX>>>(n, k, p_B, p_v, partSize, remainder, m_saveMem);
-
             if (m_saveMem) {
                 if (k > 1024)
                     device::bckElim_sol_forSPD<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
@@ -5138,8 +5158,6 @@ Precond<PrecVector>::partBandedBckSweep_const(
             }
         }
     } else {
-        strided_range<typename PrecVector::iterator> diag(m_B.begin() + k, m_B.end(), 2 * k + 1);
-        thrust::transform(v.begin(), v.end(), diag.begin(), v.begin(), thrust::divides<PrecValueType>());
         if (k > 1024)
             device::backwardElimU_LU_UL_general<PrecValueType><<<num_partitions, 512>>>(n, k, p_B, p_v, partSize, remainder);
         else if (k > 32)

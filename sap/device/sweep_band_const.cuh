@@ -502,7 +502,6 @@ backwardElimU_general(int N, int k, T *dA, T *dB, int partition_size, int rest_n
 {
 	int tid = threadIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ T shared_curB;
 	int first_row = blockIdx.x*partition_size;
 	int last_row;
 	if(blockIdx.x < rest_num) {
@@ -516,24 +515,16 @@ backwardElimU_general(int N, int k, T *dA, T *dB, int partition_size, int rest_n
 	int it_last = k;
 
 	for(int i=last_row-1; i>=k+first_row; i--) {
-		if(tid == 0) {
-			shared_curB = (dB[bidy*N+i] /= dA[i*col_width+k]);
-		}
-		__syncthreads();
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
-			dB[bidy*N+i-ttid-1] -= shared_curB * dA[i*col_width+k-ttid-1];
+			dB[bidy*N+i-ttid-1] -= dB[bidy * N + i] * dA[i*col_width+k-ttid-1];
 		__syncthreads();
 	}
 	for(int i=k-1+first_row; i>=first_row; i--) {
-		if(tid == 0) {
-			shared_curB = (dB[bidy*N+i] /= dA[i*col_width+k]);
-		} 
-		__syncthreads();
 		if(tid>=i-first_row) return;
 		if(it_last > i-first_row)
 			it_last = i-first_row;
 		for(int ttid = tid; ttid<it_last; ttid+=blockDim.x)
-			dB[bidy*N+i-ttid-1] -= shared_curB * dA[i*col_width + k - ttid - 1];
+			dB[bidy*N+i-ttid-1] -= dB[bidy * N + i] * dA[i*col_width + k - ttid - 1];
 		__syncthreads();
 	}
 }
@@ -545,7 +536,6 @@ backwardElimU_g32(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = (k<<1)+ 1;
-	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -557,21 +547,12 @@ backwardElimU_g32(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 	}
 
 	for(int i=last_row-1; i>=k+first_row; i--) {
-		if(tid == 0) {
-			shared_curB = (dB[bidy*N+i] /= dA[i*col_width+k]);
-		}
-		__syncthreads();
-
-		dB[bidy*N+i-tid-1] -= shared_curB * dA[i*col_width+k-tid-1];
+		dB[bidy*N+i-tid-1] -= dB[bidy * N + i] * dA[i*col_width+k-tid-1];
 		__syncthreads();
 	}
 	for(int i=k-1+first_row; i>=first_row; i--) {
-		if(tid == 0) {
-			shared_curB = (dB[bidy*N+i] /= dA[i*col_width+k]);
-		} 
-		__syncthreads();
 		if(tid>=i-first_row) return;
-		dB[bidy*N+i-tid-1] -= shared_curB * dA[i*col_width + k - tid - 1];
+		dB[bidy*N+i-tid-1] -= dB[bidy * N + i] * dA[i*col_width + k - tid - 1];
 		__syncthreads();
 	}
 }
@@ -583,7 +564,6 @@ backwardElimU(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 {
 	int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
 	int col_width = 2*k + 1;
-	__shared__ T shared_curB;
 	int first_row = bidx*partition_size;
 	int last_row;
 	if(bidx < rest_num) {
@@ -595,19 +575,11 @@ backwardElimU(int N, int k, T *dA, T *dB, int partition_size, int rest_num)
 	}
 
 	for(int i=last_row-1; i>=k+first_row; i--) {
-		if(tid == 0) {
-			shared_curB = (dB[bidy*N+i] /= dA[i*col_width+k]);
-		}
-		__syncthreads();
-		dB[bidy*N+i-tid-1] -= shared_curB * dA[i*col_width+k-tid-1];
+		dB[bidy*N+i-tid-1] -= dB[bidy*N+i] * dA[i*col_width+k-tid-1];
 	}
 	for(int i=k-1+first_row; i>=first_row; i--) {
-		if(tid == 0) {
-			shared_curB = (dB[bidy*N+i] /= dA[i*col_width+k]);
-		} 
-		__syncthreads();
 		if(tid>=i-first_row) return;
-		dB[bidy*N+i-tid-1] -= shared_curB * dA[i*col_width + k - tid - 1];
+		dB[bidy*N+i-tid-1] -= dB[bidy*N+i] * dA[i*col_width + k - tid - 1];
 	}
 }
 
