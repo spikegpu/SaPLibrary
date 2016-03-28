@@ -1,3 +1,7 @@
+/** \file graph.h
+ *  \brief Definition of an auxiliary class for the Preconditioner class. This class is for reordering, dropping off elements, and assemblying banded matrix.
+ */
+
 #ifndef SAP_GRAPH_H
 #define SAP_GRAPH_H
 

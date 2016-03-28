@@ -1,12 +1,8 @@
-// ============================================================================
-// This file implements the strided_range class to allow non-contiguous
-// access to data in a thrust vector.
-//
-// This class is the same as the strided_range thrust example provided
-// by Nathan Bell at
-// (https://code.google.com/p/thrust/source/browse/examples/strided_range.cu)
-// ============================================================================
-
+/** \file strided_range.h
+ *  \brief This file implements the strided_range class to allow non-contiguous access to data in a thrust vector.
+ *
+ *  This class is the same as the strided_range thrust example provided by Nathan Bell at (https://code.google.com/p/thrust/source/browse/examples/strided_range.cu)
+ */
 
 #ifndef SAP_STRIDED_RANGE
 #define SAP_STRIDED_RANGE
@@ -15,7 +11,6 @@
 #include <thrust/iterator/transform_iterator.h>
 #include <thrust/iterator/permutation_iterator.h>
 #include <thrust/functional.h>
-
 
 namespace sap {
 
@@ -63,7 +58,5 @@ protected:
 };
 
 } // namespace sap
-
-
 
 #endif

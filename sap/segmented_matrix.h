@@ -1,3 +1,7 @@
+/** \file segmented_matrix.h
+ *  \brief Definition of a special data structure which is used in Block Cyclic Reduction algorithm implementation.
+ */
+
 #ifndef SAP_SEGMENTED_MATRIX_H
 #define SAP_SEGMENTED_MATRIX_H
 

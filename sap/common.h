@@ -1,3 +1,7 @@
+/** \file common.h
+ *  \brief Definition of commonly used macros and solver configuration constants.
+ */
+
 #ifndef SAP_COMMON_H
 #define SAP_COMMON_H
 

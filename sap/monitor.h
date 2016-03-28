@@ -1,3 +1,7 @@
+/** \file monitor.h
+ *  \brief It provides two classes for monitoring progress of iterative linear solvers, checking for convergence, and stopping on various error conditions.
+ */
+
 #ifndef SAP_MONITOR_H
 #define SAP_MONITOR_H
 
