@@ -99,11 +99,10 @@ struct Stats
     double      time_DB_first;          /**< Time to do DB reordering (first stage). */
     double      time_DB_second;         /**< Time to do DB reordering (second stage). */
     double      time_DB_post;           /**< Time to do DB reordering (post-processing). */
-    double      d_p99;                  /**< The 99-th percentile of d's of the resulting matrix after DB*/ 
-    double      d_p95;                  /**< The 95-th percentile of d's of the resulting matrix after DB*/
-    double      d_p90;                  /**< The 90-th percentile of d's of the resulting matrix after DB*/
-    double      d_p80;                  /**< The 80-th percentile of d's of the resulting matrix after DB*/
-    double      d_p50;                  /**< The 50-th percentile of d's of the resulting matrix after DB*/
+    double      d_p1;                   /**< The 1st percentile of d's of the matrix after DB*/ 
+    double      d_p1_ori;               /**< The 1st percentile of d's of the matrix before DB*/ 
+    double      diag_dom;               /**< The diagonal dominance of the matrix after DB*/
+    double      diag_dom_ori;           /**< The diagonal dominance of the matrix before DB*/
     double      time_reorder;           /**< Time to do DB reordering. */
     double      time_dropOff;           /**< Time for drop-off*/
     double      time_cpu_assemble;      /**< Time on CPU to assemble the banded matrix and off-diagonal spikes. */
@@ -372,11 +371,10 @@ Solver<Array, PrecValueType>::setup(const Matrix& A)
     m_stats.time_DB_first = m_precond.getTimeDBFirst();
     m_stats.time_DB_second = m_precond.getTimeDBSecond();
     m_stats.time_DB_post = m_precond.getTimeDBPost();
-    m_stats.d_p99 = m_precond.getD(99);
-    m_stats.d_p95 = m_precond.getD(95);
-    m_stats.d_p90 = m_precond.getD(90);
-    m_stats.d_p80 = m_precond.getD(80);
-    m_stats.d_p50 = m_precond.getD(50);
+    m_stats.d_p1 = m_precond.getDP1();
+    m_stats.d_p1_ori = m_precond.getDP1(true);
+    m_stats.diag_dom = m_precond.getDiagDominance();
+    m_stats.diag_dom_ori = m_precond.getDiagDominance(true);
     m_stats.time_reorder = m_precond.getTimeReorder();
     m_stats.time_dropOff = m_precond.getTimeDropOff();
     m_stats.time_cpu_assemble = m_precond.getTimeCPUAssemble();

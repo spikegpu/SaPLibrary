@@ -250,11 +250,10 @@ int main(int argc, char** argv)
 	{
 		sap::Stats stats = mySolver.getStats();
 
-		outputItem( stats.d_p99);
-		outputItem( stats.d_p95);
-		outputItem( stats.d_p90);
-		outputItem( stats.d_p80);
-		outputItem( stats.d_p50);
+		outputItem( stats.diag_dom_ori);
+		outputItem( stats.diag_dom);
+		outputItem( stats.d_p1_ori);
+		outputItem( stats.d_p1);
 
 		// Time for DB reordering (pre-processing)
 		outputItem( stats.time_DB_pre);

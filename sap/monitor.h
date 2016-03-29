@@ -19,12 +19,9 @@
 namespace sap {
 
 
-// ----------------------------------------------------------------------------
 // Monitor
-//
-// This class provides support for monitoring progress of iterative linear
-// solvers, check for convergence, and stop on various error conditions.
-// ----------------------------------------------------------------------------
+/** This class provides support for monitoring progress of iterative linear solvers, check for convergence, and stop on various error conditions.
+ */
 template <typename SolverVector>
 class Monitor
 {
@@ -149,12 +146,10 @@ Monitor<SolverVector>::finished(SolverValueType rNorm)
 	return m_code != 0;
 }
 
-// ----------------------------------------------------------------------------
 // BiCGStabLMonitor
-//
-// This class provides support for monitoring progress of BiCGStabL 
-// solvers, check for convergence, and stop on various error conditions.
-// ----------------------------------------------------------------------------
+/**
+ * This class provides support for monitoring progress of BiCGStab(L) solvers, check for convergence, and stop on various error conditions.
+ */
 template <typename SolverVector>
 class BiCGStabLMonitor
 {

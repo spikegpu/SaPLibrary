@@ -36,6 +36,10 @@
 
 namespace sap {
 
+/**
+ * This class is an auxiliary class of SaP preconditioner class. It performs reordering, drop-off, and assembles banded matrix.
+ * \tparam T is the preconditioner's floating point type.
+ */
 template <typename T>
 class Graph
 {
@@ -89,20 +93,12 @@ public:
 	double     getTimeRCM() const      {return m_timeRCM;}
 	double     getTimeDropoff() const  {return m_timeDropoff;}
 
-    double     getD(int pct) const {
-        if (pct >= 99) {
-            return m_d_p99;
-        }
-        if (pct >= 95) {
-            return m_d_p95;
-        }
-        if (pct >= 90) {
-            return m_d_p90;
-        }
-        if (pct >= 80) {
-            return m_d_p80;
-        }
-        return m_d_p50;
+    double     getDiagDominance(bool before_db = false) const {
+        return (before_db ? m_diag_dom_ori : m_diag_dom);
+    }
+
+    double     getDP1(bool before_db = false) const {
+        return (before_db ? m_d_p1_ori : m_d_p1);
     }
 
 	int        reorder(const MatrixCsr& Acsr,
@@ -216,11 +212,10 @@ private:
 	BoolVector    m_DB_inB;
 	DoubleVector  m_DB_d_vals;
 	BoolVector    m_DB_visited;
-    double        m_d_p99;
-    double        m_d_p95;
-    double        m_d_p90;
-    double        m_d_p80;
-    double        m_d_p50;
+    double        m_d_p1;
+    double        m_diag_dom;
+    double        m_d_p1_ori;
+    double        m_diag_dom_ori;
 
 	bool       DB(const MatrixCsr& Acsr,
 			      bool             scale,
@@ -470,6 +465,30 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 
 	m_buffer_reordering.resize(m_n);
 
+	if (testDB) {
+        DoubleVector all_ds(m_n, 0.0);
+        for (int i = 0; i < m_n; i++) {
+            int start_idx = Acsr.row_offsets[i];
+            int end_idx = Acsr.row_offsets[i+1];
+
+            double diag_elem = 0.0, all_sums = 0.0;
+            for (int j = start_idx; j < end_idx; j++) {
+                if (Acsr.column_indices[j] == i) {
+                    diag_elem = std::fabs(Acsr.values[j]);
+                } else {
+                    all_sums += std::fabs(Acsr.values[j]);
+                }
+            }
+
+            all_ds[i] = diag_elem / all_sums;
+        }
+
+        std::sort(all_ds.begin(), all_ds.end());
+
+        m_diag_dom_ori = all_ds[0];
+        m_d_p1_ori     = all_ds[m_n / 100];
+    }
+
 	// Apply DB algorithm. Note that we must ensure we always work with
 	// double precision scale vectors.
 	//
@@ -535,11 +554,8 @@ Graph<T>::reorder(const MatrixCsr&  Acsr,
 
         std::sort(all_ds.begin(), all_ds.end());
 
-        m_d_p99 = all_ds[m_n / 100];
-        m_d_p95 = all_ds[m_n / 20];
-        m_d_p90 = all_ds[m_n / 10];
-        m_d_p80 = all_ds[m_n / 5];
-        m_d_p50 = all_ds[m_n / 2];
+        m_diag_dom = all_ds[0];
+        m_d_p1     = all_ds[m_n / 100];
 
 		return k_db;
     }

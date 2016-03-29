@@ -15,10 +15,9 @@ typedef long long int64_t;
 
 #include <cusp/version.h>
 
-// ----------------------------------------------------------------------------
-// If ALWAYS_ASSERT is defined, we make sure that  assertions are triggered 
-// even if NDEBUG is defined.
-// ----------------------------------------------------------------------------
+/**
+ * If ALWAYS_ASSERT is defined, we make sure that  assertions are triggered even if NDEBUG is defined.
+ */
 #ifdef ALWAYS_ASSERT
 // If NDEBUG is actually defined, remember this so
 // we can restore it.
@@ -66,6 +65,9 @@ const unsigned int MAX_GRID_DIMENSION = 32768;
 
 const unsigned int CRITICAL_THRESHOLD = 70;
 
+/**
+ * This defines the types of Krylov subspace methods used in SaP.
+ */
 enum KrylovSolverType {
 	// CUSP solvers
 	BiCGStab_C,
@@ -84,6 +86,9 @@ enum FactorizationMethod {
 	LU_only
 };
 
+/**
+ * This defines the types of SaP preconditioners.
+ */
 enum PreconditionerType {
 	Spike,
 	Block,
