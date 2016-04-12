@@ -1202,6 +1202,8 @@ Precond<PrecVector>::setup(const Matrix&  A)
                 }
                 recoverCurDevice();
             }
+            m_time_bandLU = m_time_bcr_lu;
+            m_time_assembly = m_time_bcr_mat_mul_deflation + m_time_bcr_sweep_deflation;
             return;
         }
     }

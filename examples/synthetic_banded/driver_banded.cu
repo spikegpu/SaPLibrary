@@ -237,9 +237,10 @@ int main(int argc, char** argv)
         outputItem( stats.time_bcr_sweep_deflation);
         outputItem( stats.time_bcr_mat_mul_deflation);
     } else {
+        outputItem( stats.time_offDiags);
         outputItem( stats.time_bandLU + stats.time_bandUL);
-        outputItem( "");
-        outputItem( "");
+        outputItem( stats.time_assembly);
+        outputItem( stats.time_fullLU);
     }
 
 	// Total time for setup
@@ -250,10 +251,8 @@ int main(int argc, char** argv)
     if (opts.useBCR) {
         outputItem(stats.time_bcr_sweep_inflation);
         outputItem(stats.time_bcr_mv_inflation);
-    } else {
-        outputItem("");
-        outputItem("");
     }
+
     // Total time for Krylov solve
 	outputItem( stats.timeSolve);
     // Total time for Krylov solve per iteration
