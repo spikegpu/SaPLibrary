@@ -4089,12 +4089,12 @@ Precond<PrecVector>::partBlockedBandedLU_one()
             if (m_safeFactorization) {
                 if (threadsNum > 1024)
                     device::blockedBandLU_critical_phase1_safe<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
-                else
+                else if (threadsNum > 0)
                     device::blockedBandLU_critical_phase1_safe<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
             } else {
                 if (threadsNum > 1024)
                     device::blockedBandLU_critical_phase1<PrecValueType><<<1, 512>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
-                else
+                else if (threadsNum > 0)
                     device::blockedBandLU_critical_phase1<PrecValueType><<<1, threadsNum>>>(dB, st_row, m_k, ks_col_ptr, last_row - st_row);
             }
 
@@ -4110,7 +4110,7 @@ Precond<PrecVector>::partBlockedBandedLU_one()
 
             if (threadsNum > 1024)
                 device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, 512, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, row_max, BLOCK_FACTOR);
-            else
+            else if (threadsNum > 0)
                 device::blockedBandLU_critical_phase3<PrecValueType><<<blockX, threadsNum, sizeof(PrecValueType) * BLOCK_FACTOR>>>(dB, st_row, m_k, threadsNum, row_max, BLOCK_FACTOR);
 
         }
