@@ -426,13 +426,14 @@ copyFromCOOMatrixToBandedMatrix(int  nnz,
                                 int* cols,
                                 T*   vals,
                                 T*   dB,
+                                int  row_num_bias,
                                 bool saveMem)
 {
     int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
     int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
     if(idx >= nnz) return;
 
-    int j = rows[idx], l = cols[idx];
+    int j = rows[idx] - row_num_bias, l = cols[idx] - row_num_bias;
     if (saveMem && j < l)
         return;
 
@@ -459,13 +460,14 @@ copyFromCOOMatrixToBandedMatrix(int  nnz,
                                 int* offsets,
                                 int  partSize,
                                 int  remainder,
+                                int  row_num_bias,
                                 bool saveMem)
 {
     int tid = threadIdx.x, bidx = blockIdx.x, bidy = blockIdx.y;
     int idx = tid + bidx * blockDim.x + bidy * gridDim.x * blockDim.x;
     if(idx >= nnz) return;
 
-    int j = rows[idx], l = cols[idx];
+    int j = rows[idx] - row_num_bias, l = cols[idx] - row_num_bias;
 
     if (saveMem && j < l)
         return;
@@ -736,22 +738,34 @@ __global__ void bandedMatrixTranspose(
 ) {
     int row = gridDim.x * blockIdx.y + blockIdx.x;
 
-    int start_col = row - k, end_col = row + k + 1;
-
     if (row >= n) {
         return;
     }
 
-    if (start_col < 0) {
-        start_col = 0;
-    }
+    if (transposed_mat != ori_mat) {
+        int start_col = row - k, end_col = row + k + 1;
+        if (start_col < 0) {
+            start_col = 0;
+        }
 
-    if (end_col > n) {
-        end_col = n;
-    }
+        if (end_col > n) {
+            end_col = n;
+        }
 
-    for (int i = start_col + threadIdx.x; i < end_col; i += blockDim.x) {
-        transposed_mat[2 * k * row + k + i] = ori_mat[2 * k * i + k + row];
+        for (int i = start_col + threadIdx.x; i < end_col; i += blockDim.x) {
+            transposed_mat[2 * k * row + k + i] = ori_mat[2 * k * i + k + row];
+        }
+    } else {
+        int start_col = 1, end_col = k + 1;
+        if (row + end_col > n) {
+            end_col = n - row;
+        }
+
+        for (int i = start_col + threadIdx.x; i < end_col; i += blockDim.x) {
+            T1 tmp_value = ori_mat[(2 * k + 1) * row + k + i];
+            transposed_mat[(2 * k + 1) * row + k + i] = transposed_mat[(2 * k + 1) * (row + i) + k - i];
+            transposed_mat[(2 * k + 1) * (row + i) + k - i] = tmp_value;
+        }
     }
 }
 
